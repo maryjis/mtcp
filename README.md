@@ -1,2 +1,2 @@
 # mtcp
-Multimodal Transormers for working with missing modalities in medical data
+Multimodal Transormers for working with multimodal data with missing modalities in medical data
