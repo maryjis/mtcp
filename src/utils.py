@@ -48,8 +48,8 @@ def init_wandb_logging(cfg : DictConfig):
         project=cfg.wandb_project,
         config=cfg_dict)
       
-      wandb.define_metric("train/*", step_metric="epoch")
-      wandb.define_metric("valid/*", step_metric="epoch")
+    #   wandb.define_metric("train/*", step_metric="epoch")
+    #   wandb.define_metric("valid/*", step_metric="epoch")
       
 def agg_fold_metrics(lst: list[dict[str, float]]):
     """Compute mean, min, max, std from cross validation metrics"""
