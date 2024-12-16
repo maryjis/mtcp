@@ -31,12 +31,13 @@ class UnimodalSurvivalTrainer(object):
     def initialise_datasets(self, splits):
         datasets ={}
         if self.cfg.base.modalities[0]=="rna":
-            self.preproc =RNAPreprocessor(splits["train"], self.cfg.base.root_path, self.cfg.base.n_intervals)
+            self.preproc =RNAPreprocessor(splits["train"], self.cfg.base.rna_dataset_path, self.cfg.base.n_intervals, self.cfg.data.rna.is_cluster_genes , self.cfg.data.rna.clustering_threshold)
             self.preproc.fit()
             for split_name, dataset in splits.items():
                 splits[split_name] =self.preproc.transform_labels(dataset)
                 transforms = base_transforms(self.preproc.get_scaling())
-                datasets[split_name] =RNADataset(splits[split_name], self.cfg.base.root_path, transform = transforms, is_hazard_logits = True)
+                datasets[split_name] =RNADataset(splits[split_name], self.cfg.base.rna_dataset_path, 
+                                                 transform = transforms, is_hazard_logits = True, column_order=self.preproc.get_column_order())
             return datasets
         else:
             raise NotImplementedError("Exist only for rna. Initialising datasets for other modalities aren't declared")
@@ -72,7 +73,7 @@ class UnimodalSurvivalTrainer(object):
             events.append(event)
             total_task_loss+=loss
             
-        metrics = {"task_loss": total_task_loss / len(dataloader.dataset)}
+        metrics = {"task_loss": total_task_loss.cpu().detach().numpy() / len(dataloader.dataset)}
         if split!="train":
             metrics.update(compute_survival_metrics( preds, torch.cat(times, dim=0), torch.cat(events, dim=0), cuts=self.preproc.get_hazard_cuts()))
         else:

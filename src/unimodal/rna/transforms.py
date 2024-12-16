@@ -23,4 +23,6 @@ class Scale(object):
         return sample
 
 def base_transforms(standart_scaler):
-    return transforms.Compose([transforms.Lambda(log_transform), Scale(standart_scaler)])
+    return transforms.Compose([
+                               transforms.Lambda(log_transform), 
+                               Scale(standart_scaler)])
