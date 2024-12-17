@@ -5,3 +5,4 @@ wandb/
 scaler_data.json
 *.ipynb
 *.pyc
+.venv/*
