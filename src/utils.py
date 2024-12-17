@@ -21,6 +21,14 @@ def seed_everything(seed: int):
     
     
 def load_splits(data_path: Path, fold_ind : int, remove_nan_column : str) -> Dict[str,pd.DataFrame]:
+    '''
+    Use 'group' column to split data into train_validation/test sets
+    Loads and splits a dataset from a CSV file into train/validation/test sets
+    Handles cross-validation folds by separating data based on a 'splits' column
+    Can remove rows with NaN values in a specified column
+    Returns a dictionary with three DataFrames: train, validation, and test sets
+    '''
+    
     if data_path.exists():
         
         dataset = pd.read_csv(data_path)
