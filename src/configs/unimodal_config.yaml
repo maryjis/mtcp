@@ -39,3 +39,8 @@ data:
     rna:
         is_cluster_genes: True
         clustering_threshold: 0.99
+        rna_size: 16384  # real 16304
+        hidden_size: 256
+        num_channels: 1
+        patch_size: 256
+        initializer_range: 0.02

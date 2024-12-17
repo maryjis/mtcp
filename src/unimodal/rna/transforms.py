@@ -22,7 +22,25 @@ class Scale(object):
 
         return sample
 
+class Padding(object):
+    def __init__(self, size):
+        self.size = size
+        
+
+    def __call__(self, sample):
+        padded_sample = np.zeros((sample.shape[0],self.size))
+        padded_sample[:, :sample.shape[1]] = sample
+
+        return padded_sample
+    
 def base_transforms(standart_scaler):
     return transforms.Compose([
                                transforms.Lambda(log_transform), 
                                Scale(standart_scaler)])
+    
+def padded_transforms(standart_scaler, size):
+    return transforms.Compose([
+                               transforms.Lambda(log_transform), 
+                               Scale(standart_scaler),
+                               Padding(size)])
+    
