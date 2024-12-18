@@ -33,7 +33,7 @@ base:
     log:
         logging: True
         wandb_project: "cancer_mtcp"
-        wandb_name: "test_mri_encoder"
+        wandb_name: "test_rna_encoder"
 
 data:
     rna:
