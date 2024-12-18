@@ -8,6 +8,11 @@ from typing import Dict, List, Tuple, Union
 import wandb
 from omegaconf import DictConfig, OmegaConf
 
+def seed_worker(worker_id):
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+
 def seed_everything(seed: int):
     random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
