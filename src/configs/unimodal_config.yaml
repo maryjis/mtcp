@@ -1,7 +1,8 @@
 defaults: 
-    - model: rsna_base 
+    - model: rna_mae
 
 base:
+    experiment_name: "rsna_with_clusters_rnaMAE_pretrain"
     n_epochs: 50
     n_intervals: 20
     random_seed: 1380
@@ -9,7 +10,7 @@ base:
     optimizer:
         name: "Adam"
         params:
-            lr: 1e-3
+            lr: 2e-5 # 1e-3
             weight_decay: 1e-2
     
     scheduler: 
@@ -17,14 +18,15 @@ base:
         params:
             eta_min: 5e-6
 
-    auxiliary_loss: []
 
     type: "unimodal"
+    strategy: "mae" # mae, mae_survival
     modalities: ["rna"]
-    architecture: "CNN"
+    architecture: "rnaMAE"
     splits: 5
     data_path: "src/data/dataset.csv"
     root_path: "../"
+    save_path : "outputs/models/"
     rna_dataset_path: "src/data/rna_dataset.csv"
     device: "cuda:0"
     remove_nan_column: 'RNA'
@@ -37,10 +39,11 @@ base:
 
 data:
     rna:
-        is_cluster_genes: True
+        is_cluster_genes: False
         clustering_threshold: 0.99
         rna_size: 16384  # real 16304
         hidden_size: 256
         num_channels: 1
         patch_size: 256
         initializer_range: 0.02
+        mask_ratio: 0.75

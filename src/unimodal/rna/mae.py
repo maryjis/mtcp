@@ -25,14 +25,15 @@ class RnaMAEEmbeddings(nn.Module):
             torch.zeros(1, self.num_patches + 1, cfg.hidden_size), requires_grad=False
         )
         self.patch_size = cfg.patch_size
-        self.cfg = cfg
+        self.config = cfg
         self.initialize_weights()
 
     def initialize_weights(self):
         # initialize (and freeze) position embeddings by sin-cos embedding
         pos_embed = get_1d_sincos_pos_embed_from_grid(
             self.position_embeddings.shape[-1], 
-            np.arange(int(self.patch_embeddings.num_patches), dtype=np.float32), add_cls_token=True)
+            np.arange(int(self.patch_embeddings.num_patches), dtype=np.float32)     )
+        pos_embed = np.concatenate([np.zeros([1, self.position_embeddings.shape[-1]]), pos_embed], axis=0)
         self.position_embeddings.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
         # initialize patch_embeddings like nn.Linear (instead of nn.Conv2d)
@@ -40,7 +41,7 @@ class RnaMAEEmbeddings(nn.Module):
         torch.nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
 
         # timm's trunc_normal_(std=.02) is effectively normal_(std=0.02) as cutoff is too big (2.)
-        torch.nn.init.normal_(self.cls_token, std=self.cfg.initializer_range)
+        torch.nn.init.normal_(self.cls_token, std=self.config.initializer_range)
 
 
     def random_masking(self, sequence, noise=None):
@@ -78,7 +79,6 @@ class RnaMAEEmbeddings(nn.Module):
     def forward(self, rna_values, noise=None, interpolate_pos_encoding: bool = False):
         batch_size, num_channels, rna_size = rna_values.shape
         embeddings = self.patch_embeddings(rna_values)
-
         # add position embeddings w/o cls token
         embeddings = embeddings + self.position_embeddings[:, 1:, :]
 
@@ -120,9 +120,8 @@ class RnaTMAEPatchEmbeddings(nn.Module):
             raise ValueError(
                 "Make sure that the channel dimension of the rna values match with the one set in the configuration."
             )
-        #todo add padding OR interpolate_pos_encoding ? 
-            
-        x = self.projection(rna_values)
+        #todo add padding OR interpolate_pos_encoding ?    
+        x = self.projection(rna_values).transpose(1, 2) 
         return x
 
 
@@ -144,8 +143,8 @@ class RnaMAEDecoder(ViTMAEDecoder):
     def initialize_weights(self, num_patches):
         # initialize (and freeze) position embeddings by sin-cos embedding
         decoder_pos_embed = get_1d_sincos_pos_embed_from_grid(
-            self.decoder_pos_embed.shape[-1], np.arange(int(num_patches), dtype=np.float32), add_cls_token=True
-        )
+            self.decoder_pos_embed.shape[-1], np.arange(int(num_patches), dtype=np.float32))
+        decoder_pos_embed = np.concatenate([np.zeros([1, self.decoder_pos_embed.shape[-1]]), decoder_pos_embed], axis=0)
         self.decoder_pos_embed.data.copy_(torch.from_numpy(decoder_pos_embed).float().unsqueeze(0))
 
         # timm's trunc_normal_(std=.02) is effectively normal_(std=0.02) as cutoff is too big (2.)
