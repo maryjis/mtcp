@@ -8,6 +8,15 @@ from typing import Dict, List, Tuple, Union
 import wandb
 from omegaconf import DictConfig, OmegaConf
 
+def clean_state_dict(state_dict: dict) -> dict:
+    new_state_dict = {}
+    for key, value in state_dict.items():
+        if key.startswith("module."):
+            new_state_dict[key[7:]] = value
+        else:
+            new_state_dict[key] = value
+    return new_state_dict
+
 def seed_worker(worker_id):
     worker_seed = torch.initial_seed() % 2**32
     np.random.seed(worker_seed)

@@ -71,7 +71,7 @@ def get_tumor_transforms(roi_size):
     )
 
 
-tumor_transfo = Compose(
+tumor_transforms = Compose(
     [
         NormalizeIntensity(nonzero=True, channel_wise=True),
         SpatialPad(spatial_size=(64, 64, 64)),
