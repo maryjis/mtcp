@@ -2,6 +2,7 @@ from typing import Dict, List, Tuple, Union
 from omegaconf import DictConfig, OmegaConf
 import pandas as pd
 from src.unimodal.rna.dataset import RNADataset
+from src.unimodal.mri import MRIEmbeddingDataset
 from src.unimodal.rna.preprocessor import RNAPreprocessor
 from src.unimodal.rna.transforms import base_transforms, padded_transforms
 from torch.utils.data import Dataset, DataLoader
@@ -82,6 +83,28 @@ class UnimodalSurvivalTrainer(Trainer):
         print(self.model)
     
     
+<<<<<<< Updated upstream
+=======
+    
+    def initialise_datasets(self, splits):
+        datasets ={}
+        if self.cfg.base.modalities[0]=="rna":
+            self.preproc =RNAPreprocessor(splits["train"], self.cfg.base.rna_dataset_path, self.cfg.base.n_intervals, self.cfg.data.rna.is_cluster_genes , self.cfg.data.rna.clustering_threshold)
+            self.preproc.fit()
+            for split_name, dataset in splits.items():
+                splits[split_name] =self.preproc.transform_labels(dataset)
+                transforms = base_transforms(self.preproc.get_scaling())
+                datasets[split_name] =RNADataset(splits[split_name], self.cfg.base.rna_dataset_path, 
+                                                 transform = transforms, is_hazard_logits = True, column_order=self.preproc.get_column_order())
+            return datasets
+
+        elif self.cfg.base.modalities[0]=="mri":
+            return {split_name: MRIEmbeddingDataset(split, return_mask=False) for split_name, split in splits.items()}
+
+        else:
+            raise NotImplementedError("Exist only for RNA and MRI. Initialising datasets for other modalities aren't declared")
+    
+>>>>>>> Stashed changes
     def initialise_models(self):
            if self.cfg.base.modalities[0]=="rna": 
                     return initialise_rna_model(self.cfg.model)
