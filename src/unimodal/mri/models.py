@@ -6,7 +6,6 @@ import torch
 import torch.nn as nn
 from monai.networks.nets import resnet10
 
-
 class MRIEncoder(nn.Module):
     def __init__(
         self, in_channels: int, embedding_dim: int = 512, projection_head: bool = True
@@ -37,3 +36,21 @@ class MRIEncoder(nn.Module):
             return self.projection_head(x), x
         else:
             return x
+
+class MRIEmbeddingEncoder(nn.Module):
+    def __init__(
+        self, 
+        embedding_dim: int = 512, 
+        dropout: float = 0.2,
+        n_outputs: int = 20
+    ):
+        super(MRIEmbeddingEncoder, self).__init__()
+        self.encoder = nn.Sequential(
+            nn.Linear(embedding_dim, 256),
+            nn.Dropout(dropout),
+            nn.GELU(),
+            nn.Linear(256, n_outputs),
+        )
+
+    def forward(self, x: torch.tensor) -> torch.tensor:
+        return self.encoder(x)

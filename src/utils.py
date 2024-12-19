@@ -8,6 +8,10 @@ from typing import Dict, List, Tuple, Union
 import wandb
 from omegaconf import DictConfig, OmegaConf
 
+def check_dir_exists(save_path: str):
+    dir_to_save = os.path.join(*save_path.split(os.sep)[:-1])
+    if not os.path.exists(dir_to_save): os.makedirs(dir_to_save, exist_ok=True)
+
 def clean_state_dict(state_dict: dict) -> dict:
     new_state_dict = {}
     for key, value in state_dict.items():
@@ -64,11 +68,13 @@ def load_splits(data_path: Path, fold_ind : int, remove_nan_column : str) -> Dic
         raise Exception(f"Dataset file {data_path} didn't found.")
     
 def init_wandb_logging(cfg : DictConfig):
-      print(cfg)
-      cfg_dict = OmegaConf.to_container(cfg)
-      wandb.init(
+    print(cfg)
+    cfg_dict = OmegaConf.to_container(cfg)
+    wandb.init(
         project=cfg.wandb_project,
-        config=cfg_dict)
+        config=cfg_dict,
+        name=cfg.wandb_run_name
+    )
       
     #   wandb.define_metric("train/*", step_metric="epoch")
     #   wandb.define_metric("valid/*", step_metric="epoch")

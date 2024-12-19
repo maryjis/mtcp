@@ -2,46 +2,68 @@ from typing import Dict, List, Tuple, Union
 from omegaconf import DictConfig, OmegaConf
 import pandas as pd
 from src.unimodal.rna.dataset import RNADataset
-from src.unimodal.mri import MRIEmbeddingDataset
+from src.unimodal.mri.datasets import SurvivalMRIEmbeddingDataset
 from src.unimodal.rna.preprocessor import RNAPreprocessor
+from src.preprocessor import BaseUnimodalPreprocessor
 from src.unimodal.rna.transforms import base_transforms, padded_transforms
 from torch.utils.data import Dataset, DataLoader
 from pycox.models.loss import NLLLogistiHazardLoss
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR   
 from src.unimodal.rna.encoder import initialise_rna_model
+from src.unimodal.mri.models import MRIEmbeddingEncoder
 import torch
 from ..evaluation import compute_survival_metrics
 import wandb
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.unimodal.rna.mae import RnaMAEForPreTraining
-
+from src.utils import check_dir_exists
+from tqdm.auto import tqdm
 
 class Trainer(object):
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
-        
         self.cfg =cfg
         self.initialise_preprocessing(splits)
  
     def initialise_preprocessing(self, splits):
-         if self.cfg.base.modalities[0]=="rna":
+        if self.cfg.base.modalities[0]=="rna":
             self.preproc =RNAPreprocessor(splits["train"], self.cfg.base.rna_dataset_path, self.cfg.base.n_intervals, self.cfg.data.rna.is_cluster_genes , self.cfg.data.rna.clustering_threshold)
             self.preproc.fit()
-         else:
-            raise NotImplementedError("Exist only for rna. Initialising datasets for other modalities aren't declared")    
+
+        elif self.cfg.base.modalities[0]=="mri":
+            self.preproc = BaseUnimodalPreprocessor(splits["train"], self.cfg.base.n_intervals)
+            self.preproc.fit()
+
+        else:
+            raise NotImplementedError("Exist only for rna and mri. Initialising preprocessing for other modalities aren't declared")    
                 
-    def initialise_datasets(self, splits, transforms):
+    def initialise_datasets(self, splits, transforms=None):
         datasets ={}
-        for split_name, dataset in splits.items():
-            splits[split_name] = self.preproc.transform_labels(dataset)
-            datasets[split_name] = RNADataset(splits[split_name], self.cfg.base.rna_dataset_path, 
+
+        if self.cfg.base.modalities[0]=="rna":
+            for split_name, dataset in splits.items():
+                splits[split_name] = self.preproc.transform_labels(dataset)
+                datasets[split_name] = RNADataset(splits[split_name], self.cfg.base.rna_dataset_path, 
                                                  transform = transforms, is_hazard_logits = True, column_order=self.preproc.get_column_order())
+
+        elif self.cfg.base.modalities[0]=="mri":
+            splits = {split_name: self.preproc.transform_labels(split) for split_name, split in splits.items()}
+            datasets = {
+                split_name: SurvivalMRIEmbeddingDataset(
+                    split,
+                    is_hazard_logits = True
+                ) 
+                for split_name, split in splits.items()
+            }
+
+        else:
+            raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
+        
         return datasets
    
     
     def train(self, fold_ind : int):
-    
-        for epoch in range(self.cfg.base.n_epochs):
+        for epoch in tqdm(range(self.cfg.base.n_epochs)):
             self.model.train()
             
             train_metrics = self.__loop__("train",fold_ind, self.dataloaders['train'], self.cfg.base.device)
@@ -55,16 +77,18 @@ class Trainer(object):
             val_metrics.update({"epoch": epoch})    
             if self.cfg.base.log.logging:
                 wandb.log({f"val/fold_{fold_ind}/{key}" : value for key, value in val_metrics.items()})
+                
+        check_dir_exists(self.cfg.base.save_path)
         torch.save(self.model.state_dict(), self.cfg.base.save_path)
         return val_metrics
     
     def evaluate(self, fold_ind : int):
-            self.model.eval()
-            with torch.no_grad():    
-                test_metrics = self.__loop__("test",fold_ind, self.dataloaders['test'], self.cfg.base.device)
-            if self.cfg.base.log.logging:
-                wandb.log({f"test/fold_{fold_ind}/{key}" : value for key, value in test_metrics.items()})    
-            return test_metrics    
+        self.model.eval()
+        with torch.no_grad():    
+            test_metrics = self.__loop__("test",fold_ind, self.dataloaders['test'], self.cfg.base.device)
+        if self.cfg.base.log.logging:
+            wandb.log({f"test/fold_{fold_ind}/{key}" : value for key, value in test_metrics.items()})    
+        return test_metrics    
         
 
 class UnimodalSurvivalTrainer(Trainer):
@@ -72,44 +96,32 @@ class UnimodalSurvivalTrainer(Trainer):
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
         
         super().__init__(splits, cfg)
-        transforms = base_transforms(self.preproc.get_scaling())
-        self.datasets = self.initialise_datasets(splits, transforms)
+        if cfg.base.modalities[0]=="rna":
+            transforms = base_transforms(self.preproc.get_scaling())
+            self.datasets = self.initialise_datasets(splits, transforms)
+        elif cfg.base.modalities[0]=="mri":
+            self.datasets = self.initialise_datasets(splits)
+        else:
+            raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
+
         self.dataloaders = {"train" : DataLoader(self.datasets["train"],shuffle=True, batch_size =cfg.base.batch_size),
                             "val" : DataLoader(self.datasets["val"],shuffle=False, batch_size = 1),
                             "test" : DataLoader(self.datasets["test"],shuffle=False, batch_size =1)
                             }
+
         self.model =self.initialise_models().to(cfg.base.device)
         self.initialise_loss()
         print(self.model)
     
-    
-<<<<<<< Updated upstream
-=======
-    
-    def initialise_datasets(self, splits):
-        datasets ={}
-        if self.cfg.base.modalities[0]=="rna":
-            self.preproc =RNAPreprocessor(splits["train"], self.cfg.base.rna_dataset_path, self.cfg.base.n_intervals, self.cfg.data.rna.is_cluster_genes , self.cfg.data.rna.clustering_threshold)
-            self.preproc.fit()
-            for split_name, dataset in splits.items():
-                splits[split_name] =self.preproc.transform_labels(dataset)
-                transforms = base_transforms(self.preproc.get_scaling())
-                datasets[split_name] =RNADataset(splits[split_name], self.cfg.base.rna_dataset_path, 
-                                                 transform = transforms, is_hazard_logits = True, column_order=self.preproc.get_column_order())
-            return datasets
+    def initialise_models(self):
+        if self.cfg.base.modalities[0]=="rna": 
+            return initialise_rna_model(self.cfg.model)
 
         elif self.cfg.base.modalities[0]=="mri":
-            return {split_name: MRIEmbeddingDataset(split, return_mask=False) for split_name, split in splits.items()}
+            return MRIEmbeddingEncoder(self.cfg.model.input_embedding_dim, self.cfg.model.dropout, self.cfg.base.n_intervals)
 
         else:
-            raise NotImplementedError("Exist only for RNA and MRI. Initialising datasets for other modalities aren't declared")
-    
->>>>>>> Stashed changes
-    def initialise_models(self):
-           if self.cfg.base.modalities[0]=="rna": 
-                    return initialise_rna_model(self.cfg.model)
-           else:
-               raise NotImplementedError("Exist only for rna. Initialising datasets for other modalities aren't declared")   
+            raise NotImplementedError("Exist only for rna and mri. Initialising models for other modalities aren't declared")   
             
     def initialise_loss(self):    
         self.criterion = NLLLogistiHazardLoss()
