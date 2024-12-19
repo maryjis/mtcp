@@ -1,6 +1,43 @@
 import numpy as np
 from torchvision import transforms
+from sklearn.base import BaseEstimator, TransformerMixin
 
+
+class UpperQuartileNormalizer(BaseEstimator, TransformerMixin):
+    """
+    Custom transformer for upper-quartile normalization.
+    Normalizes each sample (row) by dividing its values by the 75th percentile.
+    """
+    
+    def __init__(self, quantile: int = 75):
+        self.quantile = quantile 
+        
+    def fit(self, X, y=None):
+        """
+        Fit method (not used, as no learning is needed for normalization).
+        """
+        return self  # Nothing to fit, return self
+
+    def transform(self, X):
+        """
+        Apply upper-quartile normalization to the input data.
+
+        Args:
+            X (numpy.ndarray): Input data array where rows are samples and columns are features.
+
+        Returns:
+            numpy.ndarray: Normalized data.
+        """
+        # Calculate the 75th percentile (upper quartile) for each sample (row)
+        upper_quartiles = np.percentile(X, self.quantile, axis=1, keepdims=True)
+        
+        # Avoid division by zero
+        upper_quartiles[upper_quartiles == 0] = 1
+        
+        # Normalize each value by dividing by the upper quartile
+        return X / upper_quartiles
+    
+    
 def log_transform(x):
     return np.log(x + 1)
 

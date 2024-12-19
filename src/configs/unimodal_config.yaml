@@ -2,7 +2,7 @@ defaults:
     - model: rna_mae
 
 base:
-    experiment_name: "rsna_with_clusters_rnaMAE_pretrain"
+    experiment_name: "rsna_without_clusters_quantile_mae_survival"
     n_epochs: 50
     n_intervals: 20
     random_seed: 1380
@@ -10,7 +10,7 @@ base:
     optimizer:
         name: "Adam"
         params:
-            lr: 2e-5 # 1e-3
+            lr: 1e-3 # 2e-5
             weight_decay: 1e-2
     
     scheduler: 
@@ -20,9 +20,9 @@ base:
 
 
     type: "unimodal"
-    strategy: "mae" # mae, mae_survival
+    strategy: "survival" # mae, survival
     modalities: ["rna"]
-    architecture: "rnaMAE"
+    architecture: "MAE"
     splits: 5
     data_path: "src/data/dataset.csv"
     root_path: "../"
@@ -40,10 +40,7 @@ base:
 data:
     rna:
         is_cluster_genes: False
-        clustering_threshold: 0.99
-        rna_size: 16384  # real 16304
-        hidden_size: 256
-        num_channels: 1
-        patch_size: 256
-        initializer_range: 0.02
-        mask_ratio: 0.75
+        clustering_threshold: 0.7
+        scaling_method: UpperQuartileNormalizer
+        scaling_params: {"quantile" : 50}
+        var_threshold: 0.0

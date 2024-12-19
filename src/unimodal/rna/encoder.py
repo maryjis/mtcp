@@ -45,4 +45,19 @@ class RNAEncoder(nn.Module):
     
     
 def initialise_rna_model(cfg: DictConfig):
-    return RNAEncoder(cfg.embedding_dim, cfg.dropout)
+    return EncoderSurvival(cfg.embedding_dim, cfg.dropout, cfg.output_dim)
+
+
+
+class EncoderSurvival(RNAEncoder):
+    def __init__(self, embedding_dim: int, dropout: float, n_out: int) -> None:
+        super().__init__(embedding_dim, dropout)
+        self.projection = nn.Linear(embedding_dim, n_out)
+        
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = super().forward(x)
+        x = self.projection(x).squeeze(-1)
+        return x    
+        
+    
