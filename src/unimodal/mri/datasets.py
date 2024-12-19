@@ -1,4 +1,4 @@
-from typing import Optional, Union, List, Dict, Tuple
+from typing import Optional, Union, List, Dict, Tuple, Any
 import os
 import numpy as np
 import nibabel as nib
@@ -6,6 +6,9 @@ from abc import abstractmethod
 from torch.utils.data import Dataset
 import monai
 import torch
+import pandas as pd
+
+from src.datasets import BaseDataset
 
 __all__ = ["DatasetBraTSTumorCentered"]
 
@@ -213,3 +216,43 @@ class MRIProcessor:
         img = self.transform(img)
 
         return img
+
+class MRIEmbeddingDataset(BaseDataset):
+    def __init__(self, data: pd.DataFrame, return_mask: bool = False):
+        super().__init__(data, return_mask)
+
+    def __getitem__(self, idx: int) -> Union[Tuple[torch.Tensor, bool], torch.Tensor]:
+        sample = self.data.iloc[idx]
+        if not pd.isna(sample["MRI"]):
+            mri = torch.from_numpy(
+                pd.read_csv(os.path.join(sample["MRI"], "embedding.csv")).values[0]
+            ).float()
+            mask = True
+        else:
+            mri = torch.zeros(512)
+            mask = False
+
+        if self.return_mask:
+            return mri, mask
+        else:
+            return mri
+
+class SurvivalMRIEmbeddingDataset(torch.utils.data.Dataset):
+    def __init__(
+        self, 
+        split: pd.DataFrame,
+        is_hazard_logits: bool = False
+    ) -> None:
+        self.dataset = MRIEmbeddingDataset(split, return_mask=False) #only MRI column with embedding paths is needed
+        if is_hazard_logits:
+            self.time = torch.from_numpy(split["new_time"].values)
+            self.event = torch.from_numpy(split["new_event"].values)
+        else:
+            self.time = torch.from_numpy(split["time"].values)
+            self.event = torch.from_numpy(split["event"].values)
+
+    def __getitem__(self, idx: int) -> Tuple[Any, torch.Tensor, torch.Tensor]:
+        return self.dataset[idx], self.time[idx], self.event[idx]
+
+    def __len__(self) -> int:
+        return len(self.dataset)

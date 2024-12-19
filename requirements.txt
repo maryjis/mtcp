@@ -12,3 +12,5 @@ torchvision==0.20.1
 nibabel==5.3.2
 wandb==0.19.1
 loguru==0.7.3
+pycox==0.3.0
+transformers==4.47.1
