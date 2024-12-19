@@ -14,16 +14,20 @@ from src.unimodal.rna.transforms import log_transform
 from scipy.cluster.hierarchy import linkage, dendrogram, fcluster
 from scipy.spatial.distance import squareform
 import matplotlib.pyplot as plt
+from sklearn.base import TransformerMixin
+from sklearn.feature_selection import VarianceThreshold
 
 class RNAPreprocessor(BaseUnimodalPreprocessor):
     
     def __init__(self, data_train :pd.DataFrame, dataset_dir : Path,
-                 n_intervals: int, is_cluster_genes: bool = False , threshold: float =0):
+                 n_intervals: int, scaling_method: TransformerMixin, scaling_prams: dict = {},
+                 var_threshold = 0.0, is_cluster_genes: bool = False , threshold: float =0):
         super().__init__(data_train, n_intervals)
         self.data_train = data_train
         self.train_dataset = RNADataset(data_train, dataset_dir)
         self.train_loaders = DataLoader(self.train_dataset)
-        self.pipe = Pipeline(steps=[('log', FunctionTransformer(log_transform)) , ('scaler', StandardScaler())])
+        print(scaling_prams)
+        self.pipe = Pipeline(steps=[('log', FunctionTransformer(log_transform)) , ('scaler', scaling_method(**scaling_prams)), ('var' , VarianceThreshold(var_threshold))])
         self.is_cluster_genes =is_cluster_genes
         self.column_order = None
         self.threshold =threshold
@@ -32,11 +36,18 @@ class RNAPreprocessor(BaseUnimodalPreprocessor):
     def fit(self):
         super().fit() 
         data = self.load_data(self.train_loaders)
+        data = pd.DataFrame(data = data, columns =self.train_dataset.get_column_names())
+        
+        print(data)
         self.pipe.fit(data)
+        print( "Number of features: ", self.pipe['var'].get_feature_names_out().shape)
+        
+        
         if self.is_cluster_genes:
             print("Clustering genes:")
-            data =self.pipe.transform(data)
-            dataset =pd.DataFrame(data= data, columns =self.train_dataset.get_column_names())
+            data = self.pipe.transform(data)
+            dataset = pd.DataFrame(data = data, columns = self.pipe['var'].get_feature_names_out())
+            
             correlations = dataset.corr()
             dissimilarity = 1 - abs(correlations)
             Z = linkage(squareform(dissimilarity), 'complete')
@@ -63,7 +74,10 @@ class RNAPreprocessor(BaseUnimodalPreprocessor):
         return self.pipe['scaler']
     
     def get_column_order(self):
-        return self.column_order
+        if self.column_order is None:
+            return self.pipe['var'].get_feature_names_out()
+        else:
+            return self.column_order
         
     @staticmethod
     def load_data(dataloader):  
