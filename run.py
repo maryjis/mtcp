@@ -15,6 +15,8 @@ def run(cfg : DictConfig) -> None:
     for fold_ind in range(cfg.base.splits):
         
         cfg.base.save_path = f"outputs/models/{cfg.base.experiment_name}_split_{fold_ind}.pth"
+        if cfg.model.is_load_pretrained:
+            cfg.model.pretrained_model_path = f"outputs/models/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth"
         splits = load_splits(Path(cfg.base.data_path), fold_ind, cfg.base.remove_nan_column)
         
         if cfg.base.type == 'unimodal':

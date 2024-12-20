@@ -39,7 +39,7 @@ base:
 
 data:
     rna:
-        is_cluster_genes: False
+        is_cluster_genes: True
         clustering_threshold: 0.7
         scaling_method: UpperQuartileNormalizer
         scaling_params: {"quantile" : 50}
