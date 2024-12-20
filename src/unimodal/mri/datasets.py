@@ -186,7 +186,7 @@ class MRIProcessor:
     def _load_nifti_modalities(self, base_path: str, patient: str) -> np.ndarray:
         if len(self.modalities) == 1:
             img = nib.load(
-                os.path.join(base_path, patient + "-" + self.modality[0] + ".nii.gz")
+                os.path.join(base_path, patient + "-" + self.modalities[0] + ".nii.gz")
             ).get_fdata()
             img = np.expand_dims(img, 0)
 
