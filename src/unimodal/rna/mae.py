@@ -238,15 +238,17 @@ class RnaMAEForPreTraining(ViTMAEForPreTraining):
         return pixel_values
 
 
-class RnaSurvivalModel(RnaMAEModel):
+class RnaSurvivalModel(nn.Module):
     def __init__(self, config):
-        super().__init__(config)
+        super().__init__()
         if config.is_load_pretrained:
-            super().from_pretrained(config.pretrained_model_path)
+            self.vit = RnaMAEModel.from_pretrained(config.pretrained_model_path, config = config)
+        else:
+            self.vit = RnaMAEModel(config)
         self.projection = nn.Linear(config.hidden_size, config.output_dim)
         
     def forward(self, rna_values):
-        x = super().forward(rna_values)
+        x = self.vit(rna_values)
 
         x = self.projection(x.last_hidden_state[:,0,:])
         return x.squeeze(-1)
