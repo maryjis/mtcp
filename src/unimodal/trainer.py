@@ -52,7 +52,8 @@ class Trainer(object):
             datasets = {
                 split_name: SurvivalMRIEmbeddingDataset(
                     split,
-                    is_hazard_logits = True
+                    is_hazard_logits = True,
+                    embedding_name=self.cfg.dataset.embedding_name
                 ) 
                 for split_name, split in splits.items()
             }
