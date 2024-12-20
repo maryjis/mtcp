@@ -21,16 +21,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_path", type=str, default="/data/BraTS_2023/MRI")
     parser.add_argument("--path_to_dataset_file", type=str, default="src/data/dataset.csv") #remember, counted from the place where the script was launched
-    parser.add_argument("--path_to_save", type=str, default="src/data/models") #will be created if not exists
+    parser.add_argument("--path_to_save", type=str, default="outputs/models") #will be created if not exists
     parser.add_argument("--batch_size", type=int, default=48)
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--lr", type=float, default=1e-4)
     # parser.add_argument("--modalities", nargs="+", default=["t1ce", "flair"])
-    parser.add_argument("--modalities", nargs="+", default=["t1c", "t2f"])
+    parser.add_argument("--modalities", nargs="+", default=["t1c"]) #["t1c"]
     parser.add_argument("--weight_decay", type=float, default=1e-6)
     parser.add_argument("--entity", type=str, default="dmitriykornilov_team") #define will be used wandb logging or not
-    parser.add_argument("--project", type=str, default="DRIM")
-    parser.add_argument("--run_name", type=str, default="Pretraining_MRI")
+    parser.add_argument("--project", type=str, default="cancer_mtcp")
+    parser.add_argument("--run_name", type=str, default="mri_pretraining")
     parser.add_argument("--temperature", type=float, default=0.07)
     parser.add_argument("--tumor_centered", type=bool, default=True)
     # parser.add_argument("--n_cpus", type=int, default=40)
@@ -40,7 +40,8 @@ if __name__ == "__main__":
     parser.add_argument("--k", type=int, default=3)
     parser.add_argument("--seed", type=int, default=1999)
     parser.add_argument("--train_percentage", type=float, default=0.75) #test patients are not included in train/val
-
+    parser.add_argument("--use_monai_weights", type=bool, default=False)
+    parser.add_argument("--model_name_postfix", type=str, default="")
     args = parser.parse_args()
 
     # Set seed
@@ -119,7 +120,11 @@ if __name__ == "__main__":
         worker_init_fn=seed_worker,
     )
 
-    model = MRIEncoder(projection_head=True, in_channels=len(args.modalities))
+    model = MRIEncoder(
+        projection_head=True, 
+        in_channels=len(args.modalities),
+        use_monai_weights=args.use_monai_weights,
+    )
 
     logger.info(
         "Number of parameters : {}",
@@ -146,7 +151,7 @@ if __name__ == "__main__":
     )
 
     path_to_save = (
-        f"{args.path_to_save}/{'-'.join(args.modalities)}_tumor{str(args.tumor_centered)}.pth"
+        f"{args.path_to_save}/{'-'.join(args.modalities)}_tumor{str(args.tumor_centered)}{str(args.model_name_postfix)}.pth"
     )
     # if a wandb entity is provided, log the training on wandb
     wandb_logging = True if args.entity is not None else False
