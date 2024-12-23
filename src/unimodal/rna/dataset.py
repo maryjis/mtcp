@@ -8,7 +8,9 @@ import numpy as np
 class RNADataset(BaseDataset):
     """RNA dataset."""
 
-    def __init__(self, data_split, dataset_dir, transform = None, is_hazard_logits = False, column_order =None):
+    def __init__(self, data_split, dataset_dir, transform = None, 
+                 is_hazard_logits = False,
+                 column_order = None):
         """
         Arguments:
             csv_file (string): Path to the csv file with annotations.
@@ -18,31 +20,48 @@ class RNADataset(BaseDataset):
         """
         super().__init__(data_split, dataset_dir, transform, is_hazard_logits)
         self.rna_dataset = pd.read_csv(dataset_dir)
-        self.rna_dataset = self.rna_dataset.loc[self.rna_dataset['file_id'].isin(data_split['RNA'].to_list())].reset_index(drop=True)
-
+        
         if isinstance(column_order, pd.Index) or isinstance(column_order,np.ndarray):
             print(column_order)  
-            self.column_order = column_order
+            self.column_order = column_order + ['file_id']
             self.rna_dataset = self.rna_dataset[self.column_order]
         else:
             self.column_order = self.rna_dataset.columns[:-1]
-            self.rna_dataset =self.rna_dataset.iloc[:, :-1]
 
     def len(self):
-        return self.rna_dataset.shape[0]
+        return self.data.shape[0]
     
     def get_column_names(self):
         return self.column_order
     
     def __getitem__(self, idx):
-       
-        sample =self.rna_dataset.iloc[idx, :].values.reshape(1, -1).astype(np.float32)
+        sample = self.data.iloc[idx]
+        mask = False
+        if not pd.isna(sample["RNA"]):
+            sample =self.rna_dataset.loc[self.rna_dataset==sample["RNA"].values[0], :-1].values.reshape(1, -1).astype(np.float32)
+            mask = True
+            if self.transform:
+                sample = self.transform(sample)
+                
+            sample = torch.from_numpy(sample)
+            
+            return sample, mask
+        else:
+            return torch.zeros((1, self.rna_dataset.shape[1]-1)), mask
         
-        if self.transform:
-            sample = self.transform(sample)
-              
-        sample = torch.from_numpy(sample)
-        if self.is_hazard_logits:
-            return sample.float(), self.data.iloc[idx]['new_time'], self.data.iloc[idx]['new_event']
-        else: 
-            return sample.float(), self.data.iloc[idx]['time'], self.data.iloc[idx]['event']
+class RNASurvivalDataset(RNADataset):
+        def __init__(self, data_split, dataset_dir, transform = None, 
+            is_hazard_logits = False, column_order = None):
+            super().__init__(data_split, dataset_dir, transform = is_hazard_logits, column_order)
+            
+            # TODO подумать как тут лучше сделать выгрузку для мультимодальных данных 
+            # TODO добавить return_mask
+            # if not return_nan:
+            #     self.data  = self.data.loc[self.data['RNA'].isin(self.rna_dataset['file_id'].to_list())]
+
+        def __getitem__(self, idx):
+            sample, _ = super().__getitem__(idx)
+            if self.is_hazard_logits:
+                return sample.float(), self.data.iloc[idx]['new_time'], self.data.iloc[idx]['new_event']
+            else: 
+                return sample.float(), self.data.iloc[idx]['time'], self.data.iloc[idx]['event']

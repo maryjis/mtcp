@@ -52,17 +52,17 @@ class Trainer(object):
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising preprocessing for other modalities aren't declared")    
                 
-    def initialise_datasets(self, splits, modality, transforms=None):
+    def initialise_datasets(self, splits, modality, preproc, transforms=None):
         datasets ={}
 
         if modality == "rna":
             for split_name, dataset in splits.items():
-                splits[split_name] = self.preproc.transform_labels(dataset)
+                splits[split_name] = preproc.transform_labels(dataset)
                 datasets[split_name] = RNADataset(splits[split_name], self.cfg.base.rna_dataset_path, 
                                                  transform = transforms, is_hazard_logits = True, column_order=self.preproc.get_column_order())
 
         elif modality == "mri":
-            splits = {split_name: self.preproc.transform_labels(split) for split_name, split in splits.items()}
+            splits = {split_name: preproc.transform_labels(split) for split_name, split in splits.items()}
             datasets = {
                 split_name: SurvivalMRIEmbeddingDataset(
                     split,
@@ -119,7 +119,7 @@ class UnimodalSurvivalTrainer(Trainer):
             elif self.cfg.base.architecture=="CNN":    
                 transforms = base_transforms(self.preproc.get_scaling())
                 
-        self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], transforms)
+        self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
 
         self.dataloaders = {"train" : DataLoader(self.datasets["train"],shuffle=True, batch_size =cfg.base.batch_size),
                             "val" : DataLoader(self.datasets["val"],shuffle=False, batch_size = 1),
@@ -188,7 +188,7 @@ class UnimodalMAETrainer(Trainer):
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
         super().__init__(splits, cfg)
         transforms = padded_transforms(self.preproc.get_scaling(), cfg.model.rna_size)
-        self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], transforms)
+        self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
         self.dataloaders = {"train" : DataLoader(self.datasets["train"],shuffle=True, batch_size =cfg.base.batch_size),
                             "val" : DataLoader(self.datasets["val"],shuffle=False, batch_size = 1),
                             "test" : DataLoader(self.datasets["test"],shuffle=False, batch_size =1)
