@@ -1,0 +1,34 @@
+experiment_name: "rsna_without_clusters_quantile_mae_survival"
+n_epochs: 50
+n_intervals: 20
+random_seed: 1380
+
+optimizer:
+    name: "Adam"
+    params:
+        lr: 1e-3 # 2e-5
+        weight_decay: 1e-2
+
+scheduler: 
+    name: "CosineAnnealingLR"
+    params:
+        eta_min: 5e-6
+
+
+type: "unimodal"
+strategy: "survival" # mae, survival
+modalities: ["rna"]
+architecture: "MAE"
+splits: 5
+data_path: "src/data/dataset.csv"
+root_path: "../"
+save_path : "outputs/models/"
+rna_dataset_path: "src/data/rna_dataset.csv"
+device: "cuda:0"
+remove_nan_column: 'RNA'
+batch_size: 24
+
+log:
+    logging: True
+    wandb_project: "cancer_mtcp"
+    wandb_name: "test_rna_encoder"
