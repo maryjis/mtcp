@@ -1,8 +1,8 @@
 defaults: 
     - model: mri_base
-
+    - dataset: mri_base
 base:
-    experiment_name: "mri_base"
+    experiment_name: "mri_base_from_monai_t1c"
     n_epochs: 50
     n_intervals: 20
     random_seed: 1380

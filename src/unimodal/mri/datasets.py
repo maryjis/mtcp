@@ -218,14 +218,20 @@ class MRIProcessor:
         return img
 
 class MRIEmbeddingDataset(BaseDataset):
-    def __init__(self, data: pd.DataFrame, return_mask: bool = False):
+    def __init__(
+        self, 
+        data: pd.DataFrame, 
+        return_mask: bool = False,
+        embedding_name: str = "embedding",
+    ):
         super().__init__(data, return_mask)
+        self.embedding_name = embedding_name
 
     def __getitem__(self, idx: int) -> Union[Tuple[torch.Tensor, bool], torch.Tensor]:
         sample = self.data.iloc[idx]
         if not pd.isna(sample["MRI"]):
             mri = torch.from_numpy(
-                pd.read_csv(os.path.join(sample["MRI"], "embedding.csv")).values[0]
+                pd.read_csv(os.path.join(sample["MRI"], f"{self.embedding_name}.csv")).values[0]
             ).float()
             mask = True
         else:
@@ -241,9 +247,10 @@ class SurvivalMRIEmbeddingDataset(torch.utils.data.Dataset):
     def __init__(
         self, 
         split: pd.DataFrame,
-        is_hazard_logits: bool = False
+        is_hazard_logits: bool = False,
+        embedding_name: str = "embedding",
     ) -> None:
-        self.dataset = MRIEmbeddingDataset(split, return_mask=False) #only MRI column with embedding paths is needed
+        self.dataset = MRIEmbeddingDataset(split, return_mask=False, embedding_name=embedding_name) #only MRI column with embedding paths is needed
         if is_hazard_logits:
             self.time = torch.from_numpy(split["new_time"].values)
             self.event = torch.from_numpy(split["new_event"].values)
