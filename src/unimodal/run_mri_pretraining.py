@@ -26,7 +26,7 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--lr", type=float, default=1e-4)
     # parser.add_argument("--modalities", nargs="+", default=["t1ce", "flair"])
-    parser.add_argument("--modalities", nargs="+", default=["t1c"]) #["t1c", "t2f"]
+    parser.add_argument("--modalities", nargs="+", default=["t1c", "t2f"]) #["t1c", "t2f"]
     parser.add_argument("--weight_decay", type=float, default=1e-6)
     parser.add_argument("--entity", type=str, default="dmitriykornilov_team") #define will be used wandb logging or not
     parser.add_argument("--project", type=str, default="cancer_mtcp")
