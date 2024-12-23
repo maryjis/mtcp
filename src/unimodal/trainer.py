@@ -75,8 +75,8 @@ class Trainer(object):
                 
                 
     def train(self, fold_ind : int):
-        # best_loss = np.infty
-        # best_epoch = -1
+        best_val_loss = np.infty
+        best_epoch = -1
 
         with profile(
             activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
@@ -124,7 +124,6 @@ class Trainer(object):
         check_dir_exists(self.cfg.base.save_path)
         torch.save(self.model.state_dict(), self.cfg.base.save_path)
 
-        # print(f"Best loss: {best_loss} at epoch {best_epoch}")
         return val_metrics
     
     def evaluate(self, fold_ind : int):
