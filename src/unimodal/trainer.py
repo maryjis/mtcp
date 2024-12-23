@@ -32,7 +32,7 @@ from sklearn.preprocessing import QuantileTransformer, StandardScaler, MinMaxSca
 from src.unimodal.rna.transforms import UpperQuartileNormalizer
 from src.unimodal.mri.transforms import get_basic_tumor_transforms
 from src.unimodal.dna.transforms import padded_transforms_simple
-
+from src.early_stopper import EarlyStopper
 from torch.profiler import profile, record_function, ProfilerActivity, schedule
 from src.utils import trace_handler
 from functools import partial
@@ -75,8 +75,11 @@ class Trainer(object):
                 
                 
     def train(self, fold_ind : int):
+        #early stopping
         best_val_loss = np.infty
         best_epoch = -1
+        if self.cfg.base.get("early_stopping", None) is not None:
+            self.early_stopper = EarlyStopper(patience=self.cfg.base.early_stopping.patience, eps=self.cfg.base.early_stopping.eps)
 
         with profile(
             activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
@@ -117,6 +120,10 @@ class Trainer(object):
                     wandb.log({f"val/fold_{fold_ind}/{key}" : value for key, value in val_metrics.items()})
 
                 prof.step()
+
+                if self.cfg.base.get("early_stopping", None) is not None:
+                    if self.early_stopper.early_stop(val_metrics[self.loss_key]):
+                        break
 
         # if val_metrics[self.loss_key] < best_loss:
             # best_loss = val_metrics[self.loss_key]
