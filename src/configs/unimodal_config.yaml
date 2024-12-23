@@ -1,9 +1,6 @@
 defaults: 
-<<<<<<< HEAD
-    - model: mri_base
-    - base: unimodal_mri
-=======
     - model: rna_mae
+    - base: unimodal_config_rna_mae_example
 
 base:
     experiment_name: "rsna_without_clusters_quantile_mae_survival"
@@ -48,4 +45,4 @@ data:
         scaling_method: UpperQuartileNormalizer
         scaling_params: {"quantile" : 50}
         var_threshold: 0.0
->>>>>>> rna_mae
+
