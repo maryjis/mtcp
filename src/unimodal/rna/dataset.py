@@ -19,7 +19,9 @@ class RNADataset(BaseDataset):
         super().__init__(data_split, dataset_dir, transform, is_hazard_logits)
         self.rna_dataset = pd.read_csv(dataset_dir)
         self.rna_dataset = self.rna_dataset.loc[self.rna_dataset['file_id'].isin(data_split['RNA'].to_list())].reset_index(drop=True)
-        if isinstance(column_order, pd.Index):
+
+        if isinstance(column_order, pd.Index) or isinstance(column_order,np.ndarray):
+            print(column_order)  
             self.column_order = column_order
             self.rna_dataset = self.rna_dataset[self.column_order]
         else:
@@ -38,9 +40,8 @@ class RNADataset(BaseDataset):
         
         if self.transform:
             sample = self.transform(sample)
-            
+              
         sample = torch.from_numpy(sample)
-        
         if self.is_hazard_logits:
             return sample.float(), self.data.iloc[idx]['new_time'], self.data.iloc[idx]['new_event']
         else: 

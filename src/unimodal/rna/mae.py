@@ -79,8 +79,10 @@ class RnaMAEEmbeddings(nn.Module):
     def forward(self, rna_values, noise=None, interpolate_pos_encoding: bool = False):
         batch_size, num_channels, rna_size = rna_values.shape
         embeddings = self.patch_embeddings(rna_values)
+        
         # add position embeddings w/o cls token
         embeddings = embeddings + self.position_embeddings[:, 1:, :]
+     
 
         # masking: length -> length * config.mask_ratio
         embeddings, mask, ids_restore = self.random_masking(embeddings, noise)
@@ -234,4 +236,24 @@ class RnaMAEForPreTraining(ViTMAEForPreTraining):
             num_patches * patch_size
         )
         return pixel_values
+
+
+class RnaSurvivalModel(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        if config.is_load_pretrained:
+            self.vit = RnaMAEModel.from_pretrained(config.pretrained_model_path, config = config)
+        else:
+            self.vit = RnaMAEModel(config)
+        self.projection = nn.Linear(config.hidden_size, config.output_dim)
+        
+    def forward(self, rna_values):
+        x = self.vit(rna_values)
+
+        x = self.projection(x.last_hidden_state[:,0,:])
+        return x.squeeze(-1)
     
+    
+    
+def initialise_rna_mae_model(cfg):
+    return RnaSurvivalModel(cfg)
