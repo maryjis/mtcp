@@ -215,7 +215,7 @@ class UnimodalMAETrainer(Trainer):
             for split_name, dataset in splits.items():
                 splits[split_name] = preproc.transform_labels(dataset)
                 datasets[split_name] = RNADataset(splits[split_name], self.cfg.base.rna_dataset_path, 
-                                                 transform = transforms, is_hazard_logits = True, column_order=self.preproc.get_column_order())
+                                                 transform = transforms, is_hazard_logits = True, column_order=preproc.get_column_order())
 
         elif modality == "mri":
             splits = {split_name: preproc.transform_labels(split) for split_name, split in splits.items()}

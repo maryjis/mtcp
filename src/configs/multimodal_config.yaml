@@ -1,0 +1,11 @@
+defaults: 
+    - model: multimodal_mae
+    - base: multimodal_config_mae
+
+data:
+    rna:
+        is_cluster_genes: False
+        clustering_threshold: 0.7
+        scaling_method: UpperQuartileNormalizer
+        scaling_params: {"quantile" : 50}
+        var_threshold: 0.0
