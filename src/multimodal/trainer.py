@@ -36,7 +36,7 @@ class MultiModalTrainer(Trainer):
                                                  transform = transforms, is_hazard_logits = True)
         return concat_dataset
 
-class MultiModalMAETrainer(Trainer):
+class MultiModalMAETrainer(MultiModalTrainer):
     
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
         super().__init__(splits, cfg)

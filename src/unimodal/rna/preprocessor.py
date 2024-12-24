@@ -56,6 +56,7 @@ class RNAPreprocessor(BaseUnimodalPreprocessor):
 
             
             labels_order = np.argsort(labels)
+        
             self.column_order = self.train_dataset.get_column_names()[labels_order]
             print("--------------------------------------------------------")
             print("New columns: ", self.column_order)

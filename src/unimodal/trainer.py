@@ -1,7 +1,7 @@
 from typing import Dict, List, Tuple, Union
 from omegaconf import DictConfig, OmegaConf
 import pandas as pd
-from src.unimodal.rna.dataset import RNADataset
+from src.unimodal.rna.dataset import RNADataset, RNASurvivalDataset
 from src.unimodal.mri.datasets import SurvivalMRIEmbeddingDataset
 from src.unimodal.rna.preprocessor import RNAPreprocessor
 from src.preprocessor import BaseUnimodalPreprocessor
@@ -52,29 +52,6 @@ class Trainer(object):
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising preprocessing for other modalities aren't declared")    
                 
-    def initialise_datasets(self, splits, modality, preproc, transforms=None):
-        datasets ={}
-
-        if modality == "rna":
-            for split_name, dataset in splits.items():
-                splits[split_name] = preproc.transform_labels(dataset)
-                datasets[split_name] = RNADataset(splits[split_name], self.cfg.base.rna_dataset_path, 
-                                                 transform = transforms, is_hazard_logits = True, column_order=self.preproc.get_column_order())
-
-        elif modality == "mri":
-            splits = {split_name: preproc.transform_labels(split) for split_name, split in splits.items()}
-            datasets = {
-                split_name: SurvivalMRIEmbeddingDataset(
-                    split,
-                    is_hazard_logits = True
-                ) 
-                for split_name, split in splits.items()
-            }
-
-        else:
-            raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
-        
-        return datasets
    
     
     def train(self, fold_ind : int):
@@ -129,6 +106,30 @@ class UnimodalSurvivalTrainer(Trainer):
         self.model =self.initialise_models().to(cfg.base.device)
         self.initialise_loss()
         print(self.model)
+        
+    def initialise_datasets(self, splits, modality, preproc, transforms=None):
+        datasets ={}
+        # Todo - подумать нужно ли тут разббить для каждого trainerа - свой initialise_dataset
+        if modality == "rna":
+            for split_name, dataset in splits.items():
+                splits[split_name] = preproc.transform_labels(dataset)
+                datasets[split_name] = RNASurvivalDataset(splits[split_name], self.cfg.base.rna_dataset_path, 
+                                                 transform = transforms, is_hazard_logits = True, column_order=self.preproc.get_column_order())
+
+        elif modality == "mri":
+            splits = {split_name: preproc.transform_labels(split) for split_name, split in splits.items()}
+            datasets = {
+                split_name: SurvivalMRIEmbeddingDataset(
+                    split,
+                    is_hazard_logits = True
+                ) 
+                for split_name, split in splits.items()
+            }
+
+        else:
+            raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
+        
+        return datasets
     
     def initialise_models(self):
 
@@ -158,7 +159,7 @@ class UnimodalSurvivalTrainer(Trainer):
         for batch in dataloader:
   
                   
-            data, time, event = batch  
+            data, mask, time, event = batch  
             outputs =self.model(data.to(device))
     
             loss = self.criterion(outputs, time.to(device), event.to(device))
@@ -207,11 +208,35 @@ class UnimodalMAETrainer(Trainer):
         else:
             raise NotImplementedError("Exist only for rna. Initialising datasets for other modalities aren't declared") 
         
+    def initialise_datasets(self, splits, modality, preproc, transforms=None):
+        datasets ={}
+        # Todo - подумать нужно ли тут разббить для каждого trainerа - свой initialise_dataset
+        if modality == "rna":
+            for split_name, dataset in splits.items():
+                splits[split_name] = preproc.transform_labels(dataset)
+                datasets[split_name] = RNADataset(splits[split_name], self.cfg.base.rna_dataset_path, 
+                                                 transform = transforms, is_hazard_logits = True, column_order=self.preproc.get_column_order())
+
+        elif modality == "mri":
+            splits = {split_name: preproc.transform_labels(split) for split_name, split in splits.items()}
+            datasets = {
+                split_name: SurvivalMRIEmbeddingDataset(
+                    split,
+                    is_hazard_logits = True
+                ) 
+                for split_name, split in splits.items()
+            }
+
+        else:
+            raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
+        
+        return datasets
+        
     def __loop__(self,split, fold_ind, dataloader, device):
         total_loss =0
         
         for batch in dataloader:
-            data, time, event = batch  
+            data, mask = batch  
             outputs =self.model(data.to(device))
             
             if split=="train":
