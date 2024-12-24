@@ -133,6 +133,80 @@ class RnaMAEModel(ViTMAEModel):
         self.embeddings = RnaMAEEmbeddings(config)
         self.post_init()
         
+    def patchify(self, rna_values, interpolate_pos_encoding: bool = False):
+        """
+        Args:
+            rna_values (`torch.FloatTensor` of shape `(batch_size, num_channels, rna_size)`):
+                RNA values.
+            interpolate_pos_encoding (`bool`, *optional*, default `False`):
+                interpolation flag passed during the forward pass.
+
+        Returns:
+            `torch.FloatTensor` of shape `(batch_size, num_patches, patch_size * num_channels)`:
+                Patchified pixel values.
+        """
+        patch_size, num_channels = self.config.patch_size, self.config.num_channels
+        # sanity checks
+        if not interpolate_pos_encoding and (
+            rna_values.shape[2] % patch_size != 0
+        ):
+            raise ValueError("Make sure the RNA values is divisible by the patch size")
+        if rna_values.shape[1] != num_channels:
+            raise ValueError(
+                "Make sure the number of channels of the pixel values is equal to the one set in the configuration"
+            )
+
+        # patchify
+        batch_size = rna_values.shape[0]
+        num_patches = rna_values.shape[2] // patch_size
+
+        patchified_rna_values = rna_values.reshape(batch_size, num_channels, num_patches, patch_size)
+        patchified_rna_values = patchified_rna_values.permute(0, 2, 3, 1)
+        patchified_rna_values = patchified_rna_values.reshape(
+            batch_size, num_patches, patch_size * num_channels
+        )
+        return patchified_rna_values
+
+    def unpatchify(self, patchified_rna_values, original_rna_size: int):
+        """
+        Args:
+            patchified_rna_values (`torch.FloatTensor` of shape `(batch_size, num_patches, patch_size * num_channels)`:
+                Patchified rna values.
+            original_image_size (`int`, *optional*):
+                Original rna size.
+
+        Returns:
+            `torch.FloatTensor` of shape `(batch_size, num_channels, original_rna_size)`:
+                Pixel values.
+        """
+        patch_size, num_channels = self.config.patch_size, self.config.num_channels
+        original_rna_size = original_rna_size if original_rna_size is not None else self.config.rna_size
+        
+        num_patches = original_rna_size // patch_size
+   
+        # sanity check
+        if num_patches != patchified_rna_values.shape[1]:
+            raise ValueError(
+                f"The number of patches in the patchified rna values {patchified_rna_values.shape[1]}, does not match the number of patches on original rna {num_patches}"
+            )
+
+        # unpatchify
+        batch_size = patchified_rna_values.shape[0]
+        patchified_pixel_values = patchified_rna_values.reshape(
+            batch_size,
+            num_patches,
+            patch_size,
+            num_channels,
+        )
+        patchified_rna_values = patchified_rna_values.permute(0, 3, 1, 2)
+        pixel_values = patchified_pixel_values.reshape(
+            batch_size,
+            num_channels,
+            num_patches * patch_size
+        )
+        return pixel_values
+    
+        
 
 class RnaMAEDecoder(ViTMAEDecoder):
     def __init__(self, config, num_patches):
@@ -176,6 +250,7 @@ class RnaMAEForPreTraining(ViTMAEForPreTraining):
             `torch.FloatTensor` of shape `(batch_size, num_patches, patch_size * num_channels)`:
                 Patchified pixel values.
         """
+        # TODO return self.vit.patchify(self, rna_values, interpolate_pos_encoding: bool = False)
         patch_size, num_channels = self.config.patch_size, self.config.num_channels
         # sanity checks
         if not interpolate_pos_encoding and (
