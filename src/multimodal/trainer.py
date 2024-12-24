@@ -1,4 +1,3 @@
-from src.unimodal import Trainer
 from collections import defaultdict
 import pandas as pd
 from omegaconf import DictConfig, OmegaConf
@@ -10,6 +9,8 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.unimodal.rna.transforms import base_transforms, padded_transforms
+from src.unimodal.trainer import Trainer, UnimodalSurvivalTrainer, UnimodalMAETrainer
+from src.multimodal.models import MultiMaeForPretraining
 
 class MultiModalTrainer(Trainer):
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
@@ -22,25 +23,12 @@ class MultiModalTrainer(Trainer):
             preproc_dict[modality] =super().initialise_preprocessing(splits, modality)       
         return preproc_dict
 
-    def initialise_datasets(self, splits, modalities, preprocs, transforms=None):
-        datasets = defaultdict(list)
-        for modality in modalities:
-            transform = transforms[modality] if transforms is not None else None
-            mdata = super().initialise_datasets(splits,modality,preprocs[modality],transform)
-            for key, value in mdata.items():
-                datasets[key].append((modality,value))
-        # Concat datasets
-        concat_dataset = {} 
-        for split, modalities_data in datasets.items():
-            concat_dataset[split] = MultimodalDataset(splits[split], self.cfg.base.dataset_path, 
-                                                 transform = transforms, is_hazard_logits = True)
-        return concat_dataset
 
-class MultiModalMAETrainer(MultiModalTrainer):
+class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
     
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
         super().__init__(splits, cfg)
-        transforms = {"rna": padded_transforms(self.preproc.get_scaling(), cfg.model.rna_size), "mri" : None, "wsi" : None }
+        transforms = {"rna": padded_transforms(self.preproc["rna"].get_scaling(), cfg.model.rna_model.rna_size), "mri" : None, "wsi" : None }
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities, self.preproc, transforms)
         self.dataloaders = {"train" : DataLoader(self.datasets["train"],shuffle=True, batch_size =cfg.base.batch_size),
                             "val" : DataLoader(self.datasets["val"],shuffle=False, batch_size = 1),
@@ -56,7 +44,7 @@ class MultiModalMAETrainer(MultiModalTrainer):
         
     def initialise_models(self):
         if self.cfg.base.modalities[0]=="rna":
-                return RnaMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+                return MultiMaeForPretraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
         else:
             raise NotImplementedError("Exist only for rna. Initialising datasets for other modalities aren't declared") 
         
@@ -80,3 +68,17 @@ class MultiModalMAETrainer(MultiModalTrainer):
             self.scheduler.step()
             
         return  metrics
+    
+    def initialise_datasets(self, splits, modalities, preprocs, transforms=None):
+        datasets = defaultdict(list)
+        for modality in modalities:
+            transform = transforms[modality] if transforms is not None else None
+            mdata = super().initialise_datasets(splits,modality,preprocs[modality],transform)
+            for key, value in mdata.items():
+                datasets[key].append((modality,value))
+        # Concat datasets
+        concat_dataset = {} 
+        for split, modalities_data in datasets.items():
+            concat_dataset[split] = MultimodalDataset(splits[split], self.cfg.base.data_path, datasets,
+                                                 transform = transforms, is_hazard_logits = True)
+        return concat_dataset

@@ -4,8 +4,9 @@ from src.utils import  *
 from src.unimodal.trainer import UnimodalSurvivalTrainer,  UnimodalMAETrainer
 from pathlib import Path
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
+from src.multimodal.trainer import MultiModalMAETrainer
 
-@hydra.main(version_base=None, config_path="src/configs", config_name="unimodal_config")
+@hydra.main(version_base=None, config_path="src/configs", config_name="multimodal_config")
 def run(cfg : DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))
     seed_everything(cfg.base.random_seed)
@@ -13,20 +14,27 @@ def run(cfg : DictConfig) -> None:
         init_wandb_logging(cfg.base.log)
     all_valid_metrics, all_test_metrics =[], []
     for fold_ind in range(cfg.base.splits):
-        
-        cfg.base.save_path = f"outputs/models/{cfg.base.experiment_name}_split_{fold_ind}.pth"
-        if cfg.model.is_load_pretrained:
-            cfg.model.pretrained_model_path = f"outputs/models/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth"
-        splits = load_splits(Path(cfg.base.data_path), fold_ind, cfg.base.remove_nan_column)
 
+        splits = load_splits(Path(cfg.base.data_path), fold_ind, cfg.base.remove_nan_column)
+        
         if cfg.base.type == 'unimodal':
+            
+            cfg.base.save_path = f"outputs/models/{cfg.base.experiment_name}_split_{fold_ind}.pth"
+            if cfg.model.is_load_pretrained:
+                cfg.model.pretrained_model_path = f"outputs/models/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth"
+        
             # унимодальные (тут мы должны выбрать модальность) или мультимодальный + способ дообучения
             if cfg.base.strategy == "survival":
                 trainer = UnimodalSurvivalTrainer(splits, cfg)
             elif cfg.base.strategy == "mae": 
                 trainer = UnimodalMAETrainer(splits, cfg)
             else:
-                raise NotImplementedError(f"Such strategy - {cfg.base.strategy} isn't implemented.")   
+                raise NotImplementedError(f"Such strategy - {cfg.base.strategy} isn't implemented in unimodal approach.")
+        elif cfg.base.type == 'multimodal':
+              if cfg.base.strategy == "mae": 
+                trainer = MultiModalMAETrainer(splits, cfg)
+              else:
+                raise NotImplementedError(f"Such strategy - {cfg.base.strategy} isn't implemented in multimodal approach.")
         else:
             raise NotImplementedError("Now only unimodal training is implemented.")
 
