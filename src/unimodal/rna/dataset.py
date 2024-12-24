@@ -20,12 +20,15 @@ class RNADataset(BaseDataset):
         """
         super().__init__(data_split, dataset_dir, transform, is_hazard_logits)
         self.rna_dataset = pd.read_csv(dataset_dir)
+        self.column_order = column_order
         
-        if isinstance(column_order, pd.Index) or isinstance(column_order,np.ndarray):
-            print(column_order)  
-            self.column_order = column_order + ['file_id']
+        if isinstance(column_order, pd.Index): 
+            self.column_order.append(pd.Index(["file_id"]))
             self.rna_dataset = self.rna_dataset[self.column_order]
-        else:
+        elif isinstance(column_order,np.ndarray):
+            self.column_order = np.append(self.column_order, "file_id")
+            self.rna_dataset = self.rna_dataset[self.column_order]
+        else:   
             self.column_order = self.rna_dataset.columns[:-1]
 
     def len(self):
@@ -38,7 +41,7 @@ class RNADataset(BaseDataset):
         sample = self.data.iloc[idx]
         mask = False
         if not pd.isna(sample["RNA"]):
-            sample =self.rna_dataset.loc[self.rna_dataset==sample["RNA"].values[0], :-1].values.reshape(1, -1).astype(np.float32)
+            sample =self.rna_dataset.loc[self.rna_dataset["file_id"]==sample["RNA"]].values[0, :-1].reshape(1, -1).astype(np.float32)
             mask = True
             if self.transform:
                 sample = self.transform(sample)
@@ -51,8 +54,8 @@ class RNADataset(BaseDataset):
         
 class RNASurvivalDataset(RNADataset):
         def __init__(self, data_split, dataset_dir, transform = None, 
-            is_hazard_logits = False, column_order = None):
-            super().__init__(data_split, dataset_dir, transform = is_hazard_logits, column_order)
+            is_hazard_logits = False, column_order = None, return_mask =True):
+            super().__init__(data_split, dataset_dir, transform = transform, is_hazard_logits = is_hazard_logits, column_order = column_order)
             
             # TODO подумать как тут лучше сделать выгрузку для мультимодальных данных 
             # TODO добавить return_mask
@@ -60,8 +63,8 @@ class RNASurvivalDataset(RNADataset):
             #     self.data  = self.data.loc[self.data['RNA'].isin(self.rna_dataset['file_id'].to_list())]
 
         def __getitem__(self, idx):
-            sample, _ = super().__getitem__(idx)
+            sample, mask = super().__getitem__(idx)
             if self.is_hazard_logits:
-                return sample.float(), self.data.iloc[idx]['new_time'], self.data.iloc[idx]['new_event']
+                return sample.float(),mask, self.data.iloc[idx]['new_time'], self.data.iloc[idx]['new_event']
             else: 
-                return sample.float(), self.data.iloc[idx]['time'], self.data.iloc[idx]['event']
+                return sample.float(),mask, self.data.iloc[idx]['time'], self.data.iloc[idx]['event']
