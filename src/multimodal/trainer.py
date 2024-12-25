@@ -52,8 +52,9 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
         total_loss =0
         
         for batch in dataloader:
-            data, time, event = batch  
-            outputs =self.model(data.to(device))
+            data, masks = batch 
+            data = {modality :value.to(device) for modality, value in data.items()} 
+            outputs =self.model(data,masks)
             
             if split=="train":
                 self.optimizer.zero_grad()
@@ -79,6 +80,6 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
         # Concat datasets
         concat_dataset = {} 
         for split, modalities_data in datasets.items():
-            concat_dataset[split] = MultimodalDataset(splits[split], self.cfg.base.data_path, datasets,
+            concat_dataset[split] = MultimodalDataset(splits[split], self.cfg.base.data_path, datasets[split],
                                                  transform = transforms, is_hazard_logits = True)
         return concat_dataset
