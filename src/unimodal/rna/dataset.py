@@ -48,9 +48,9 @@ class RNADataset(BaseDataset):
                 
             sample = torch.from_numpy(sample)
             
-            return sample, mask
+            return sample.float(), mask
         else:
-            return torch.zeros((1, self.rna_dataset.shape[1]-1)), mask
+            return torch.zeros((1, self.rna_dataset.shape[1]-1)).float(), mask
         
 class RNASurvivalDataset(RNADataset):
         def __init__(self, data_split, dataset_dir, transform = None, 
