@@ -1,3 +1,4 @@
+import numpy as np
 from typing import Dict, List, Tuple, Union
 from omegaconf import DictConfig, OmegaConf
 import pandas as pd
@@ -52,9 +53,11 @@ class Trainer(object):
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising preprocessing for other modalities aren't declared")    
                 
-   
     
     def train(self, fold_ind : int):
+        # best_loss = np.infty
+        # best_epoch = -1
+
         for epoch in tqdm(range(self.cfg.base.n_epochs)):
             self.model.train()
             
@@ -70,8 +73,13 @@ class Trainer(object):
             if self.cfg.base.log.logging:
                 wandb.log({f"val/fold_{fold_ind}/{key}" : value for key, value in val_metrics.items()})
                 
+        # if val_metrics[self.loss_key] < best_loss:
+            # best_loss = val_metrics[self.loss_key]
+            # best_epoch = epoch
         check_dir_exists(self.cfg.base.save_path)
         torch.save(self.model.state_dict(), self.cfg.base.save_path)
+
+        # print(f"Best loss: {best_loss} at epoch {best_epoch}")
         return val_metrics
     
     def evaluate(self, fold_ind : int):
@@ -105,6 +113,7 @@ class UnimodalSurvivalTrainer(Trainer):
 
         self.model =self.initialise_models().to(cfg.base.device)
         self.initialise_loss()
+        self.loss_key = "task_loss"
         print(self.model)
         
     def initialise_datasets(self, splits, modality, preproc, transforms=None):
@@ -174,7 +183,7 @@ class UnimodalSurvivalTrainer(Trainer):
             events.append(event)
             total_task_loss+=loss
             
-        metrics = {"task_loss": total_task_loss.cpu().detach().numpy() / len(dataloader.dataset)}
+        metrics = {self.loss_key: total_task_loss.cpu().detach().numpy() / len(dataloader.dataset)}
         if split!="train":
             metrics.update(compute_survival_metrics( preds, torch.cat(times, dim=0), torch.cat(events, dim=0), cuts=self.preproc.get_hazard_cuts()))
         else:
@@ -197,6 +206,7 @@ class UnimodalMAETrainer(Trainer):
         self.model =self.initialise_models().to(cfg.base.device)
         print(self.model)
         self.initialise_loss()
+        self.loss_key = "mse_loss"
     
     def initialise_loss(self):
         self.optimizer = AdamW(self.model.parameters(), **self.cfg.base.optimizer.params)
@@ -246,7 +256,7 @@ class UnimodalMAETrainer(Trainer):
             
             total_loss+=outputs.loss
         
-        metrics = {"mse_loss": total_loss.cpu().detach().numpy() / len(dataloader.dataset)}
+        metrics = {self.loss_key: total_loss.cpu().detach().numpy() / len(dataloader.dataset)}
         
         if split=="train":
             self.scheduler.step()
