@@ -13,9 +13,9 @@ def run(cfg : DictConfig) -> None:
         init_wandb_logging(cfg.base.log)
     all_valid_metrics, all_test_metrics =[], []
     for fold_ind in range(cfg.base.splits):
-        
+        print(f"Fold #{fold_ind}")
         cfg.base.save_path = f"outputs/models/{cfg.base.experiment_name}_split_{fold_ind}.pth"
-        if cfg.model.is_load_pretrained:
+        if cfg.model.get("is_load_pretrained", False):
             cfg.model.pretrained_model_path = f"outputs/models/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth"
         splits = load_splits(Path(cfg.base.data_path), fold_ind, cfg.base.remove_nan_column)
 
