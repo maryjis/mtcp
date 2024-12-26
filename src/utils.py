@@ -7,6 +7,33 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Union
 import wandb
 from omegaconf import DictConfig, OmegaConf
+from torch import nn
+
+def print_vit_for_pretrain_sizes(model):
+    print(f"Total number of parameters : {count_parameters(model)}")
+    print(f"--ViT: {count_parameters(model.vit)}")
+    print(f"----Embeddings: {count_parameters(model.vit.embeddings)}")
+    print(f"------Patch embeddings: {count_parameters(model.vit.embeddings.patch_embeddings)}")
+    print(f"------Position embeddings: {count_parameters(model.vit.embeddings.position_embeddings)}")
+    print(f"------Class token: {count_parameters(model.vit.embeddings.cls_token)}")
+    print(f"----Encoder: {count_parameters(model.vit.encoder)}")
+    print(f"----Layer norm: {count_parameters(model.vit.layernorm)}")
+
+    print(f"--Decoder: {count_parameters(model.decoder)}")
+    print(f"----Decoder embed: {count_parameters(model.decoder.decoder_embed)}")
+    print(f"----Mask token: {count_parameters(model.decoder.mask_token)}")
+    print(f"----Decoder pos embed: {count_parameters(model.decoder.decoder_pos_embed)}")
+    print(f"----Decoder layers: {count_parameters(model.decoder.decoder_layers)}")
+    print(f"----Decoder norm: {count_parameters(model.decoder.decoder_norm)}")
+    print(f"----Decoder pred: {count_parameters(model.decoder.decoder_pred)}")
+
+def count_parameters(model):
+    if isinstance(model, nn.Parameter):
+        return model.numel()
+    elif isinstance(model, nn.Module):
+        return sum(p.numel() for p in model.parameters() if p.requires_grad)
+    else:
+        raise ValueError(f"Unsupported model type: {type(model)}")
 
 def check_dir_exists(save_path: str):
     dir_to_save = os.path.join(*save_path.split(os.sep)[:-1])
