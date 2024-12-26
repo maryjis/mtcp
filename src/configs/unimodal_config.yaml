@@ -1,4 +1,4 @@
 defaults: 
-    - model: mri_mae_pretrain
-    - base: mri_mae_pretrain
+    - model: mri_mae_model
+    - base: mri_mae_model
     - data: mri_mae_pretrain
