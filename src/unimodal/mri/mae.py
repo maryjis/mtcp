@@ -208,14 +208,18 @@ class MriMAEForPreTraining(ViTMAEForPreTraining):
             p3=self.config.patch_size
         )
 
-    # def unpatchify(self, x):
-    #     return rearrange(
-    #         x, 
-    #         'b (h w d) (p1 p2 p3) -> b (h p1) (w p2) (d p3)',
-    #         h = self.config.mri_size//self.config.patch_size, 
-    #         w = self.config.mri_size//self.config.patch_size, 
-    #         d = self.config.mri_size//self.config.patch_size,
-    #         p1=self.config.patch_size, 
-    #         p2=self.config.patch_size, 
-    #         p3=self.config.patch_size
-    #     )
+class MriMaeSurvivalModel(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        if config.to_dict().get("is_load_pretrained", False):
+            self.vit = MriMAEModel.from_pretrained(config.pretrained_model_path, config = config)
+            print(f"Pretrained model loaded from {config.pretrained_model_path}")
+        else:
+            self.vit = MriMAEModel(config)
+        self.projection = nn.Linear(config.hidden_size, config.output_dim)
+        
+    def forward(self, mri_values):
+        x = self.vit(mri_values)
+
+        x = self.projection(x.last_hidden_state[:,0,:])
+        return x.squeeze(-1)
