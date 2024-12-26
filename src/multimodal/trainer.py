@@ -1,9 +1,9 @@
 from collections import defaultdict
 import pandas as pd
 from omegaconf import DictConfig, OmegaConf
-from typing import Dict, List, Tuple, Union
+from typing import Dict
 from src.multimodal.datasets import MultimodalDataset
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 from pycox.models.loss import NLLLogistiHazardLoss
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
@@ -80,6 +80,6 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
         # Concat datasets
         concat_dataset = {} 
         for split, modalities_data in datasets.items():
-            concat_dataset[split] = MultimodalDataset(splits[split], self.cfg.base.data_path, datasets[split],
+            concat_dataset[split] = MultimodalDataset(splits[split], self.cfg.base.data_path, modalities_data,
                                                  transform = transforms, is_hazard_logits = True)
         return concat_dataset
