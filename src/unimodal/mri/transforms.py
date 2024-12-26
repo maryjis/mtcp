@@ -13,7 +13,7 @@ from monai.transforms import (
 
 import torch
 
-def get_tumor_transforms_mae(roi_size):
+def get_basic_tumor_transforms(roi_size):
     return Compose(
         [
             NormalizeIntensityd(keys=["image"], channel_wise=True, nonzero=True),

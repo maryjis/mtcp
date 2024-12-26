@@ -9,23 +9,26 @@ import wandb
 from omegaconf import DictConfig, OmegaConf
 from torch import nn
 
-def print_vit_for_pretrain_sizes(model):
+def print_vit_sizes(model):
     print(f"Total number of parameters : {count_parameters(model)}")
-    print(f"--ViT: {count_parameters(model.vit)}")
-    print(f"----Embeddings: {count_parameters(model.vit.embeddings)}")
-    print(f"------Patch embeddings: {count_parameters(model.vit.embeddings.patch_embeddings)}")
-    print(f"------Position embeddings: {count_parameters(model.vit.embeddings.position_embeddings)}")
-    print(f"------Class token: {count_parameters(model.vit.embeddings.cls_token)}")
-    print(f"----Encoder: {count_parameters(model.vit.encoder)}")
-    print(f"----Layer norm: {count_parameters(model.vit.layernorm)}")
 
-    print(f"--Decoder: {count_parameters(model.decoder)}")
-    print(f"----Decoder embed: {count_parameters(model.decoder.decoder_embed)}")
-    print(f"----Mask token: {count_parameters(model.decoder.mask_token)}")
-    print(f"----Decoder pos embed: {count_parameters(model.decoder.decoder_pos_embed)}")
-    print(f"----Decoder layers: {count_parameters(model.decoder.decoder_layers)}")
-    print(f"----Decoder norm: {count_parameters(model.decoder.decoder_norm)}")
-    print(f"----Decoder pred: {count_parameters(model.decoder.decoder_pred)}")
+    if hasattr(model, "vit"):
+        print(f"--ViT: {count_parameters(model.vit)}")
+        print(f"----Embeddings: {count_parameters(model.vit.embeddings)}")
+        print(f"------Patch embeddings: {count_parameters(model.vit.embeddings.patch_embeddings)}")
+        print(f"------Position embeddings: {count_parameters(model.vit.embeddings.position_embeddings)}")
+        print(f"------Class token: {count_parameters(model.vit.embeddings.cls_token)}")
+        print(f"----Encoder: {count_parameters(model.vit.encoder)}")
+        print(f"----Layer norm: {count_parameters(model.vit.layernorm)}")
+
+    if hasattr(model, "decoder"):
+        print(f"--Decoder: {count_parameters(model.decoder)}")
+        print(f"----Decoder embed: {count_parameters(model.decoder.decoder_embed)}")
+        print(f"----Mask token: {count_parameters(model.decoder.mask_token)}")
+        print(f"----Decoder pos embed: {count_parameters(model.decoder.decoder_pos_embed)}")
+        print(f"----Decoder layers: {count_parameters(model.decoder.decoder_layers)}")
+        print(f"----Decoder norm: {count_parameters(model.decoder.decoder_norm)}")
+        print(f"----Decoder pred: {count_parameters(model.decoder.decoder_pred)}")
 
 def count_parameters(model):
     if isinstance(model, nn.Parameter):
@@ -65,7 +68,7 @@ def seed_everything(seed: int):
     set_determinism(seed=seed, additional_settings=None)
     
     
-def load_splits(data_path: Path, fold_ind : int, remove_nan_column : str) -> Dict[str,pd.DataFrame]:
+def load_splits(data_path: Path, fold_ind : int, remove_nan_column : str, max_samples_per_split : int = None) -> Dict[str,pd.DataFrame]:
     '''
     Use 'group' column to split data into train_validation/test sets
     Loads and splits a dataset from a CSV file into train/validation/test sets
@@ -88,6 +91,13 @@ def load_splits(data_path: Path, fold_ind : int, remove_nan_column : str) -> Dic
             dataset_train = dataset_train_val[dataset_train_val.splits!=fold_ind]
         else:
             raise Exception(f"Such fold index {fold_ind} doesn't exist. Check {data_path} file. ")
+
+        if max_samples_per_split:
+            dataset_train = dataset_train.sample(max_samples_per_split)
+            dataset_val = dataset_val.sample(max_samples_per_split)
+            dataset_test = dataset_test.sample(max_samples_per_split)
+            print(f"WARNING: max_samples_per_split={max_samples_per_split} is set.")
+            
         return {"train" :dataset_train.reset_index(drop=True), 
                 "val" : dataset_val.reset_index(drop=True), 
                 "test" : dataset_test.reset_index(drop=True)}

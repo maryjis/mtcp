@@ -1,5 +1,5 @@
 import hydra
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, OmegaConf, open_dict
 from src.utils import  * 
 from src.unimodal.trainer import UnimodalSurvivalTrainer,  UnimodalMAETrainer
 from pathlib import Path
@@ -16,8 +16,14 @@ def run(cfg : DictConfig) -> None:
         print(f"Fold #{fold_ind}")
         cfg.base.save_path = f"outputs/models/{cfg.base.experiment_name}_split_{fold_ind}.pth"
         if cfg.model.get("is_load_pretrained", False):
-            cfg.model.pretrained_model_path = f"outputs/models/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth"
-        splits = load_splits(Path(cfg.base.data_path), fold_ind, cfg.base.remove_nan_column)
+            with open_dict(cfg):
+                cfg.model.pretrained_model_path = f"outputs/models/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth"
+        splits = load_splits(
+            Path(cfg.base.data_path), 
+            fold_ind, 
+            cfg.base.remove_nan_column, 
+            max_samples_per_split=cfg.base.get("max_samples_per_split", None)
+        )
 
         if cfg.base.type == 'unimodal':
             # унимодальные (тут мы должны выбрать модальность) или мультимодальный + способ дообучения
