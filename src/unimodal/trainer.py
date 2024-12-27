@@ -106,6 +106,9 @@ class Trainer(object):
    
     
     def train(self, fold_ind : int):
+        # best_loss = np.infty
+        # best_epoch = -1
+
         for epoch in tqdm(range(self.cfg.base.n_epochs)):
             print("Train...")
             self.model.train()
@@ -122,8 +125,13 @@ class Trainer(object):
             if self.cfg.base.log.logging:
                 wandb.log({f"val/fold_{fold_ind}/{key}" : value for key, value in val_metrics.items()})
                 
+        # if val_metrics[self.loss_key] < best_loss:
+            # best_loss = val_metrics[self.loss_key]
+            # best_epoch = epoch
         check_dir_exists(self.cfg.base.save_path)
         torch.save(self.model.state_dict(), self.cfg.base.save_path)
+
+        # print(f"Best loss: {best_loss} at epoch {best_epoch}")
         return val_metrics
     
     def evaluate(self, fold_ind : int):
@@ -159,7 +167,6 @@ class UnimodalSurvivalTrainer(Trainer):
         self.model =self.initialise_models().to(cfg.base.device)
         self.initialise_loss()
         self.loss_key = "task_loss"
-
         print(self.model)
         print_vit_sizes(self.model)
     
