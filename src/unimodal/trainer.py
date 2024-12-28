@@ -1,9 +1,10 @@
+import os
 import numpy as np
 from typing import Dict, List, Tuple, Union
 from omegaconf import DictConfig, OmegaConf
 import pandas as pd
 from src.unimodal.rna.dataset import RNADataset, RNASurvivalDataset
-from src.unimodal.mri.datasets import SurvivalMRIEmbeddingDataset
+from src.unimodal.mri.datasets import SurvivalMRIDataset, MRIEmbeddingDataset, DatasetBraTSTumorCentered
 from src.unimodal.rna.preprocessor import RNAPreprocessor
 from src.preprocessor import BaseUnimodalPreprocessor
 from src.unimodal.rna.transforms import base_transforms, padded_transforms
@@ -19,16 +20,20 @@ from ..evaluation import compute_survival_metrics
 import wandb
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.unimodal.rna.mae import RnaMAEForPreTraining
-from src.utils import check_dir_exists
+from src.unimodal.mri.mae import MriMAEForPreTraining, MriMaeSurvivalModel
+from src.utils import check_dir_exists, count_parameters, print_vit_sizes
 from tqdm.auto import tqdm
-
 from sklearn.preprocessing import QuantileTransformer, StandardScaler, MinMaxScaler
 from src.unimodal.rna.transforms import UpperQuartileNormalizer
+from src.unimodal.mri.transforms import get_basic_tumor_transforms
 
 class Trainer(object):
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
         self.cfg =cfg
-        self.preproc = self.initialise_preprocessing(splits, self.cfg.base.modalities[0])
+        if self.cfg.base.modalities[0] == "mri" and self.cfg.base.strategy == "mae":
+            pass
+        else:
+            self.preproc = self.initialise_preprocessing(splits, self.cfg.base.modalities[0])
  
     def initialise_preprocessing(self, splits, modality):
         
@@ -53,19 +58,20 @@ class Trainer(object):
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising preprocessing for other modalities aren't declared")    
                 
-    
+                
     def train(self, fold_ind : int):
         # best_loss = np.infty
         # best_epoch = -1
 
         for epoch in tqdm(range(self.cfg.base.n_epochs)):
+            print("Train...")
             self.model.train()
-            
             train_metrics = self.__loop__("train",fold_ind, self.dataloaders['train'], self.cfg.base.device)
             train_metrics.update({"epoch": epoch})
             if self.cfg.base.log.logging:
                 wandb.log({f"train/fold_{fold_ind}/{key}" : value for key, value in train_metrics.items()})
             
+            print("Val...")
             self.model.eval()
             with torch.no_grad():    
                 val_metrics = self.__loop__("val",fold_ind, self.dataloaders['val'], self.cfg.base.device)
@@ -83,6 +89,7 @@ class Trainer(object):
         return val_metrics
     
     def evaluate(self, fold_ind : int):
+        print("Test...")
         self.model.eval()
         with torch.no_grad():    
             test_metrics = self.__loop__("test",fold_ind, self.dataloaders['test'], self.cfg.base.device)
@@ -114,8 +121,10 @@ class UnimodalSurvivalTrainer(Trainer):
         self.model =self.initialise_models().to(cfg.base.device)
         self.initialise_loss()
         self.loss_key = "task_loss"
+
         print(self.model)
-        
+        print_vit_sizes(self.model)
+   
     def initialise_datasets(self, splits, modality, preproc, transforms=None):
         datasets ={}
         # Todo - подумать нужно ли тут разббить для каждого trainerа - свой initialise_dataset
@@ -126,20 +135,42 @@ class UnimodalSurvivalTrainer(Trainer):
                                                  transform = transforms, is_hazard_logits = True, column_order=self.preproc.get_column_order())
 
         elif modality == "mri":
-            splits = {split_name: preproc.transform_labels(split) for split_name, split in splits.items()}
-            datasets = {
-                split_name: SurvivalMRIEmbeddingDataset(
-                    split,
-                    is_hazard_logits = True
-                ) 
-                for split_name, split in splits.items()
-            }
+            if self.cfg.base.strategy == "survival":
+                splits = {split_name: self.preproc.transform_labels(split) for split_name, split in splits.items()}
+                for split_name, split in splits.items():
+                    if self.cfg.data.get("embedding_name", None) is not None:
+                        dataset = MRIEmbeddingDataset(split, return_mask=False, embedding_name=self.cfg.data.embedding_name)
+                    else:
+                        data_path = os.sep.join(split["MRI"].values[0].split(os.sep)[:-1])
+                        split["patients"] = split["MRI"].apply(lambda x: x.split(os.sep)[-1])
+                        dataset = DatasetBraTSTumorCentered(
+                            data_path,
+                            self.cfg.data.modalities,
+                            patients=split["patients"].values,
+                            sizes=self.cfg.data.sizes,
+                            return_mask=False,
+                            transform = get_basic_tumor_transforms(self.cfg.data.sizes)
+                        )
+                    datasets[split_name] = SurvivalMRIDataset(split, dataset, is_hazard_logits=True)
+                    
+            elif self.cfg.base.strategy == "mae":
+                for split_name, split in splits.items():
+                    data_path = os.sep.join(split["MRI"].values[0].split(os.sep)[:-1])
+                    split["patients"] = split["MRI"].apply(lambda x: x.split(os.sep)[-1])
+                    datasets[split_name] = DatasetBraTSTumorCentered(
+                        data_path,
+                        self.cfg.data.modalities,
+                        patients=split["patients"].values,
+                        sizes=self.cfg.data.sizes,
+                        return_mask=False,
+                        transform = get_basic_tumor_transforms(self.cfg.data.sizes)
+                    )
 
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
         
         return datasets
-    
+ 
     def initialise_models(self):
 
         if self.cfg.base.modalities[0]=="rna": 
@@ -150,9 +181,12 @@ class UnimodalSurvivalTrainer(Trainer):
                 else:
                     raise NotImplementedError("Exist only for rna. Initialising datasets for other modalities aren't declared")
         elif self.cfg.base.modalities[0]=="mri":
-            
-                return MRIEmbeddingEncoder(self.cfg.model.input_embedding_dim, self.cfg.model.dropout, self.cfg.base.n_intervals)
-
+                if self.cfg.base.architecture=="MAE":
+                    return MriMaeSurvivalModel(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+                elif self.cfg.base.architecture=="CNN":
+                    return MRIEmbeddingEncoder(self.cfg.model.input_embedding_dim, self.cfg.model.dropout, self.cfg.base.n_intervals)
+                else:
+                    raise NotImplementedError("Exist only MAE and CNN architectures for mri modality")
         else:
                 raise NotImplementedError("Exist only for rna and mri. Initialising models for other modalities aren't declared")   
 
@@ -166,9 +200,9 @@ class UnimodalSurvivalTrainer(Trainer):
         total_task_loss =0
         preds,times,events = [], [], []
         for batch in dataloader:
-  
-                  
-            data, mask, time, event = batch  
+            data, time, event = batch  
+            if isinstance(data, dict): data = data["image"]
+
             outputs =self.model(data.to(device))
     
             loss = self.criterion(outputs, time.to(device), event.to(device))
@@ -189,22 +223,31 @@ class UnimodalSurvivalTrainer(Trainer):
         else:
             self.scheduler.step()
             
-        return  metrics  
-                    
-        
+        return  metrics 
+
         
 class UnimodalMAETrainer(Trainer):
     
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
         super().__init__(splits, cfg)
-        transforms = padded_transforms(self.preproc.get_scaling(), cfg.model.rna_size)
-        self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
+        transforms = None
+        if self.cfg.base.modalities[0]=="rna":
+            transforms = padded_transforms(self.preproc.get_scaling(), cfg.model.rna_size)
+            self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
+        elif self.cfg.base.modalities[0]=="mri":
+            self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
+        else:
+            raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
+        
         self.dataloaders = {"train" : DataLoader(self.datasets["train"],shuffle=True, batch_size =cfg.base.batch_size),
                             "val" : DataLoader(self.datasets["val"],shuffle=False, batch_size = 1),
                             "test" : DataLoader(self.datasets["test"],shuffle=False, batch_size =1)
                             }
+
         self.model =self.initialise_models().to(cfg.base.device)
         print(self.model)
+        print_vit_sizes(self.model)
+
         self.initialise_loss()
         self.loss_key = "mse_loss"
     
@@ -214,9 +257,11 @@ class UnimodalMAETrainer(Trainer):
         
     def initialise_models(self):
         if self.cfg.base.modalities[0]=="rna":
-                return RnaMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+            return  RnaMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+        elif self.cfg.base.modalities[0]=="mri":
+            return MriMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
         else:
-            raise NotImplementedError("Exist only for rna. Initialising datasets for other modalities aren't declared") 
+            raise NotImplementedError("Exist only for rna and mri. Initialising models for other modalities aren't declared") 
         
     def initialise_datasets(self, splits, modality, preproc, transforms=None):
         datasets ={}
@@ -245,8 +290,12 @@ class UnimodalMAETrainer(Trainer):
     def __loop__(self,split, fold_ind, dataloader, device):
         total_loss =0
         
-        for batch in dataloader:
-            data, mask = batch  
+
+        for batch in tqdm(dataloader):
+            if isinstance(batch, tuple): data, mask = batch 
+            elif isinstance(batch, dict): data = batch["image"]
+            else: data = batch
+
             outputs =self.model(data.to(device))
             
             if split=="train":

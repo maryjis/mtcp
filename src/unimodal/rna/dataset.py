@@ -65,6 +65,6 @@ class RNASurvivalDataset(RNADataset):
         def __getitem__(self, idx):
             sample, mask = super().__getitem__(idx)
             if self.is_hazard_logits:
-                return sample.float(),mask, self.data.iloc[idx]['new_time'], self.data.iloc[idx]['new_event']
+                return sample.float(), self.data.iloc[idx]['new_time'], self.data.iloc[idx]['new_event']
             else: 
-                return sample.float(),mask, self.data.iloc[idx]['time'], self.data.iloc[idx]['event']
+                return sample.float(), self.data.iloc[idx]['time'], self.data.iloc[idx]['event']
