@@ -42,7 +42,7 @@ def run(cfg : DictConfig) -> None:
               else:
                 raise NotImplementedError(f"Such strategy - {cfg.base.strategy} isn't implemented in multimodal approach.")
         else:
-            raise NotImplementedError("Now only unimodal training is implemented.")
+            raise NotImplementedError("Choose from 'multimodal' and 'unimodal' options")
 
         valid_metrics =trainer.train(fold_ind)
         test_metrics =trainer.evaluate(fold_ind)
