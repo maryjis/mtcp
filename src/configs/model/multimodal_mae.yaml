@@ -1,8 +1,8 @@
 
-modalities: ["rna", "rna"]
+modalities: ["rna", "mri"]
 defaults: 
   - rna_model: rna_mae
-  # - mri_model: mri_mae
+  - mri_model: mri_mae_model
 
 hidden_size: 256
 is_projection: False
