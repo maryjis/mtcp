@@ -1,5 +1,5 @@
-experiment_name: "mri_mae_t1c_masking_50"
-n_epochs: 50
+experiment_name: "mri_mae_model_test"
+n_epochs: 2
 n_intervals: 20
 random_seed: 1380
 
@@ -16,15 +16,17 @@ scheduler:
 
 
 type: "unimodal"
-strategy: "mae" # mae, survival
+strategy: "survival" # mae, survival
 modalities: ["mri"] #rna, mri
+architecture: "MAE"
 splits: 5
 data_path: "src/data/dataset.csv"
 root_path: "../"
 save_path : "outputs/models/"
 device: "cuda:0"
 remove_nan_column: 'MRI'
-batch_size: 24
+batch_size: 4
+max_samples_per_split: 16
 
 log:
     logging: True

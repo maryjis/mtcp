@@ -1,4 +1,5 @@
 defaults: 
-    - model: rna_mae
-    - base: unimodal_config_rna_mae
-    - data: data_base
+    - model: mri_mae_model
+    - base: mri_mae_model
+    - data: mri_mae_pretrain
+

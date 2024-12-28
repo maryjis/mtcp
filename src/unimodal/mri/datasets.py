@@ -243,14 +243,14 @@ class MRIEmbeddingDataset(BaseDataset):
         else:
             return mri
 
-class SurvivalMRIEmbeddingDataset(torch.utils.data.Dataset):
+class SurvivalMRIDataset(torch.utils.data.Dataset):
     def __init__(
         self, 
         split: pd.DataFrame,
+        dataset: torch.utils.data.Dataset,
         is_hazard_logits: bool = False,
-        embedding_name: str = "embedding",
     ) -> None:
-        self.dataset = MRIEmbeddingDataset(split, return_mask=False, embedding_name=embedding_name) #only MRI column with embedding paths is needed
+        self.dataset = dataset
         if is_hazard_logits:
             self.time = torch.from_numpy(split["new_time"].values)
             self.event = torch.from_numpy(split["new_event"].values)
