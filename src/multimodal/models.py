@@ -4,6 +4,7 @@ from src.unimodal.rna.mae import RnaMAEModel, RnaMAEDecoder
 from transformers.models.vit_mae.modeling_vit_mae import ViTMAEModelOutput, ViTMAEForPreTrainingOutput
 from typing import Dict
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
+from src.unimodal.mri.mae import MriMAEModel
 
 class UnimodalEncoder(nn.Module):
     def __init__(self, encoder, unimodal_hidden_size, multimodal_hidden_size = None, is_projection = False):
@@ -66,6 +67,17 @@ class MultiMaeForPretraining(nn.Module):
                     self.cfg.hidden_size,
                     self.cfg.is_projection
                 )
+            elif modality == "mri":
+                cfg_mri_model = ViTMAEConfig(**self.cfg.mri_model)
+                self.encoders[modality] = UnimodalEncoder(
+                    MriMAEModel.from_pretrained(cfg_mri_model.pretrained_model_path, config=cfg_mri_model)
+                    if cfg_mri_model.is_load_pretrained
+                    else MriMAEModel(cfg_mri_model),
+                    cfg_mri_model.hidden_size, 
+                    self.cfg.hidden_size,
+                    self.cfg.is_projection
+                )
+                
             else:
                 # Add support for other modalities
                 raise NotImplementedError(f"Encoder for modality {modality} not implemented")

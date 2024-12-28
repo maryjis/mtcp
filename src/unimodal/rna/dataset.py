@@ -40,8 +40,16 @@ class RNADataset(BaseDataset):
     def __getitem__(self, idx):
         sample = self.data.iloc[idx]
         mask = False
+        
         if not pd.isna(sample["RNA"]):
-            sample =self.rna_dataset.loc[self.rna_dataset["file_id"]==sample["RNA"]].values[0, :-1].reshape(1, -1).astype(np.float32)
+            name_rna =sample["RNA"]
+            sample =self.rna_dataset.loc[self.rna_dataset["file_id"]==sample["RNA"]]
+            if sample.empty:
+                return torch.zeros((1, self.rna_dataset.shape[1]-1)).float(), mask
+            else:
+                print(name_rna)
+                sample = sample.values[0, :-1].reshape(1, -1).astype(np.float32)
+         
             mask = True
             if self.transform:
                 sample = self.transform(sample)
