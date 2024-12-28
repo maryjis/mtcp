@@ -135,7 +135,6 @@ class UnimodalSurvivalTrainer(Trainer):
                                                  transform = transforms, is_hazard_logits = True, column_order=self.preproc.get_column_order())
 
         elif modality == "mri":
-            if self.cfg.base.strategy == "survival":
                 splits = {split_name: self.preproc.transform_labels(split) for split_name, split in splits.items()}
                 for split_name, split in splits.items():
                     if self.cfg.data.get("embedding_name", None) is not None:
@@ -152,19 +151,6 @@ class UnimodalSurvivalTrainer(Trainer):
                             transform = get_basic_tumor_transforms(self.cfg.data.sizes)
                         )
                     datasets[split_name] = SurvivalMRIDataset(split, dataset, is_hazard_logits=True)
-                    
-            elif self.cfg.base.strategy == "mae":
-                for split_name, split in splits.items():
-                    data_path = os.sep.join(split["MRI"].values[0].split(os.sep)[:-1])
-                    split["patients"] = split["MRI"].apply(lambda x: x.split(os.sep)[-1])
-                    datasets[split_name] = DatasetBraTSTumorCentered(
-                        data_path,
-                        self.cfg.data.modalities,
-                        patients=split["patients"].values,
-                        sizes=self.cfg.data.sizes,
-                        return_mask=False,
-                        transform = get_basic_tumor_transforms(self.cfg.data.sizes)
-                    )
 
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
@@ -273,14 +259,17 @@ class UnimodalMAETrainer(Trainer):
                                                  transform = transforms, is_hazard_logits = True, column_order=preproc.get_column_order())
 
         elif modality == "mri":
-            splits = {split_name: preproc.transform_labels(split) for split_name, split in splits.items()}
-            datasets = {
-                split_name: SurvivalMRIEmbeddingDataset(
-                    split,
-                    is_hazard_logits = True
-                ) 
-                for split_name, split in splits.items()
-            }
+            for split_name, split in splits.items():
+                    data_path = os.sep.join(split["MRI"].values[0].split(os.sep)[:-1])
+                    split["patients"] = split["MRI"].apply(lambda x: x.split(os.sep)[-1])
+                    datasets[split_name] = DatasetBraTSTumorCentered(
+                        data_path,
+                        self.cfg.data.modalities,
+                        patients=split["patients"].values,
+                        sizes=self.cfg.data.sizes,
+                        return_mask=False,
+                        transform = get_basic_tumor_transforms(self.cfg.data.sizes)
+                    )
 
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
