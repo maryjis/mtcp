@@ -7,7 +7,7 @@ from torch.utils.data import Dataset
 import monai
 import torch
 import pandas as pd
-
+from omegaconf import OmegaConf
 from src.datasets import BaseDataset
 
 __all__ = ["DatasetBraTSTumorCentered"]
@@ -72,6 +72,105 @@ class _BaseDatasetBraTS(Dataset):
             os.path.join(self.path, patient, patient + "-seg.nii.gz")
         ).get_fdata()
 
+
+class MRIDataset(BaseDataset):
+    def __init__(self, data: pd.DataFrame,
+                 root_dir: str,
+                 modality: Union[str, List[str]],
+                 sizes: Tuple[int, ...],
+                 transform = None ,
+                 is_hazard_logits = False,
+                 return_mask: bool = False):
+        super().__init__(data, root_dir, transform, is_hazard_logits, return_mask)
+        self.sizes = sizes
+        self.modality = modality
+
+    def _load_nifti_modalities(self, patient: str) -> np.ndarray:
+        if len(self.modality) == 1:
+            img = nib.load(
+                os.path.join(
+                    self.root_dir, patient, patient + "-" + self.modality[0] + ".nii.gz"
+                )
+            ).get_fdata()
+            img = np.expand_dims(img, 0)
+
+        else:
+            early_fused = []
+            for modality in self.modality:
+                early_fused.append(
+                    nib.load(
+                        os.path.join(
+                            self.root_dir, patient, patient + "-" + modality + ".nii.gz"
+                        )
+                    ).get_fdata()
+                )
+
+            img = np.stack(early_fused)
+
+        return img
+    
+    @staticmethod
+    def _monaify(img: np.ndarray, mask: Optional[np.ndarray] = None) -> Dict[str, np.ndarray]:
+        item = {"image": img}
+        if mask is not None:
+            item["mask"] = mask
+
+        return item
+
+    def _load_mask(self, patient: str) -> np.ndarray:
+        return nib.load(
+            os.path.join(self.root_dir, patient, patient + "-seg.nii.gz")
+        ).get_fdata()
+    
+    def _compute_subvolumes(
+        self, img: np.ndarray, mask: np.ndarray
+    ) -> Dict[str, np.ndarray]:
+        centroid = self._compute_centroid(mask=mask)
+        # bounds for boolean indexing
+        lower_bound, upper_bound = self._get_bounds(
+            centroid=centroid, input_dims=img.shape[1:]
+        )
+        img = img[
+            :,
+            lower_bound[0] : upper_bound[0],
+            lower_bound[1] : upper_bound[1],
+            lower_bound[2] : upper_bound[2],
+        ]
+        
+        return self._monaify(img=img)
+
+    def _get_bounds(
+        self, centroid: np.ndarray, input_dims: Tuple[int, ...]
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        lower = (centroid - (np.array(self.sizes) / 2)).astype(int)
+        upper = (centroid + (np.array(self.sizes) / 2)).astype(int)
+        return np.clip(lower, 0, input_dims), np.clip(upper, 0, input_dims)
+
+    @staticmethod
+    def _compute_centroid(mask: np.ndarray) -> np.ndarray:
+        return np.mean(np.argwhere(mask), axis=0).astype(int)
+
+    
+    def __getitem__(self, idx: int):
+        sample = self.data.iloc[idx]
+        mask = False
+        if not pd.isna(sample["MRI"]):
+            patient = sample["MRI"].split(os.sep)[-1]  
+            mask = True
+            mask_img = self._load_mask(patient=patient)
+            img = self._load_nifti_modalities(patient=patient)
+            item = self._compute_subvolumes(img=img, mask=mask_img)
+            if self.transform is not None:
+                item = self.transform(item)
+            if self.return_mask:
+                return item['image'], mask
+            else:
+                return item['image']
+        else:
+            if self.return_mask:
+                return torch.zeros(OmegaConf.to_object(self.sizes)).unsqueeze(0), mask
+            else:
+                return torch.zeros(OmegaConf.to_object(self.sizes)).unsqueeze(0)
 
 class DatasetBraTSTumorCentered(_BaseDatasetBraTS):
     def __init__(

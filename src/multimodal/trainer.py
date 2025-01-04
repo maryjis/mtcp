@@ -11,6 +11,7 @@ from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.unimodal.rna.transforms import base_transforms, padded_transforms
 from src.unimodal.trainer import Trainer, UnimodalSurvivalTrainer, UnimodalMAETrainer
 from src.multimodal.models import MultiMaeForPretraining
+import torch
 
 class MultiModalTrainer(Trainer):
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
@@ -23,6 +24,18 @@ class MultiModalTrainer(Trainer):
             preproc_dict[modality] =super().initialise_preprocessing(splits, modality)       
         return preproc_dict
 
+# def collate_fn(batch):
+#     items, masks = defaultdict(list), defaultdict(list)
+#     for elem in batch:
+#         for modality in elem[0].keys():
+#             items[modality].append(elem[0][modality])
+#             masks[modality].append(elem[1][modality])
+#     for modality in items.keys():
+#         print(modality)
+#         print(masks[modality])
+#         items[modality] = torch.stack(items[modality])
+#         masks[modality] = torch.tensor(masks[modality])
+#     return items, masks
 
 class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
     
