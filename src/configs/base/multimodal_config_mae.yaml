@@ -20,7 +20,6 @@ modalities: ["rna", "mri"]
 architecture: "MAE"
 splits: 5
 data_path: "src/data/dataset.csv"
-root_path: "../"
 save_path : "outputs/models/"
 rna_dataset_path: "src/data/rna_dataset.csv"
 device: "cuda:0"

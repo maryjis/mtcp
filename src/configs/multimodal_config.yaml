@@ -1,4 +1,4 @@
 defaults: 
     - model: multimodal_mae
     - base: multimodal_config_mae
-    - data: data_base
+    - data: multimodal_data
