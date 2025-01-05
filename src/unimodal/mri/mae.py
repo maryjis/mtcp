@@ -147,6 +147,15 @@ class MriMAEModel(ViTMAEModel):
         super().__init__(config)
         self.embeddings = MriMAEEmbeddings(config)
         self.post_init()
+        
+    def patchify(self, imgs, interpolate_pos_encoding: bool = False):
+        return rearrange(
+            imgs, 
+            'b c (h p1) (w p2) (d p3) -> b (h w d) (c p1 p2 p3)', #for masking input should be in format (B, S, E) 
+            p1=self.config.patch_size, 
+            p2=self.config.patch_size, 
+            p3=self.config.patch_size
+        )
 
 class MriMAEDecoderPred(nn.Module):
     def __init__(self, config):

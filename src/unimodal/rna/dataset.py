@@ -47,7 +47,6 @@ class RNADataset(BaseDataset):
             if sample.empty:
                 return torch.zeros((1, self.rna_dataset.shape[1]-1)).float(), mask
             else:
-                print(name_rna)
                 sample = sample.values[0, :-1].reshape(1, -1).astype(np.float32)
          
             mask = True

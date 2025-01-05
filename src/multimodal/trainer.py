@@ -63,7 +63,7 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
         
     def __loop__(self,split, fold_ind, dataloader, device):
         total_loss =0
-        
+        modality_losses = {}
         for batch in dataloader:
             data, masks = batch 
             data = {modality :value.to(device) for modality, value in data.items()} 
@@ -71,13 +71,18 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
             
             if split=="train":
                 self.optimizer.zero_grad()
-                outputs.loss.backward()
+                outputs.loss[0].backward()
                 self.optimizer.step()
             
-            total_loss+=outputs.loss
-        
+            total_loss+=outputs.loss[0]
+            for modality, _ in data.items():
+                if modality not in modality_losses:
+                    modality_losses[modality] = 0
+                modality_losses[modality] += outputs.loss[1][modality]    
         metrics = {"mse_loss": total_loss.cpu().detach().numpy() / len(dataloader.dataset)}
-        
+        modalities = self.cfg.base.modalities
+        for modality in modalities:
+            metrics[f"mse_{modality}_loss"] = modality_losses[modality].cpu().detach().numpy() / len(dataloader.dataset)
         if split=="train":
             self.scheduler.step()
             
