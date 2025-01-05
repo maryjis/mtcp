@@ -137,11 +137,13 @@ class MultiMaeForPretraining(nn.Module):
             target = (target - mean) / (var + 1.0e-6).sqrt()
 
         # Calculate mean squared error
+
         loss = (pred - target).pow(2)
+
         loss = loss.mean(dim=-1)  # Mean loss per patch [batch_size, num_patches]
-        
+
         # Calculate mean loss on masked patches only
-        loss = (loss * mask).sum() / mask.sum()
+        loss = (loss * mask).sum() / (mask.sum() + 1e-6)
         
         return loss
     
@@ -164,8 +166,11 @@ class MultiMaeForPretraining(nn.Module):
         """
         start_idx = 0
         total_loss = 0
+        modality_losses = {}
         
         for modality in self.modalities:
+            if modality not in modality_losses:
+                modality_losses[modality] = 0
             # Get number of patches for current modality
             num_patches = self.get_patches_number(modality)
             end_idx = start_idx + num_patches
@@ -182,11 +187,12 @@ class MultiMaeForPretraining(nn.Module):
                 mask_modality,
                 interpolate_pos_encoding
             )
-            
+
+            modality_losses[modality] += modality_loss
             total_loss += modality_loss
             start_idx = end_idx
             
-        return total_loss
+        return modality_losses, total_loss
     
     def batch_embeddings(self, sample: torch.FloatTensor, mask: torch.BoolTensor, modality: str, multimodal_lenths: int) -> ViTMAEModelOutput:
         """Process embeddings for a batch of samples for a given modality.
@@ -203,8 +209,8 @@ class MultiMaeForPretraining(nn.Module):
         batch_size = sample.shape[0]
         seq_length = self.get_patches_number(modality)
         device = sample.device
-        print("modality: ", modality)
-        print("Seq length: ", seq_length)
+        # print("modality: ", modality)
+        # print("Seq length: ", seq_length)
         print(mask)
         # If mask is all True, process entire batch normally
         if torch.all(mask):
@@ -212,58 +218,81 @@ class MultiMaeForPretraining(nn.Module):
             # Offset ids_restore by cumulative sequence length
             embedded_sample.ids_restore = embedded_sample.ids_restore + multimodal_lenths
             return embedded_sample
-        
-        # Get indices of masked and unmasked samples
-        empty_sample_ids = torch.nonzero(~mask, as_tuple=True)[0].to(device)
-        non_empty_sample_ids = torch.nonzero(mask, as_tuple=True)[0].to(device)
-        print("Empty sample ids: ", empty_sample_ids)
-        print("Non empty sample ids: ", non_empty_sample_ids)
-        
-        # Process non-empty samples
-        non_empty_samples = torch.index_select(sample, dim=0, index=non_empty_sample_ids)
-        embedded_non_empty = self.encoders[modality](non_empty_samples)
-        
-        # Create tensors for empty samples
-        mask_empty = torch.zeros(len(empty_sample_ids), seq_length, device=device)
-        ids_restore_empty = torch.arange(seq_length, device=device).repeat(len(empty_sample_ids), 1) + multimodal_lenths
-        empty_sequence = self.decoder.mask_token.repeat(len(empty_sample_ids), embedded_non_empty.last_hidden_state.shape[1], 1)
-        
-        print("Non empty sequence shape: ", embedded_non_empty.last_hidden_state.shape)
-        print("Empty sequence shape: ", empty_sequence.shape)
-        # Combine empty and non-empty tensors
-        last_hidden_state = torch.cat([
-            embedded_non_empty.last_hidden_state,
-            empty_sequence
-        ], dim=0)
-        
-        mask_combined = torch.cat([
-            embedded_non_empty.mask,
-            mask_empty
-        ], dim=0)
-        print("Ids restore empty shape: ", ids_restore_empty.shape)
-        print("embedded_non_empty.ids_restore: ", embedded_non_empty.ids_restore.shape)
-        ids_restore = torch.cat([
-            embedded_non_empty.ids_restore + multimodal_lenths,
-            ids_restore_empty
-        ], dim=0)
 
-        # Reorder tensors based on original sample ordering
-        #indices = torch.cat([empty_sample_ids, non_empty_sample_ids]).sort()[1]
-        indices = torch.cat([empty_sample_ids, non_empty_sample_ids])
-        print("Indices: ", indices)
-        last_hidden_state = torch.index_select(last_hidden_state, dim=0, index=indices)
-        mask_combined = torch.index_select(mask_combined, dim=0, index=indices)
-        ids_restore = torch.index_select(ids_restore, dim=0, index=indices)
-        print("Last hidden state shape: ", last_hidden_state.shape)
-        print("Mask combined shape: ", mask_combined.shape)
-        print("Mask combined: ", torch.any(mask_combined, dim=1))
-        return ViTMAEModelOutput(
-            last_hidden_state=last_hidden_state,
-            mask=mask_combined,
-            ids_restore=ids_restore,
-            hidden_states=None,
-            attentions=None
-        )
+        elif torch.any(mask):
+            
+            # Get indices of masked and unmasked samples
+            empty_sample_ids = torch.nonzero(~mask, as_tuple=True)[0].to(device)
+          # Create tensors for empty samples
+            mask_empty = torch.zeros(len(empty_sample_ids), seq_length, device=device)
+            ids_restore_empty = torch.arange(seq_length, device=device).repeat(len(empty_sample_ids), 1) + multimodal_lenths  
+                      
+            non_empty_sample_ids = torch.nonzero(mask, as_tuple=True)[0].to(device)
+            # print("Non empty sample ids: ", non_empty_sample_ids)
+            
+            # Process non-empty samples
+            non_empty_samples = torch.index_select(sample, dim=0, index=non_empty_sample_ids)
+            # print("Non empty samples shape: ", non_empty_samples.shape)
+            embedded_non_empty = self.encoders[modality](non_empty_samples)
+            
+            empty_sequence = self.decoder.mask_token.repeat(len(empty_sample_ids), embedded_non_empty.last_hidden_state.shape[1], 1)
+            # print("Empty sample ids: ", empty_sample_ids)
+            # print("Non empty sequence shape: ", embedded_non_empty.last_hidden_state.shape)
+            # print("Empty sequence shape: ", empty_sequence.shape)
+            # Combine empty and non-empty tensors
+            last_hidden_state = torch.cat([
+                embedded_non_empty.last_hidden_state,
+                empty_sequence
+            ], dim=0)
+            
+            mask_combined = torch.cat([
+                embedded_non_empty.mask,
+                mask_empty
+            ], dim=0)
+            # print("Ids restore empty shape: ", ids_restore_empty.shape)
+            # print("embedded_non_empty.ids_restore: ", embedded_non_empty.ids_restore.shape)
+            ids_restore = torch.cat([
+                embedded_non_empty.ids_restore + multimodal_lenths,
+                ids_restore_empty
+            ], dim=0)
+
+            # Reorder tensors based on original sample ordering
+            #indices = torch.cat([empty_sample_ids, non_empty_sample_ids]).sort()[1]
+            indices = torch.argsort(torch.cat([non_empty_sample_ids, empty_sample_ids]), dim=0)
+            
+            # print("Last hidden state shape: ", last_hidden_state.shape)
+            # print("Mask combined shape: ", mask_combined.shape)
+            # print("Mask combined: ", torch.any(mask_combined, dim=1))
+            
+            # print("Indices: ", indices)
+            last_hidden_state = torch.index_select(last_hidden_state, dim=0, index=indices)
+            mask_combined = torch.index_select(mask_combined, dim=0, index=indices)
+            ids_restore = torch.index_select(ids_restore, dim=0, index=indices)
+            
+            # print("Last hidden state shape: ", last_hidden_state.shape)
+            # print("Mask combined shape: ", mask_combined.shape)
+            # print("Mask combined: ", torch.any(mask_combined, dim=1))
+            return ViTMAEModelOutput(
+                last_hidden_state=last_hidden_state,
+                mask=mask_combined,
+                ids_restore=ids_restore,
+                hidden_states=None,
+                attentions=None
+            )
+        else:
+            
+            empty_sample_ids = torch.nonzero(~mask, as_tuple=True)[0].to(device)
+            # Create tensors for empty samples
+            mask_empty = torch.zeros(len(empty_sample_ids), seq_length, device=device)
+            ids_restore_empty = torch.arange(seq_length, device=device).repeat(len(empty_sample_ids), 1) + multimodal_lenths  
+            empty_sequence = self.decoder.mask_token.repeat(len(empty_sample_ids), seq_length, 1)
+            return ViTMAEModelOutput(
+                last_hidden_state=empty_sequence,
+                mask=mask_empty,
+                ids_restore=ids_restore_empty,
+                hidden_states=None,
+                attentions=None
+            )
                              
         
     def forward(
@@ -319,7 +348,7 @@ class MultiMaeForPretraining(nn.Module):
         logits = decoder_outputs.logits
 
         # Calculate reconstruction loss
-        loss = self.forward_loss(
+        modality_losses, total_loss = self.forward_loss(
             x,
             logits,
             mask,
@@ -327,7 +356,7 @@ class MultiMaeForPretraining(nn.Module):
         )
             
         return ViTMAEForPreTrainingOutput(
-            loss=loss,
+            loss = (total_loss,modality_losses),
             logits=logits,
             mask=mask,
             ids_restore=ids_restore,
