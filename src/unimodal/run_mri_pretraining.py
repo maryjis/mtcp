@@ -16,6 +16,7 @@ from src.unimodal.mri.transforms import get_tumor_transforms
 from src.unimodal.commons.optim_contrastive import training_loop_contrastive
 from src.unimodal.commons.losses import ContrastiveLoss
 from src.logger import logger
+from src.unimodal.mri.utils import get_patients_from_BraTS
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -46,30 +47,7 @@ if __name__ == "__main__":
 
     # Set seed
     seed_everything(args.seed)
-    patients = os.listdir(args.data_path)
-    logger.info("Total patients", len(patients))
-
-    #get patients only with target modalities
-    patients_with_needed_modalities = []
-    needed_modalities = set(args.modalities)
-    needed_modalities.add("seg") #segmentation mask used to compute center of tumor
-    for patient in patients:
-        available_modalities = set([x.split("-")[-1].split(".")[0] for x in os.listdir(os.path.join(args.data_path, patient))])
-        if needed_modalities.intersection(available_modalities) == needed_modalities:
-            patients_with_needed_modalities.append(patient)
-    patients = patients_with_needed_modalities
-    logger.info(f"Patients with all needed modalities: {len(patients)}")
-
-    dataframe = pd.read_csv(args.path_to_dataset_file)
-    dataframe_test = dataframe[dataframe["group"] == "test"]
-    # get patient ids where MRI is not NaN
-    dataframe_test = dataframe_test[~dataframe_test["MRI"].isna()]
-    patients_to_exclude = [
-        patient_path.split("/")[-1] for patient_path in dataframe_test.MRI.values
-    ]
-    patients = [patient for patient in patients if patient not in patients_to_exclude]
-    logger.info("Included patients (pre-train)", len(patients))
-    logger.info("Excluded patients (further test)", len(patients_to_exclude))
+    patients = get_patients_from_BraTS(args.data_path, args.modalities, with_mask=True, df_with_test=args.path_to_dataset_file)
 
     # split patient into train and val by taking random 70% of patients for training
     train_patients = np.random.choice(
