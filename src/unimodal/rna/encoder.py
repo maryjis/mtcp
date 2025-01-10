@@ -55,7 +55,7 @@ class EncoderSurvival(RNAEncoder):
         self.projection = nn.Linear(embedding_dim, n_out)
         
         
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, masks=None) -> torch.Tensor:
         x = super().forward(x)
         x = self.projection(x).squeeze(-1)
         return x    

@@ -2,7 +2,7 @@ from collections import defaultdict
 import pandas as pd
 from omegaconf import DictConfig, OmegaConf
 from typing import Dict
-from src.multimodal.datasets import MultimodalDataset
+from src.multimodal.datasets import MultimodalDataset, MultimodalSurvivalDataset
 from torch.utils.data import DataLoader
 from pycox.models.loss import NLLLogistiHazardLoss
 from torch.optim import AdamW
@@ -10,7 +10,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.unimodal.rna.transforms import base_transforms, padded_transforms
 from src.unimodal.trainer import Trainer, UnimodalSurvivalTrainer, UnimodalMAETrainer
-from src.multimodal.models import MultiMaeForPretraining
+from src.multimodal.models import MultiMaeForPretraining, MultiMaeForSurvival
 import torch
 
 class MultiModalTrainer(Trainer):
@@ -56,10 +56,8 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
         
     def initialise_models(self):
-        if self.cfg.base.modalities[0]=="rna":
-                return MultiMaeForPretraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
-        else:
-            raise NotImplementedError("Exist only for rna. Initialising datasets for other modalities aren't declared") 
+        return MultiMaeForPretraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+ 
         
     def __loop__(self,split, fold_ind, dataloader, device):
         total_loss =0
@@ -101,3 +99,43 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
             concat_dataset[split] = MultimodalDataset(splits[split], self.cfg.base.data_path, modalities_data,
                                                  transform = transforms, is_hazard_logits = True)
         return concat_dataset
+    
+    
+class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
+    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
+        super().__init__(splits, cfg)
+        transforms = {"rna": padded_transforms(self.preproc["rna"].get_scaling(), cfg.model.rna_model.rna_size), "mri" : None, "wsi" : None }
+        self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities, self.preproc, transforms)
+        self.dataloaders = {"train" : DataLoader(self.datasets["train"],shuffle=True, batch_size =cfg.base.batch_size),
+                            "val" : DataLoader(self.datasets["val"],shuffle=False, batch_size = 1),
+                            "test" : DataLoader(self.datasets["test"],shuffle=False, batch_size =1)
+                            }
+        self.model = self.initialise_models().to(cfg.base.device)
+        self.initialise_loss()
+        print(self.model)
+    
+    def initialise_loss(self):    
+        self.criterion = NLLLogistiHazardLoss()
+        self.optimizer = AdamW(self.model.parameters(), **self.cfg.base.optimizer.params)
+        self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
+        
+    def initialise_models(self):
+        return MultiMaeForSurvival(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+    
+    def initialise_datasets(self, splits, modalities, preprocs, transforms=None):
+        datasets = defaultdict(list)
+        for modality in modalities:
+            transform = transforms[modality] if transforms is not None else None
+            mdata = super().initialise_datasets(splits,modality,preprocs[modality],transform)
+            for key, value in mdata.items():
+                datasets[key].append((modality,value))
+        # Concat datasets
+        concat_dataset = {} 
+        for split, modalities_data in datasets.items():
+            concat_dataset[split] = MultimodalSurvivalDataset(splits[split], self.cfg.base.data_path, modalities_data,
+                                                 transform = transforms, is_hazard_logits = True)
+        return concat_dataset
+    
+
+
+ 

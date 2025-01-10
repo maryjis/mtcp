@@ -172,6 +172,25 @@ class MRIDataset(BaseDataset):
             else:
                 return torch.zeros(OmegaConf.to_object(self.sizes)).unsqueeze(0)
 
+class MRISurvivalDataset(MRIDataset):
+    def __init__(self, data: pd.DataFrame, root_dir: str, modality: Union[str, List[str]], sizes: Tuple[int, ...],
+                 transform = None, is_hazard_logits = False, return_mask: bool = False):
+        super().__init__(data, root_dir, modality, sizes, transform, is_hazard_logits, return_mask)
+        if is_hazard_logits:
+            self.time = torch.from_numpy(data["new_time"].values)
+            self.event = torch.from_numpy(data["new_event"].values)
+        else:
+            self.time = torch.from_numpy(data["time"].values)
+            self.event = torch.from_numpy(data["event"].values)
+
+    def __getitem__(self, idx: int):
+        if self.return_mask:
+            item, mask = super().__getitem__(idx)
+            return item, mask, self.time[idx], self.event[idx]
+        else:
+            item = super().__getitem__(idx)
+            return item, self.time[idx], self.event[idx]
+
 class DatasetBraTSTumorCentered(_BaseDatasetBraTS):
     def __init__(
         self,

@@ -4,7 +4,7 @@ from typing import Dict, List, Tuple, Union
 from omegaconf import DictConfig, OmegaConf
 import pandas as pd
 from src.unimodal.rna.dataset import RNADataset, RNASurvivalDataset
-from src.unimodal.mri.datasets import SurvivalMRIDataset, MRIEmbeddingDataset, DatasetBraTSTumorCentered, MRIDataset
+from src.unimodal.mri.datasets import SurvivalMRIDataset, MRIEmbeddingDataset, DatasetBraTSTumorCentered, MRIDataset, MRISurvivalDataset
 from src.unimodal.rna.preprocessor import RNAPreprocessor
 from src.preprocessor import BaseUnimodalPreprocessor
 from src.unimodal.rna.transforms import base_transforms, padded_transforms
@@ -120,37 +120,29 @@ class UnimodalSurvivalTrainer(Trainer):
 
         self.model =self.initialise_models().to(cfg.base.device)
         self.initialise_loss()
-        self.loss_key = "task_loss"
 
         print(self.model)
         print_vit_sizes(self.model)
    
     def initialise_datasets(self, splits, modality, preproc, transforms=None):
         datasets ={}
+        print("UnimodalSurvivalTrainer, initilise data")
         # Todo - подумать нужно ли тут разббить для каждого trainerа - свой initialise_dataset
         if modality == "rna":
             for split_name, dataset in splits.items():
                 splits[split_name] = preproc.transform_labels(dataset)
                 datasets[split_name] = RNASurvivalDataset(splits[split_name], self.cfg.data.rna.rna_dataset_path, 
-                                                 transform = transforms, is_hazard_logits = True, column_order=self.preproc.get_column_order())
+                                                 transform = transforms, is_hazard_logits = True, column_order=preproc.get_column_order())
 
         elif modality == "mri":
-                splits = {split_name: self.preproc.transform_labels(split) for split_name, split in splits.items()}
+                splits = {split_name: preproc.transform_labels(split) for split_name, split in splits.items()}
                 for split_name, split in splits.items():
                     if self.cfg.data.get("embedding_name", None) is not None:
                         dataset = MRIEmbeddingDataset(split, return_mask=False, embedding_name=self.cfg.data.mri.embedding_name)
+                        datasets[split_name] = SurvivalMRIDataset(split, dataset, is_hazard_logits=True)
                     else:
-                        data_path = os.sep.join(split["MRI"].values[0].split(os.sep)[:-1])
-                        split["patients"] = split["MRI"].apply(lambda x: x.split(os.sep)[-1])
-                        dataset = DatasetBraTSTumorCentered(
-                            data_path,
-                            self.cfg.data.mri.modalities,
-                            patients=split["patients"].values,
-                            sizes=self.cfg.data.mri.sizes,
-                            return_mask=False,
-                            transform = get_basic_tumor_transforms(self.cfg.data.mri.sizes)
-                        )
-                    datasets[split_name] = SurvivalMRIDataset(split, dataset, is_hazard_logits=True)
+                        datasets[split_name] = MRISurvivalDataset(split, self.cfg.data.mri.root_path, self.cfg.data.mri.modalities, 
+                                                      self.cfg.data.mri.sizes, transform = get_basic_tumor_transforms(self.cfg.data.mri.sizes), return_mask=True, is_hazard_logits=True)
 
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
@@ -186,10 +178,12 @@ class UnimodalSurvivalTrainer(Trainer):
         total_task_loss =0
         preds,times,events = [], [], []
         for batch in dataloader:
-            data, time, event = batch  
-            if isinstance(data, dict): data = data["image"]
+            
+            data, mask,  time, event = batch
+   
+            data = {modality :value.to(device) for modality, value in data.items()} if isinstance(data, dict) else data.to(device)
 
-            outputs =self.model(data.to(device))
+            outputs =self.model(data, masks = mask)
     
             loss = self.criterion(outputs, time.to(device), event.to(device))
                 
@@ -203,9 +197,10 @@ class UnimodalSurvivalTrainer(Trainer):
             events.append(event)
             total_task_loss+=loss
             
-        metrics = {self.loss_key: total_task_loss.cpu().detach().numpy() / len(dataloader.dataset)}
+        metrics = {"task_loss": total_task_loss.cpu().detach().numpy() / len(dataloader.dataset)}
         if split!="train":
-            metrics.update(compute_survival_metrics( preds, torch.cat(times, dim=0), torch.cat(events, dim=0), cuts=self.preproc.get_hazard_cuts()))
+            preproc = self.preproc[next(iter(self.preproc))] if isinstance(self.preproc, dict) else self.preproc
+            metrics.update(compute_survival_metrics( preds, torch.cat(times, dim=0), torch.cat(events, dim=0), cuts=preproc.get_hazard_cuts()))
         else:
             self.scheduler.step()
             
@@ -235,7 +230,7 @@ class UnimodalMAETrainer(Trainer):
         print_vit_sizes(self.model)
 
         self.initialise_loss()
-        self.loss_key = "mse_loss"
+
     
     def initialise_loss(self):
         self.optimizer = AdamW(self.model.parameters(), **self.cfg.base.optimizer.params)
@@ -261,16 +256,6 @@ class UnimodalMAETrainer(Trainer):
         elif modality == "mri":
             for split_name, split in splits.items():
                     print(self.cfg.data)
-                    # data_path = os.sep.join(split["MRI"].values[0].split(os.sep)[:-1])
-                    # split["patients"] = split["MRI"].apply(lambda x: x.split(os.sep)[-1])
-                    # datasets[split_name] = DatasetBraTSTumorCentered(
-                    #     data_path,
-                    #     self.cfg.data.modalities,
-                    #     patients=split["patients"].values,
-                    #     sizes=self.cfg.data.sizes,
-                    #     return_mask=False,
-                    #     transform = get_basic_tumor_transforms(self.cfg.data.sizes)
-                    # )
                     datasets[split_name] = MRIDataset(split, self.cfg.data.mri.root_path, self.cfg.data.mri.modalities, 
                                                       self.cfg.data.mri.sizes, transform = get_basic_tumor_transforms(self.cfg.data.mri.sizes), return_mask=True)
 
@@ -284,7 +269,7 @@ class UnimodalMAETrainer(Trainer):
         
 
         for batch in tqdm(dataloader):
-            if isinstance(batch, tuple): data, mask = batch 
+            if isinstance(batch, tuple) or isinstance(batch, list): data, mask = batch 
             elif isinstance(batch, dict): data = batch["image"]
             else: data = batch
 
@@ -297,7 +282,7 @@ class UnimodalMAETrainer(Trainer):
             
             total_loss+=outputs.loss
         
-        metrics = {self.loss_key: total_loss.cpu().detach().numpy() / len(dataloader.dataset)}
+        metrics = {"mse_loss": total_loss.cpu().detach().numpy() / len(dataloader.dataset)}
         
         if split=="train":
             self.scheduler.step()

@@ -4,9 +4,9 @@ from src.utils import  *
 from src.unimodal.trainer import UnimodalSurvivalTrainer,  UnimodalMAETrainer
 from pathlib import Path
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
-from src.multimodal.trainer import MultiModalMAETrainer
+from src.multimodal.trainer import MultiModalMAETrainer, MultiModalSurvivalTrainer
 
-@hydra.main(version_base=None, config_path="src/configs", config_name="multimodal_config")
+@hydra.main(version_base=None, config_path="src/configs", config_name="unimodal_config")
 def run(cfg : DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))
     seed_everything(cfg.base.random_seed)
@@ -37,8 +37,11 @@ def run(cfg : DictConfig) -> None:
             else:
                 raise NotImplementedError(f"Such strategy - {cfg.base.strategy} isn't implemented in unimodal approach.")
         elif cfg.base.type == 'multimodal':
+              print(cfg.base.strategy)
               if cfg.base.strategy == "mae": 
                 trainer = MultiModalMAETrainer(splits, cfg)
+              elif cfg.base.strategy == "survival":
+                  trainer = MultiModalSurvivalTrainer(splits, cfg)
               else:
                 raise NotImplementedError(f"Such strategy - {cfg.base.strategy} isn't implemented in multimodal approach.")
         else:
