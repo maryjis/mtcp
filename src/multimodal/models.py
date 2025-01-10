@@ -37,19 +37,17 @@ class MultiMAEDecoder(RnaMAEDecoder):
             config.decoder_hidden_size, config.patch_size * config.num_channels, bias=True
         )  # encoder to decoder
         self.initialize_weights(num_patches)   
-    
-    
-class MultiMaeForPretraining(nn.Module):
-    """Multi-modal Masked Autoencoder for pre-training."""
-    
+ 
+class MultiMAEModel(nn.Module):
+     
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
         self.modalities = cfg.modalities
         self.__init_encoders__()
+        self.mask_token = nn.Parameter(torch.zeros(1, 1, cfg.decoder_hidden_size))
         self.encoders = nn.ModuleDict(self.encoders)
-        self.decoder = MultiMAEDecoder(self.cfg, self.get_all_patches_number())
-        
+
     def __init_encoders__(self):
         """Initialize encoders for each modality."""
         self.encoders = {}
@@ -81,7 +79,7 @@ class MultiMaeForPretraining(nn.Module):
             else:
                 # Add support for other modalities
                 raise NotImplementedError(f"Encoder for modality {modality} not implemented")
-
+            
     def get_patches_number(self, modality: str) -> int:
         """Get number of patches for a specific modality.
         
@@ -92,6 +90,199 @@ class MultiMaeForPretraining(nn.Module):
             Number of patches for the modality
         """
         return self.encoders[modality].encoder.embeddings.num_patches
+     
+    def get_all_patches_number(self) -> int:
+        """Calculate total number of patches across all modalities.
+        
+        Returns:
+            Total number of patches
+        """
+        num_patches = sum(self.get_patches_number(modality) for modality in self.modalities)
+        return num_patches
+            
+    def batch_embeddings(self, sample: torch.FloatTensor, mask: torch.BoolTensor, modality: str, multimodal_lenths: int) -> ViTMAEModelOutput:
+        """Process embeddings for a batch of samples for a given modality.
+        
+        Args:
+            sample: Input tensor of shape (batch_size, num_channels, sample_size)
+            mask: Boolean mask tensor indicating which samples to mask
+            modality: Name of the modality being processed
+            multimodal_lenths: Cumulative sequence length of previous modalities
+            
+        Returns:
+            ViTMAEModelOutput containing the processed embeddings
+        """
+        batch_size = sample.shape[0]
+        seq_length = self.get_patches_number(modality)
+        device = sample.device
+        # print("modality: ", modality)
+        # print("Seq length: ", seq_length)
+        # print(mask)
+        # If mask is all True, process entire batch normally
+        if torch.all(mask):
+            print("Torch_all: mask")
+            embedded_sample = self.encoders[modality](sample)
+            # Offset ids_restore by cumulative sequence length
+            embedded_sample.ids_restore = embedded_sample.ids_restore + multimodal_lenths
+            return embedded_sample
+
+        elif torch.any(mask):
+            print("Torch_any: mask")
+            # Get indices of masked and unmasked samples
+            empty_sample_ids = torch.nonzero(~mask, as_tuple=True)[0].to(device)
+          # Create tensors for empty samples
+            mask_empty = torch.zeros(len(empty_sample_ids), seq_length, device=device)
+            ids_restore_empty = torch.arange(seq_length, device=device).repeat(len(empty_sample_ids), 1) + multimodal_lenths  
+                      
+            non_empty_sample_ids = torch.nonzero(mask, as_tuple=True)[0].to(device)
+            # print("Non empty sample ids: ", non_empty_sample_ids)
+            
+            # Process non-empty samples
+            non_empty_samples = torch.index_select(sample, dim=0, index=non_empty_sample_ids)
+            # print("Non empty samples shape: ", non_empty_samples.shape)
+            embedded_non_empty = self.encoders[modality](non_empty_samples)
+            
+            empty_sequence = self.mask_token.repeat(len(empty_sample_ids), embedded_non_empty.last_hidden_state.shape[1], 1)
+            # print("Empty sample ids: ", empty_sample_ids)
+            # print("Non empty sequence shape: ", embedded_non_empty.last_hidden_state.shape)
+            # print("Empty sequence shape: ", empty_sequence.shape)
+            # Combine empty and non-empty tensors
+            last_hidden_state = torch.cat([
+                embedded_non_empty.last_hidden_state,
+                empty_sequence
+            ], dim=0)
+            
+            mask_combined = torch.cat([
+                embedded_non_empty.mask,
+                mask_empty
+            ], dim=0)
+            # print("Ids restore empty shape: ", ids_restore_empty.shape)
+            # print("embedded_non_empty.ids_restore: ", embedded_non_empty.ids_restore.shape)
+            ids_restore = torch.cat([
+                embedded_non_empty.ids_restore + multimodal_lenths,
+                ids_restore_empty
+            ], dim=0)
+
+            # Reorder tensors based on original sample ordering
+            #indices = torch.cat([empty_sample_ids, non_empty_sample_ids]).sort()[1]
+            indices = torch.argsort(torch.cat([non_empty_sample_ids, empty_sample_ids]), dim=0)
+            
+            # print("Last hidden state shape: ", last_hidden_state.shape)
+            # print("Mask combined shape: ", mask_combined.shape)
+            # print("Mask combined: ", torch.any(mask_combined, dim=1))
+            
+            # print("Indices: ", indices)
+            last_hidden_state = torch.index_select(last_hidden_state, dim=0, index=indices)
+            mask_combined = torch.index_select(mask_combined, dim=0, index=indices)
+            ids_restore = torch.index_select(ids_restore, dim=0, index=indices)
+            
+            # print("Last hidden state shape: ", last_hidden_state.shape)
+            # print("Mask combined shape: ", mask_combined.shape)
+            # print("Mask combined: ", torch.any(mask_combined, dim=1))
+            return ViTMAEModelOutput(
+                last_hidden_state=last_hidden_state,
+                mask=mask_combined,
+                ids_restore=ids_restore,
+                hidden_states=None,
+                attentions=None
+            )
+        else:
+            print("Torch_empty: mask")
+            empty_sample_ids = torch.nonzero(~mask, as_tuple=True)[0].to(device)
+            # Create tensors for empty samples
+            mask_empty = torch.zeros(len(empty_sample_ids), seq_length, device=device)
+            ids_restore_empty = torch.arange(seq_length, device=device).repeat(len(empty_sample_ids), 1) + multimodal_lenths  
+            empty_sequence = self.mask_token.repeat(len(empty_sample_ids), seq_length+1, 1)
+            return ViTMAEModelOutput(
+                last_hidden_state=empty_sequence,
+                mask=mask_empty,
+                ids_restore=ids_restore_empty,
+                hidden_states=None,
+                attentions=None
+            )
+    
+    def forward(
+        self,
+        x: Dict[str, torch.FloatTensor],
+        masks: Dict[str, torch.FloatTensor],
+        interpolate_pos_encoding: bool = False
+    ):
+        """Forward pass through the model.
+        
+        Processes each modality separately, concatenates their embeddings,
+        and passes through the decoder to get reconstructions.
+        """
+        # Track cumulative sequence length across modalities
+        multimodal_length = 0
+        encoder_outputs = []
+
+        # Process each modality
+        is_first = True
+        for modality in self.modalities:
+            seq_length = self.get_patches_number(modality)
+            sample = x[modality]
+            mask = masks[modality]
+            
+            # Get embeddings for this modality
+            embedded_sample = self.batch_embeddings(
+                sample=sample,
+                mask=mask,
+                modality=modality,
+                multimodal_lenths=multimodal_length
+                
+            )
+            
+            multimodal_length += seq_length
+            if not is_first:
+                embedded_sample = ViTMAEModelOutput(
+                    last_hidden_state=embedded_sample.last_hidden_state[:,1:, :],
+                    mask=embedded_sample.mask,
+                    ids_restore=embedded_sample.ids_restore,
+                    hidden_states=embedded_sample.hidden_states,
+                    attentions=embedded_sample.attentions
+                )
+            encoder_outputs.append(embedded_sample)
+            is_first = False
+    
+        # Combine embeddings from all modalities
+        last_hidden_states = [out.last_hidden_state for out in encoder_outputs]
+        masks = [out.mask for out in encoder_outputs]
+        ids_restores = [out.ids_restore for out in encoder_outputs]
+            
+        concat_embedding = ViTMAEModelOutput(
+            last_hidden_state=torch.cat(last_hidden_states, dim=1),
+            mask=torch.cat(masks, dim=1),
+            ids_restore=torch.cat(ids_restores, dim=1),
+            hidden_states=None,
+            attentions=None
+        )    
+            
+        return concat_embedding
+        
+        
+class MultiMaeForPretraining(nn.Module):
+    """Multi-modal Masked Autoencoder for pre-training."""
+    
+    def __init__(self, cfg):
+        super().__init__()
+        self.cfg = cfg
+        self.modalities = cfg.modalities
+        self.model = MultiMAEModel(self.cfg)
+        self.decoder = MultiMAEDecoder(self.cfg, self.get_all_patches_number())
+    
+        
+
+
+    def get_patches_number(self, modality: str) -> int:
+        """Get number of patches for a specific modality.
+        
+        Args:
+            modality: The modality type (e.g. "rna")
+            
+        Returns:
+            Number of patches for the modality
+        """
+        return self.model.encoders[modality].encoder.embeddings.num_patches
      
     def get_all_patches_number(self) -> int:
         """Calculate total number of patches across all modalities.
@@ -182,7 +373,7 @@ class MultiMaeForPretraining(nn.Module):
             # Calculate loss for current modality
             modality_loss = self.__forward_loss(
                 x[modality],
-                self.encoders[modality], 
+                self.model.encoders[modality], 
                 pred_modality,
                 mask_modality,
                 interpolate_pos_encoding
@@ -194,105 +385,7 @@ class MultiMaeForPretraining(nn.Module):
             
         return modality_losses, total_loss
     
-    def batch_embeddings(self, sample: torch.FloatTensor, mask: torch.BoolTensor, modality: str, multimodal_lenths: int) -> ViTMAEModelOutput:
-        """Process embeddings for a batch of samples for a given modality.
-        
-        Args:
-            sample: Input tensor of shape (batch_size, num_channels, sample_size)
-            mask: Boolean mask tensor indicating which samples to mask
-            modality: Name of the modality being processed
-            multimodal_lenths: Cumulative sequence length of previous modalities
-            
-        Returns:
-            ViTMAEModelOutput containing the processed embeddings
-        """
-        batch_size = sample.shape[0]
-        seq_length = self.get_patches_number(modality)
-        device = sample.device
-        # print("modality: ", modality)
-        # print("Seq length: ", seq_length)
-        print(mask)
-        # If mask is all True, process entire batch normally
-        if torch.all(mask):
-            embedded_sample = self.encoders[modality](sample)
-            # Offset ids_restore by cumulative sequence length
-            embedded_sample.ids_restore = embedded_sample.ids_restore + multimodal_lenths
-            return embedded_sample
-
-        elif torch.any(mask):
-            
-            # Get indices of masked and unmasked samples
-            empty_sample_ids = torch.nonzero(~mask, as_tuple=True)[0].to(device)
-          # Create tensors for empty samples
-            mask_empty = torch.zeros(len(empty_sample_ids), seq_length, device=device)
-            ids_restore_empty = torch.arange(seq_length, device=device).repeat(len(empty_sample_ids), 1) + multimodal_lenths  
-                      
-            non_empty_sample_ids = torch.nonzero(mask, as_tuple=True)[0].to(device)
-            # print("Non empty sample ids: ", non_empty_sample_ids)
-            
-            # Process non-empty samples
-            non_empty_samples = torch.index_select(sample, dim=0, index=non_empty_sample_ids)
-            # print("Non empty samples shape: ", non_empty_samples.shape)
-            embedded_non_empty = self.encoders[modality](non_empty_samples)
-            
-            empty_sequence = self.decoder.mask_token.repeat(len(empty_sample_ids), embedded_non_empty.last_hidden_state.shape[1], 1)
-            # print("Empty sample ids: ", empty_sample_ids)
-            # print("Non empty sequence shape: ", embedded_non_empty.last_hidden_state.shape)
-            # print("Empty sequence shape: ", empty_sequence.shape)
-            # Combine empty and non-empty tensors
-            last_hidden_state = torch.cat([
-                embedded_non_empty.last_hidden_state,
-                empty_sequence
-            ], dim=0)
-            
-            mask_combined = torch.cat([
-                embedded_non_empty.mask,
-                mask_empty
-            ], dim=0)
-            # print("Ids restore empty shape: ", ids_restore_empty.shape)
-            # print("embedded_non_empty.ids_restore: ", embedded_non_empty.ids_restore.shape)
-            ids_restore = torch.cat([
-                embedded_non_empty.ids_restore + multimodal_lenths,
-                ids_restore_empty
-            ], dim=0)
-
-            # Reorder tensors based on original sample ordering
-            #indices = torch.cat([empty_sample_ids, non_empty_sample_ids]).sort()[1]
-            indices = torch.argsort(torch.cat([non_empty_sample_ids, empty_sample_ids]), dim=0)
-            
-            # print("Last hidden state shape: ", last_hidden_state.shape)
-            # print("Mask combined shape: ", mask_combined.shape)
-            # print("Mask combined: ", torch.any(mask_combined, dim=1))
-            
-            # print("Indices: ", indices)
-            last_hidden_state = torch.index_select(last_hidden_state, dim=0, index=indices)
-            mask_combined = torch.index_select(mask_combined, dim=0, index=indices)
-            ids_restore = torch.index_select(ids_restore, dim=0, index=indices)
-            
-            # print("Last hidden state shape: ", last_hidden_state.shape)
-            # print("Mask combined shape: ", mask_combined.shape)
-            # print("Mask combined: ", torch.any(mask_combined, dim=1))
-            return ViTMAEModelOutput(
-                last_hidden_state=last_hidden_state,
-                mask=mask_combined,
-                ids_restore=ids_restore,
-                hidden_states=None,
-                attentions=None
-            )
-        else:
-            
-            empty_sample_ids = torch.nonzero(~mask, as_tuple=True)[0].to(device)
-            # Create tensors for empty samples
-            mask_empty = torch.zeros(len(empty_sample_ids), seq_length, device=device)
-            ids_restore_empty = torch.arange(seq_length, device=device).repeat(len(empty_sample_ids), 1) + multimodal_lenths  
-            empty_sequence = self.decoder.mask_token.repeat(len(empty_sample_ids), seq_length, 1)
-            return ViTMAEModelOutput(
-                last_hidden_state=empty_sequence,
-                mask=mask_empty,
-                ids_restore=ids_restore_empty,
-                hidden_states=None,
-                attentions=None
-            )
+   
                              
         
     def forward(
@@ -306,38 +399,8 @@ class MultiMaeForPretraining(nn.Module):
         Processes each modality separately, concatenates their embeddings,
         and passes through the decoder to get reconstructions.
         """
-        # Track cumulative sequence length across modalities
-        multimodal_length = 0
-        encoder_outputs = []
-
-        # Process each modality
-        for modality in self.modalities:
-            seq_length = self.get_patches_number(modality)
-            sample = x[modality]
-            mask = masks[modality]
             
-            # Get embeddings for this modality
-            embedded_sample = self.batch_embeddings(
-                sample=sample,
-                mask=mask,
-                modality=modality,
-                multimodal_lenths=multimodal_length
-            )
-            multimodal_length += seq_length
-            encoder_outputs.append(embedded_sample)
-    
-        # Combine embeddings from all modalities
-        last_hidden_states = [out.last_hidden_state for out in encoder_outputs]
-        masks = [out.mask for out in encoder_outputs]
-        ids_restores = [out.ids_restore for out in encoder_outputs]
-            
-        concat_embedding = ViTMAEModelOutput(
-            last_hidden_state=torch.cat(last_hidden_states, dim=1),
-            mask=torch.cat(masks, dim=1),
-            ids_restore=torch.cat(ids_restores, dim=1),
-            hidden_states=None,
-            attentions=None
-        )    
+        concat_embedding = self.model(x, masks, interpolate_pos_encoding)
             
         latent = concat_embedding.last_hidden_state
         ids_restore = concat_embedding.ids_restore
@@ -363,3 +426,41 @@ class MultiMaeForPretraining(nn.Module):
             hidden_states=concat_embedding.hidden_states,
             attentions=concat_embedding.attentions,
         )
+class MaskAttentionFusion(nn.Module):
+    def __init__(self, fusion_depth, fusion_dim, fusion_nhead, fusion_dim_feedforward, fusion_dropout):
+        super().__init__()
+        self.fusion_depth = fusion_depth
+
+        self.fusion_layers = nn.ModuleList([nn.TransformerEncoderLayer(fusion_dim, fusion_nhead, dim_feedforward=fusion_dim_feedforward, dropout=fusion_dropout,
+                                   layer_norm_eps=1e-05, batch_first=True) for _ in range(fusion_depth)])
+        
+    def forward(self, x, mask):
+        class_token = torch.full((mask.shape[0], 1), 1).to(x.device)
+        expanded_mask = torch.cat((mask, class_token), dim=1)
+        for layer in self.fusion_layers:
+            x = layer(x, src_key_padding_mask=1 - expanded_mask)
+        return x
+        
+class MultiMaeForSurvival(nn.Module):
+    def __init__(self, cfg):
+        super().__init__()
+        self.cfg = cfg
+        if cfg.is_load_pretrained:
+            self.model = MultiMAEModel.from_pretrained(cfg.pretrained_model_path, config=cfg)
+        else:
+            self.model = MultiMAEModel(cfg)
+        if cfg.fusion_strategy == "mask_attention":
+            self.fusion_strategy = MaskAttentionFusion(cfg.fusion_depth, cfg.fusion_dim, cfg.fusion_nhead,
+                                                       cfg.fusion_dim_feedforward, cfg.fusion_dropout)
+        else:
+            raise ValueError(f"Invalid fusion strategy: {cfg.fusion_strategy}")
+        self.projection = nn.Linear(cfg.hidden_size, cfg.output_dim)
+        
+    def forward(self, x: Dict[str, torch.FloatTensor], masks: Dict[str, torch.FloatTensor], interpolate_pos_encoding: bool = False):
+        print({modality: value.shape for modality, value  in x.items()})
+        x = self.model(x, masks, interpolate_pos_encoding)
+        print("Mask shape: ", x.mask.shape)
+        print("Last_hidden_state shape: ", x.last_hidden_state.shape)
+        x = self.fusion_strategy(x.last_hidden_state, x.mask)
+        x = self.projection(x[:,0,:])
+        return x

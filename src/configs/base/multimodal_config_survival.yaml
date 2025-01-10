@@ -1,0 +1,32 @@
+experiment_name: "multimodal_test_without_clusters_quantile_survival"
+n_epochs: 50
+n_intervals: 20
+random_seed: 1380
+
+optimizer:
+    name: "Adam"
+    params:
+        lr: 1e-3 # 2e-5
+        weight_decay: 1e-2
+    
+scheduler: 
+    name: "CosineAnnealingLR"
+    params:
+        eta_min: 5e-6
+
+type: "multimodal"
+strategy: "survival" # mae, survival
+modalities: ["rna", "mri"]
+architecture: "MAE"
+splits: 5
+data_path: "src/data/dataset.csv"
+save_path : "outputs/models/"
+rna_dataset_path: "src/data/rna_dataset.csv"
+device: "cuda:0"
+remove_nan_column: 'RNA'
+batch_size: 24
+
+log:
+    logging: True
+    wandb_project: "cancer_mtcp"
+    wandb_run_name: "test_multimodal_mae"

@@ -10,7 +10,8 @@ class RNADataset(BaseDataset):
 
     def __init__(self, data_split, dataset_dir, transform = None, 
                  is_hazard_logits = False,
-                 column_order = None):
+                 column_order = None,
+                 return_mask = True):
         """
         Arguments:
             csv_file (string): Path to the csv file with annotations.
@@ -18,7 +19,7 @@ class RNADataset(BaseDataset):
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
-        super().__init__(data_split, dataset_dir, transform, is_hazard_logits)
+        super().__init__(data_split, dataset_dir, transform, is_hazard_logits, return_mask)
         self.rna_dataset = pd.read_csv(dataset_dir)
         self.column_order = column_order
         
@@ -62,7 +63,7 @@ class RNADataset(BaseDataset):
 class RNASurvivalDataset(RNADataset):
         def __init__(self, data_split, dataset_dir, transform = None, 
             is_hazard_logits = False, column_order = None, return_mask =True):
-            super().__init__(data_split, dataset_dir, transform = transform, is_hazard_logits = is_hazard_logits, column_order = column_order)
+            super().__init__(data_split, dataset_dir, transform = transform, is_hazard_logits = is_hazard_logits, column_order = column_order, return_mask=return_mask)
             
             # TODO подумать как тут лучше сделать выгрузку для мультимодальных данных 
             # TODO добавить return_mask
@@ -72,6 +73,13 @@ class RNASurvivalDataset(RNADataset):
         def __getitem__(self, idx):
             sample, mask = super().__getitem__(idx)
             if self.is_hazard_logits:
-                return sample.float(), self.data.iloc[idx]['new_time'], self.data.iloc[idx]['new_event']
-            else: 
-                return sample.float(), self.data.iloc[idx]['time'], self.data.iloc[idx]['event']
+                if self.return_mask ==True:
+                    return sample.float(),mask,  self.data.iloc[idx]['new_time'], self.data.iloc[idx]['new_event']
+                else:
+                    return sample.float(), self.data.iloc[idx]['new_time'], self.data.iloc[idx]['new_event']
+            else:
+                if self.return_mask ==True: 
+                    return sample.float(),mask, self.data.iloc[idx]['time'], self.data.iloc[idx]['event']
+                else:
+                    return sample.float(), self.data.iloc[idx]['time'], self.data.iloc[idx]['event']
+                

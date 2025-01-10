@@ -227,7 +227,7 @@ class MriMaeSurvivalModel(nn.Module):
             self.vit = MriMAEModel(config)
         self.projection = nn.Linear(config.hidden_size, config.output_dim)
         
-    def forward(self, mri_values):
+    def forward(self, mri_values, masks=None):
         x = self.vit(mri_values)
 
         x = self.projection(x.last_hidden_state[:,0,:])
