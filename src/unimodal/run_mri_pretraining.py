@@ -23,14 +23,14 @@ if __name__ == "__main__":
     parser.add_argument("--path_to_dataset_file", type=str, default="src/data/dataset.csv") #remember, counted from the place where the script was launched
     parser.add_argument("--path_to_save", type=str, default="outputs/models") #will be created if not exists
     parser.add_argument("--batch_size", type=int, default=48)
-    parser.add_argument("--epochs", type=int, default=30)
+    parser.add_argument("--epochs", type=int, default=2)
     parser.add_argument("--lr", type=float, default=1e-4)
     # parser.add_argument("--modalities", nargs="+", default=["t1ce", "flair"])
-    parser.add_argument("--modalities", nargs="+", default=["t1c", "t2f"]) #["t1c", "t2f"]
+    parser.add_argument("--modalities", nargs="+", default=["t1c"]) #["t1c", "t2f"]
     parser.add_argument("--weight_decay", type=float, default=1e-6)
     parser.add_argument("--entity", type=str, default="dmitriykornilov_team") #define will be used wandb logging or not
     parser.add_argument("--project", type=str, default="cancer_mtcp")
-    parser.add_argument("--run_name", type=str, default="mri_pretraining")
+    parser.add_argument("--run_name", type=str, default="mri_pretraining_test")
     parser.add_argument("--temperature", type=float, default=0.07)
     parser.add_argument("--tumor_centered", type=bool, default=True)
     # parser.add_argument("--n_cpus", type=int, default=40)
@@ -41,7 +41,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=1999)
     parser.add_argument("--train_percentage", type=float, default=0.75) #test patients are not included in train/val
     parser.add_argument("--use_monai_weights", type=bool, default=False)
-    parser.add_argument("--model_name_postfix", type=str, default="")
+    parser.add_argument("--model_name_postfix", type=str, default="_profiling")
     args = parser.parse_args()
 
     # Set seed
