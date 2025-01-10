@@ -9,9 +9,35 @@ import torch
 import pandas as pd
 from omegaconf import OmegaConf
 from src.datasets import BaseDataset
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning) #otherwise warnings from torch.load raise, weights_only is not an option: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly.
 
 __all__ = ["DatasetBraTSTumorCentered"]
 
+class DatasetBraTSTensor(Dataset):
+    def __init__(
+        self,
+        patients: List[str],
+        tag: str = "roi",
+        modalities: Union[str, List[str]] = "t1c",
+        size: Union[List[int], Tuple[int], Tuple[int, int], Tuple[int, int, int]] = (64, 64, 64),
+    ) -> None:
+        self.patients = patients
+        self.modalities = modalities
+        self.size = size
+        self.tag = tag
+
+    def __len__(self):
+        return len(self.patients)
+    
+    def __getitem__(self, idx):
+        return torch.load(
+            os.path.join(
+                self.patients[idx],
+                f"{self.tag}_{'_'.join(self.modalities)}_{'_'.join(list(map(str, self.size)))}.pt"
+            ),
+            weights_only=False
+        ).to(dtype=torch.float32)
 
 class _BaseDatasetBraTS(Dataset):
     def __init__(

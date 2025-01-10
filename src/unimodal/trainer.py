@@ -4,7 +4,7 @@ from typing import Dict, List, Tuple, Union
 from omegaconf import DictConfig, OmegaConf
 import pandas as pd
 from src.unimodal.rna.dataset import RNADataset, RNASurvivalDataset
-from src.unimodal.mri.datasets import SurvivalMRIDataset, MRIEmbeddingDataset, DatasetBraTSTumorCentered, MRIDataset, MRISurvivalDataset
+from src.unimodal.mri.datasets import SurvivalMRIDataset, MRIEmbeddingDataset, DatasetBraTSTumorCentered, MRIDataset, MRISurvivalDataset, DatasetBraTSTensor
 from src.unimodal.rna.preprocessor import RNAPreprocessor
 from src.preprocessor import BaseUnimodalPreprocessor
 from src.unimodal.rna.transforms import base_transforms, padded_transforms
@@ -70,32 +70,30 @@ class Trainer(object):
         
         for epoch in tqdm(range(self.cfg.base.n_epochs)):
             print("Train...")
-            ### debug
             
-            # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, profile_memory=True) as prof:
-            #     with record_function("training"):
-            self.model.train()
-            train_metrics = self.__loop__("train",fold_ind, self.dataloaders['train'], self.cfg.base.device)
-            train_metrics.update({"epoch": epoch})
-            if self.cfg.base.log.logging:
-                wandb.log({f"train/fold_{fold_ind}/{key}" : value for key, value in train_metrics.items()})
             ### debug
-            # print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
-            # prof.export_chrome_trace(f"outputs/traces/train_trace_{epoch}.json")
+            with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+                self.model.train()
+                train_metrics = self.__loop__("train",fold_ind, self.dataloaders['train'], self.cfg.base.device)
+                train_metrics.update({"epoch": epoch})
+                if self.cfg.base.log.logging:
+                    wandb.log({f"train/fold_{fold_ind}/{key}" : value for key, value in train_metrics.items()})
+            ### debug
+            print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
+            prof.export_chrome_trace(f"outputs/traces/trace_{epoch}_train.json")
             
             print("Val...")
             ### debug
-            # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, profile_memory=True) as prof:
-            #     with record_function("validaion"):
-            self.model.eval()
-            with torch.no_grad():    
-                val_metrics = self.__loop__("val",fold_ind, self.dataloaders['val'], self.cfg.base.device)
-            val_metrics.update({"epoch": epoch})    
-            if self.cfg.base.log.logging:
-                wandb.log({f"val/fold_{fold_ind}/{key}" : value for key, value in val_metrics.items()})
+            with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+                self.model.eval()
+                with torch.no_grad():    
+                    val_metrics = self.__loop__("val",fold_ind, self.dataloaders['val'], self.cfg.base.device)
+                val_metrics.update({"epoch": epoch})    
+                if self.cfg.base.log.logging:
+                    wandb.log({f"val/fold_{fold_ind}/{key}" : value for key, value in val_metrics.items()})
             ### debug
-            # print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
-            # prof.export_chrome_trace(f"outputs/traces/val_trace_{epoch}.json")
+            print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
+            prof.export_chrome_trace(f"outputs/traces/trace_{epoch}_val.json")
 
         # if val_metrics[self.loss_key] < best_loss:
             # best_loss = val_metrics[self.loss_key]
@@ -109,17 +107,16 @@ class Trainer(object):
     def evaluate(self, fold_ind : int):
         print("Test...")
         ### debug
-        # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, profile_memory=True) as prof:
-        #     with record_function("test"):
-        self.model.eval()
-        with torch.no_grad():    
-            test_metrics = self.__loop__("test",fold_ind, self.dataloaders['test'], self.cfg.base.device)
-        if self.cfg.base.log.logging:
-            wandb.log({f"test/fold_{fold_ind}/{key}" : value for key, value in test_metrics.items()})   
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+            self.model.eval()
+            with torch.no_grad():    
+                test_metrics = self.__loop__("test",fold_ind, self.dataloaders['test'], self.cfg.base.device)
+            if self.cfg.base.log.logging:
+                wandb.log({f"test/fold_{fold_ind}/{key}" : value for key, value in test_metrics.items()})   
 
-        # debug
-        # print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
-        # prof.export_chrome_trace(f"outputs/traces/test_trace.json")
+        ### debug
+        print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
+        prof.export_chrome_trace(f"outputs/traces/trace_test.json")
         return test_metrics   
         
 
@@ -165,6 +162,9 @@ class UnimodalSurvivalTrainer(Trainer):
                     if self.cfg.data.get("embedding_name", None) is not None:
                         dataset = MRIEmbeddingDataset(split, return_mask=False, embedding_name=self.cfg.data.mri.embedding_name)
                         datasets[split_name] = SurvivalMRIDataset(split, dataset, is_hazard_logits=True)
+                    elif self.cfg.data.get("tensor_name", None) is not None:
+                        dataset = DatasetBraTSTensor(split["MRI"].values, tag=self.cfg.data.tensor_name, modalities=self.cfg.data.modalities, size=self.cfg.data.sizes)
+                        datasets[split_name] = SurvivalMRIDataset(split, dataset, is_hazard_logits=True)
                     else:
                         datasets[split_name] = MRISurvivalDataset(split, self.cfg.data.mri.root_path, self.cfg.data.mri.modalities, 
                                                       self.cfg.data.mri.sizes, transform = get_basic_tumor_transforms(self.cfg.data.mri.sizes), return_mask=True, is_hazard_logits=True)
@@ -204,7 +204,7 @@ class UnimodalSurvivalTrainer(Trainer):
         preds,times,events = [], [], []
 
         # with profile(
-        #     activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+        #     activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA, ProfilerActivity.CUDA],
         #     record_shapes=True,
         #     profile_memory=True,
         #     schedule=schedule(skip_first=0, wait=0, warmup=1, active=1, repeat=1),
@@ -290,7 +290,11 @@ class UnimodalMAETrainer(Trainer):
 
         elif modality == "mri":
             for split_name, split in splits.items():
-                    print(self.cfg.data)
+                print(self.cfg.data)
+                if self.cfg.data.get("tensor_name", None) is not None:
+                    datasets[split_name] = DatasetBraTSTensor(split["MRI"].values, tag=self.cfg.data.tensor_name,
+                                                                modalities=self.cfg.data.modalities, size=self.cfg.data.sizes)
+                else:
                     datasets[split_name] = MRIDataset(split, self.cfg.data.mri.root_path, self.cfg.data.mri.modalities, 
                                                       self.cfg.data.mri.sizes, transform = get_basic_tumor_transforms(self.cfg.data.mri.sizes), return_mask=True)
 
