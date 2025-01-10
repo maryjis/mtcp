@@ -27,6 +27,10 @@ from sklearn.preprocessing import QuantileTransformer, StandardScaler, MinMaxSca
 from src.unimodal.rna.transforms import UpperQuartileNormalizer
 from src.unimodal.mri.transforms import get_basic_tumor_transforms
 
+from torch.profiler import profile, record_function, ProfilerActivity, schedule
+from src.utils import trace_handler
+from functools import partial
+
 class Trainer(object):
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
         self.cfg = cfg
@@ -63,22 +67,36 @@ class Trainer(object):
         # best_loss = np.infty
         # best_epoch = -1
 
+        
         for epoch in tqdm(range(self.cfg.base.n_epochs)):
             print("Train...")
+            ### debug
+            
+            # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, profile_memory=True) as prof:
+            #     with record_function("training"):
             self.model.train()
             train_metrics = self.__loop__("train",fold_ind, self.dataloaders['train'], self.cfg.base.device)
             train_metrics.update({"epoch": epoch})
             if self.cfg.base.log.logging:
                 wandb.log({f"train/fold_{fold_ind}/{key}" : value for key, value in train_metrics.items()})
+            ### debug
+            # print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
+            # prof.export_chrome_trace(f"outputs/traces/train_trace_{epoch}.json")
             
             print("Val...")
+            ### debug
+            # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, profile_memory=True) as prof:
+            #     with record_function("validaion"):
             self.model.eval()
             with torch.no_grad():    
                 val_metrics = self.__loop__("val",fold_ind, self.dataloaders['val'], self.cfg.base.device)
             val_metrics.update({"epoch": epoch})    
             if self.cfg.base.log.logging:
                 wandb.log({f"val/fold_{fold_ind}/{key}" : value for key, value in val_metrics.items()})
-                
+            ### debug
+            # print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
+            # prof.export_chrome_trace(f"outputs/traces/val_trace_{epoch}.json")
+
         # if val_metrics[self.loss_key] < best_loss:
             # best_loss = val_metrics[self.loss_key]
             # best_epoch = epoch
@@ -90,12 +108,19 @@ class Trainer(object):
     
     def evaluate(self, fold_ind : int):
         print("Test...")
+        ### debug
+        # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, profile_memory=True) as prof:
+        #     with record_function("test"):
         self.model.eval()
         with torch.no_grad():    
             test_metrics = self.__loop__("test",fold_ind, self.dataloaders['test'], self.cfg.base.device)
         if self.cfg.base.log.logging:
-            wandb.log({f"test/fold_{fold_ind}/{key}" : value for key, value in test_metrics.items()})    
-        return test_metrics    
+            wandb.log({f"test/fold_{fold_ind}/{key}" : value for key, value in test_metrics.items()})   
+
+        # debug
+        # print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
+        # prof.export_chrome_trace(f"outputs/traces/test_trace.json")
+        return test_metrics   
         
 
 class UnimodalSurvivalTrainer(Trainer):
@@ -113,9 +138,9 @@ class UnimodalSurvivalTrainer(Trainer):
                 
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
 
-        self.dataloaders = {"train" : DataLoader(self.datasets["train"],shuffle=True, batch_size =cfg.base.batch_size),
-                            "val" : DataLoader(self.datasets["val"],shuffle=False, batch_size = 1),
-                            "test" : DataLoader(self.datasets["test"],shuffle=False, batch_size =1)
+        self.dataloaders = {"train" : DataLoader(self.datasets["train"],shuffle=True, batch_size =cfg.base.batch_size, num_workers=8),
+                            "val" : DataLoader(self.datasets["val"],shuffle=False, batch_size = 1, num_workers=8),
+                            "test" : DataLoader(self.datasets["test"],shuffle=False, batch_size =1, num_workers=8)
                             }
 
         self.model =self.initialise_models().to(cfg.base.device)
@@ -177,6 +202,14 @@ class UnimodalSurvivalTrainer(Trainer):
     def __loop__(self,split, fold_ind, dataloader, device):
         total_task_loss =0
         preds,times,events = [], [], []
+
+        # with profile(
+        #     activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+        #     record_shapes=True,
+        #     profile_memory=True,
+        #     schedule=schedule(skip_first=0, wait=0, warmup=1, active=1, repeat=1),
+        #     on_trace_ready=partial(trace_handler, sort_by_keyword="self_cpu_time_total", phase=split)
+        # ) as prof:
         for batch in dataloader:
             
             data, mask,  time, event = batch
@@ -196,6 +229,8 @@ class UnimodalSurvivalTrainer(Trainer):
             times.append(time)
             events.append(event)
             total_task_loss+=loss
+
+                # prof.step()
             
         metrics = {"task_loss": total_task_loss.cpu().detach().numpy() / len(dataloader.dataset)}
         if split!="train":
