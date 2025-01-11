@@ -8,7 +8,7 @@ from monai.transforms import (
     RandCoarseShuffled,
     ToTensord,
     NormalizeIntensity,
-    SpatialPad,
+    SpatialPad
 )
 
 import torch
@@ -87,3 +87,5 @@ tumor_transforms = Compose(
         SpatialPad(spatial_size=(64, 64, 64)),
     ]
 )
+
+

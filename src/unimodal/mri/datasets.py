@@ -37,7 +37,7 @@ class DatasetBraTSTensor(Dataset):
                 f"{self.tag}_{'_'.join(self.modalities)}_{'_'.join(list(map(str, self.size)))}.pt"
             ),
             weights_only=False
-        ).to(dtype=torch.float32)
+        )
 
 class _BaseDatasetBraTS(Dataset):
     def __init__(
