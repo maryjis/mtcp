@@ -34,10 +34,7 @@ from functools import partial
 class Trainer(object):
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
         self.cfg = cfg
-        if self.cfg.base.modalities[0] == "mri" and self.cfg.base.strategy == "mae":
-            pass
-        else:
-            self.preproc = self.initialise_preprocessing(splits, self.cfg.base.modalities[0])
+        self.preproc = self.initialise_preprocessing(splits, self.cfg.base.modalities[0])
  
     def initialise_preprocessing(self, splits, modality):
         
@@ -55,8 +52,11 @@ class Trainer(object):
             return preproc
 
         elif modality == "mri":
-            preproc = BaseUnimodalPreprocessor(splits["train"], self.cfg.base.n_intervals)
-            preproc.fit()
+            preproc = None
+            if self.cfg.base.strategy != "mae": #labels are not used for pre-training
+                preproc = BaseUnimodalPreprocessor(splits["train"], self.cfg.base.n_intervals)
+                preproc.fit()
+
             return preproc
 
         else:
@@ -135,9 +135,9 @@ class UnimodalSurvivalTrainer(Trainer):
                 
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
 
-        self.dataloaders = {"train" : DataLoader(self.datasets["train"],shuffle=True, batch_size =cfg.base.batch_size, num_workers=8),
-                            "val" : DataLoader(self.datasets["val"],shuffle=False, batch_size = 1, num_workers=8),
-                            "test" : DataLoader(self.datasets["test"],shuffle=False, batch_size =1, num_workers=8)
+        self.dataloaders = {"train" : DataLoader(self.datasets["train"],shuffle=True, batch_size =cfg.base.batch_size, num_workers=self.cfg.base.get("num_workers", 0)),
+                            "val" : DataLoader(self.datasets["val"],shuffle=False, batch_size = 1, num_workers=self.cfg.base.get("num_workers", 0)),
+                            "test" : DataLoader(self.datasets["test"],shuffle=False, batch_size =1, num_workers=self.cfg.base.get("num_workers", 0))
                             }
 
         self.model =self.initialise_models().to(cfg.base.device)
@@ -249,15 +249,10 @@ class UnimodalMAETrainer(Trainer):
         transforms = None
         if self.cfg.base.modalities[0]=="rna":
             transforms = padded_transforms(self.preproc.get_scaling(), cfg.model.rna_size)
-            self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
-        elif self.cfg.base.modalities[0]=="mri":
-            self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
-        else:
-            raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
-        
-        self.dataloaders = {"train" : DataLoader(self.datasets["train"],shuffle=True, batch_size =cfg.base.batch_size),
-                            "val" : DataLoader(self.datasets["val"],shuffle=False, batch_size = 1),
-                            "test" : DataLoader(self.datasets["test"],shuffle=False, batch_size =1)
+        self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
+        self.dataloaders = {"train" : DataLoader(self.datasets["train"],shuffle=True, batch_size =cfg.base.batch_size, num_workers=self.cfg.base.get("num_workers", 0)),
+                            "val" : DataLoader(self.datasets["val"],shuffle=False, batch_size = 1, num_workers=self.cfg.base.get("num_workers", 0)),
+                            "test" : DataLoader(self.datasets["test"],shuffle=False, batch_size =1, num_workers=self.cfg.base.get("num_workers", 0))
                             }
 
         self.model =self.initialise_models().to(cfg.base.device)
@@ -279,7 +274,7 @@ class UnimodalMAETrainer(Trainer):
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising models for other modalities aren't declared") 
         
-    def initialise_datasets(self, splits, modality, preproc, transforms=None):
+    def initialise_datasets(self, splits, modality, preproc=None, transforms=None):
         datasets ={}
         # Todo - подумать нужно ли тут разббить для каждого trainerа - свой initialise_dataset
         if modality == "rna":
