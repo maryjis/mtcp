@@ -1,6 +1,7 @@
 experiment_name: "mri_mae_pretrain_t1c_dummy_test"
 n_epochs: 2
-n_intervals: 20
+splits: 1
+max_samples_per_split: 16
 random_seed: 1380
 
 optimizer:
@@ -18,13 +19,13 @@ scheduler:
 type: "unimodal"
 strategy: "mae" # mae, survival
 modalities: ["mri"] #rna, mri
-splits: 5
-data_path: "src/data/dummy_pretrain_mri_t1c_t1n_t2w_t2f.csv"
+data_path: "src/data/pretrain_mri_t1c_t1n_t2w_t2f.csv"
 root_path: "../"
 save_path : "outputs/models/"
 device: "cuda:0"
 remove_nan_column: 'MRI'
 batch_size: 4
+num_workers: 8
 
 log:
     logging: True
