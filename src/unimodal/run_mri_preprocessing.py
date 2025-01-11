@@ -4,13 +4,19 @@ import torch
 import tqdm
 import os
 
-from src.unimodal.mri.transforms import tumor_transforms
+from monai.transforms import (
+    Compose,
+    NormalizeIntensity,
+    SpatialPad,
+    ToTensor
+)
+
 from src.unimodal.mri.datasets import MRIProcessor
 from src.logger import logger
 from src.unimodal.mri.utils import get_patients_from_BraTS
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--skip_existing_roi", type=bool, default=True)
+parser.add_argument("--skip_existing_roi", type=bool, default=False)
 parser.add_argument("--data_path", type=str, default="/data/BraTS_2023/MRI")
 parser.add_argument("--modalities", type=str, nargs="+", default=["t1c"]) #["t1c", "t2f"]
 parser.add_argument("--roi_name", type=str, default="roi")
@@ -30,7 +36,13 @@ for mri_path in tqdm.tqdm(patients):
         process = MRIProcessor(
             mri_path,
             tumor_centered=True,
-            transform=tumor_transforms,
+            transform=Compose(
+                [
+                    NormalizeIntensity(channel_wise=True, nonzero=True),
+                    SpatialPad(spatial_size=size),
+                    ToTensor(dtype=torch.float32),
+                ]
+            ),
             modalities=args.modalities,
             size=size,
         )
@@ -41,10 +53,9 @@ for mri_path in tqdm.tqdm(patients):
             mri_path, 
             f"{args.roi_name}_{'_'.join(args.modalities)}_{'_'.join(list(map(str, size)))}.pt"
         )
-        if os.path.exists(roi_name):
-            if args.skip_existing_roi:
-                logger.info(f"Embedding for {mri_path} already exists")
-                continue
+        if os.path.exists(roi_name) and args.skip_existing_roi:
+            logger.info(f"Embedding for {mri_path} already exists")
+            continue
         torch.save(mri, roi_name)
             
     except KeyboardInterrupt:
