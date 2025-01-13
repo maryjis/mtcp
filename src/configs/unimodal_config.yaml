@@ -1,10 +1,4 @@
 defaults: 
-<<<<<<< HEAD
     - model: rna_mae
     - base: unimodal_config_rna_mae
     - data: data_base
-=======
-    - model: mri_mae_pretrain
-    - base: mri_mae_pretrain
-    - data: mri_mae_pretrain
->>>>>>> a6fd4a9 (GENERAL-8: Adding DatasetBraTSTensor to MAE pre-training. Adding num_workers option to base config. Fixing initialize_datasets usaged merge conflict in UnimodalMAETrainer)
