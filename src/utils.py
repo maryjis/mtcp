@@ -9,10 +9,12 @@ import wandb
 from omegaconf import DictConfig, OmegaConf
 from torch import nn
 
-def trace_handler(p, sort_by_keyword="self_cpu_time_total", row_limit=10, phase="train"):
-    output = p.key_averages().table(sort_by=sort_by_keyword, row_limit=row_limit)
-    print(output)
-    p.export_chrome_trace(f"outputs/traces/trace_{p.step_num}_{phase}.json")
+def trace_handler(p, sort_by_keyword="self_cpu_time_total", row_limit=10, phase="train", is_print=True):
+    if is_print: print(p.key_averages().table(sort_by=sort_by_keyword, row_limit=row_limit))
+    base_path = "outputs/traces"
+    if not os.path.exists(base_path):
+        os.makedirs(base_path)
+    p.export_chrome_trace(f"{base_path}/trace_{p.step_num}_{phase}.json")
 
 def print_vit_sizes(model):
     print(f"Total number of parameters : {count_parameters(model)}")
