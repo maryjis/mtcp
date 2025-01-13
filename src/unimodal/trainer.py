@@ -67,33 +67,45 @@ class Trainer(object):
         # best_loss = np.infty
         # best_epoch = -1
 
-        
-        for epoch in tqdm(range(self.cfg.base.n_epochs)):
-            print("Train...")
-            
-            ### debug
-            with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+        with profile(
+            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+            record_shapes=True,
+            profile_memory=True,
+            with_flops=True,
+            schedule=schedule(
+                skip_first = 1 if self.cfg.base.get("profiling", None) is not None else 2147483647, #we want record only training part of epoch
+                wait = 0,
+                warmup = 1,
+                active = 1,
+                repeat = 1
+            ),
+            on_trace_ready=partial(
+                trace_handler, 
+                sort_by_keyword=self.cfg.base.profiling.sort_by_keyword if self.cfg.base.get("profiling", None) is not None else None, 
+                phase="train",
+                is_print=self.cfg.base.profiling.is_print if self.cfg.base.get("profiling", None) is not None else None
+            )
+        ) as prof:
+            for epoch in tqdm(range(self.cfg.base.n_epochs)):
+                print("Train...")
+                
                 self.model.train()
                 train_metrics = self.__loop__("train",fold_ind, self.dataloaders['train'], self.cfg.base.device)
                 train_metrics.update({"epoch": epoch})
                 if self.cfg.base.log.logging:
                     wandb.log({f"train/fold_{fold_ind}/{key}" : value for key, value in train_metrics.items()})
-            ### debug
-            print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
-            prof.export_chrome_trace(f"outputs/traces/trace_{epoch}_train.json")
-            
-            print("Val...")
-            ### debug
-            with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+
+                prof.step()
+                
+                print("Val...")
                 self.model.eval()
                 with torch.no_grad():    
                     val_metrics = self.__loop__("val",fold_ind, self.dataloaders['val'], self.cfg.base.device)
                 val_metrics.update({"epoch": epoch})    
                 if self.cfg.base.log.logging:
                     wandb.log({f"val/fold_{fold_ind}/{key}" : value for key, value in val_metrics.items()})
-            ### debug
-            print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
-            prof.export_chrome_trace(f"outputs/traces/trace_{epoch}_val.json")
+
+                prof.step()
 
         # if val_metrics[self.loss_key] < best_loss:
             # best_loss = val_metrics[self.loss_key]
@@ -106,17 +118,35 @@ class Trainer(object):
     
     def evaluate(self, fold_ind : int):
         print("Test...")
-        ### debug
-        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+        with profile(
+            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+            record_shapes=True,
+            profile_memory=True,
+            with_flops=True,
+            schedule=schedule(
+                skip_first = 0 if self.cfg.base.get("profiling", None) is not None else 2147483647, #we want record only training part of epoch
+                wait = 0,
+                warmup = 1,
+                active = 1,
+                repeat = 1
+            ),
+            on_trace_ready=partial(
+                trace_handler, 
+                sort_by_keyword=self.cfg.base.profiling.sort_by_keyword if self.cfg.base.get("profiling", None) is not None else None, 
+                phase="test",
+                is_print=self.cfg.base.profiling.is_print if self.cfg.base.get("profiling", None) is not None else None
+            )
+        ) as prof:
+            prof.step() #just to skip warmup and do not see warning
+
             self.model.eval()
             with torch.no_grad():    
                 test_metrics = self.__loop__("test",fold_ind, self.dataloaders['test'], self.cfg.base.device)
             if self.cfg.base.log.logging:
                 wandb.log({f"test/fold_{fold_ind}/{key}" : value for key, value in test_metrics.items()})   
 
-        ### debug
-        print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
-        prof.export_chrome_trace(f"outputs/traces/trace_test.json")
+            prof.step()
+
         return test_metrics   
         
 
@@ -203,13 +233,6 @@ class UnimodalSurvivalTrainer(Trainer):
         total_task_loss =0
         preds,times,events = [], [], []
 
-        # with profile(
-        #     activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA, ProfilerActivity.CUDA],
-        #     record_shapes=True,
-        #     profile_memory=True,
-        #     schedule=schedule(skip_first=0, wait=0, warmup=1, active=1, repeat=1),
-        #     on_trace_ready=partial(trace_handler, sort_by_keyword="self_cpu_time_total", phase=split)
-        # ) as prof:
         for batch in dataloader:
             
             data, mask,  time, event = batch
@@ -229,8 +252,6 @@ class UnimodalSurvivalTrainer(Trainer):
             times.append(time)
             events.append(event)
             total_task_loss+=loss
-
-                # prof.step()
             
         metrics = {"task_loss": total_task_loss.cpu().detach().numpy() / len(dataloader.dataset)}
         if split!="train":
