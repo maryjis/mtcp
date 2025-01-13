@@ -4,7 +4,7 @@ from typing import Dict, List, Tuple, Union
 from omegaconf import DictConfig, OmegaConf
 import pandas as pd
 from src.unimodal.rna.dataset import RNADataset, RNASurvivalDataset
-from src.unimodal.mri.datasets import SurvivalMRIDataset, MRIEmbeddingDataset, DatasetBraTSTumorCentered, MRIDataset, MRISurvivalDataset, DatasetBraTSTensor
+from src.unimodal.mri.datasets import SurvivalMRIDataset, MRIEmbeddingDataset, MRIDataset, MRISurvivalDataset
 from src.unimodal.rna.preprocessor import RNAPreprocessor
 from src.preprocessor import BaseUnimodalPreprocessor
 from src.unimodal.rna.transforms import base_transforms, padded_transforms
@@ -192,12 +192,16 @@ class UnimodalSurvivalTrainer(Trainer):
                     if self.cfg.data.get("embedding_name", None) is not None:
                         dataset = MRIEmbeddingDataset(split, return_mask=False, embedding_name=self.cfg.data.mri.embedding_name)
                         datasets[split_name] = SurvivalMRIDataset(split, dataset, is_hazard_logits=True)
-                    elif self.cfg.data.get("tensor_name", None) is not None:
-                        dataset = DatasetBraTSTensor(split["MRI"].values, tag=self.cfg.data.tensor_name, modalities=self.cfg.data.modalities, size=self.cfg.data.sizes)
-                        datasets[split_name] = SurvivalMRIDataset(split, dataset, is_hazard_logits=True)
                     else:
-                        datasets[split_name] = MRISurvivalDataset(split, self.cfg.data.mri.root_path, self.cfg.data.mri.modalities, 
-                                                      self.cfg.data.mri.sizes, transform = get_basic_tumor_transforms(self.cfg.data.mri.sizes), return_mask=True, is_hazard_logits=True)
+                        datasets[split_name] = MRISurvivalDataset(
+                            split, 
+                            self.cfg.data.mri.modalities, 
+                            self.cfg.data.mri.sizes, 
+                            transform = get_basic_tumor_transforms(self.cfg.data.mri.sizes) if self.cfg.data.mri.get("tensor_name", None) is None else None, 
+                            return_mask=True, 
+                            is_hazard_logits=True,
+                            tensor_name=self.cfg.data.mri.get("tensor_name", None)
+                        )
 
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
@@ -307,12 +311,14 @@ class UnimodalMAETrainer(Trainer):
         elif modality == "mri":
             for split_name, split in splits.items():
                 print(self.cfg.data)
-                if self.cfg.data.get("tensor_name", None) is not None:
-                    datasets[split_name] = DatasetBraTSTensor(split["MRI"].values, tag=self.cfg.data.tensor_name,
-                                                                modalities=self.cfg.data.modalities, size=self.cfg.data.sizes)
-                else:
-                    datasets[split_name] = MRIDataset(split, self.cfg.data.mri.root_path, self.cfg.data.mri.modalities, 
-                                                      self.cfg.data.mri.sizes, transform = get_basic_tumor_transforms(self.cfg.data.mri.sizes), return_mask=True)
+                datasets[split_name] = MRIDataset(
+                    split, 
+                    self.cfg.data.mri.modalities, 
+                    self.cfg.data.mri.sizes, 
+                    transform = get_basic_tumor_transforms(self.cfg.data.mri.sizes) if self.cfg.data.mri.get("tensor_name", None) is None else None,
+                    return_mask=True,
+                    tensor_name=self.cfg.data.mri.get("tensor_name", None)  
+                )
 
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")

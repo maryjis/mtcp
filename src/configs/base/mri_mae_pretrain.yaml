@@ -1,6 +1,6 @@
-experiment_name: "mri_mae_pretrain_t1c"
-n_epochs: 50
-splits: 5
+experiment_name: "mri_mae_pretrain_t1c_test"
+n_epochs: 2
+splits: 1
 random_seed: 1380
 
 optimizer:
