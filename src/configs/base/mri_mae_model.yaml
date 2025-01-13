@@ -1,7 +1,6 @@
-experiment_name: "mri_mae_model_test"
-splits: 1
-n_epochs: 2
-max_samples_per_split: 16
+experiment_name: "mri_mae_model_t1c"
+splits: 5
+n_epochs: 50
 
 n_intervals: 20
 random_seed: 1380
@@ -27,9 +26,15 @@ root_path: "../"
 save_path : "outputs/models/"
 device: "cuda:0"
 remove_nan_column: 'MRI'
-batch_size: 4
+batch_size: 24
+num_workers: 8
 
 log:
     logging: True
     wandb_project: "cancer_mtcp"
     wandb_run_name: ${base.experiment_name}
+
+profiling:
+    sort_by_keyword: self_cpu_time_total #by which parameter profiler output should be sorted
+    row_limit: 10 #how many rows should be in profiler output
+    is_print: True
