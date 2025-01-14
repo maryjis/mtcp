@@ -22,6 +22,6 @@ mri_size: 64
 
 #survival-specific
 is_load_pretrained: true
-pretrained_model_name: "mri_mae_pretrain_t1c"
+pretrained_model_name: "mri_mae_pretrain_t1c_test"
 output_dim: 20 #should 
 

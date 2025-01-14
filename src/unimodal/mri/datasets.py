@@ -102,13 +102,14 @@ class _BaseDatasetBraTS(Dataset):
 class MRIDataset(BaseDataset):
     def __init__(self, 
                  data: pd.DataFrame,
+                 root_dir: str,
                  modality: Union[List[str]],
                  sizes: Tuple[int, ...],
                  transform = None ,
                  is_hazard_logits = False,
                  return_mask: bool = False,
                  tensor_name: str = None):
-        super().__init__(data, None, transform, is_hazard_logits, return_mask)
+        super().__init__(data, root_dir, transform, is_hazard_logits, return_mask)
         self.sizes = sizes
         self.modality = modality
         self.tensor_name = tensor_name
@@ -118,7 +119,7 @@ class MRIDataset(BaseDataset):
         if len(self.modality) == 1:
             img = nib.load(
                 os.path.join(
-                    patient, patient_tag + "-" + self.modality[0] + ".nii.gz"
+                    self.root_dir, patient_tag, patient_tag + "-" + self.modality[0] + ".nii.gz"
                 )
             ).get_fdata()
             img = np.expand_dims(img, 0)
@@ -129,7 +130,7 @@ class MRIDataset(BaseDataset):
                 early_fused.append(
                     nib.load(
                         os.path.join(
-                            patient, patient_tag + "-" + modality + ".nii.gz"
+                            self.root_dir, patient_tag, patient_tag + "-" + modality + ".nii.gz"
                         )
                     ).get_fdata()
                 )
@@ -149,7 +150,7 @@ class MRIDataset(BaseDataset):
     def _load_mask(self, patient: str) -> np.ndarray:
         patient_tag = patient.split(os.sep)[-1]
         return nib.load(
-            os.path.join(patient, patient_tag + "-seg.nii.gz")
+            os.path.join(self.root_dir, patient_tag, patient_tag + "-seg.nii.gz")
         ).get_fdata()
     
     def _compute_subvolumes(
@@ -216,9 +217,9 @@ class MRIDataset(BaseDataset):
                 return torch.zeros(OmegaConf.to_object(self.sizes)).unsqueeze(0)
 
 class MRISurvivalDataset(MRIDataset):
-    def __init__(self, data: pd.DataFrame, modality: Union[str, List[str]], sizes: Tuple[int, ...],
+    def __init__(self, data: pd.DataFrame, root_dir: str, modality: Union[str, List[str]], sizes: Tuple[int, ...],
                  transform = None, is_hazard_logits = False, return_mask: bool = False, tensor_name: str = None):
-        super().__init__(data, modality, sizes, transform, is_hazard_logits, return_mask, tensor_name)
+        super().__init__(data, root_dir, modality, sizes, transform, is_hazard_logits, return_mask, tensor_name)
         if is_hazard_logits:
             self.time = torch.from_numpy(data["new_time"].values)
             self.event = torch.from_numpy(data["new_event"].values)
