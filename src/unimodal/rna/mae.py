@@ -55,7 +55,10 @@ class RnaMAEEmbeddings(nn.Module):
                 mainly used for testing purposes to control randomness and maintain the reproducibility
         """
         batch_size, seq_length, dim = sequence.shape
+        print("seq_length:", seq_length)
         len_keep = int(seq_length * (1 - self.config.mask_ratio))
+        print(self.config.mask_ratio, self.config.mask_ratio)
+        print("len_keep", len_keep)
 
         if noise is None:
             noise = torch.rand(batch_size, seq_length, device=sequence.device)  # noise in [0, 1]
@@ -322,7 +325,7 @@ class RnaSurvivalModel(nn.Module):
             self.vit = RnaMAEModel(config)
         self.projection = nn.Linear(config.hidden_size, config.output_dim)
         
-    def forward(self, rna_values):
+    def forward(self, rna_values, masks=None):
         x = self.vit(rna_values)
 
         x = self.projection(x.last_hidden_state[:,0,:])

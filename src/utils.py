@@ -108,9 +108,9 @@ def init_wandb_logging(cfg : DictConfig):
     print(cfg)
     cfg_dict = OmegaConf.to_container(cfg)
     wandb.init(
-        project=cfg.wandb_project,
+        project=cfg.base.log.wandb_project,
         config=cfg_dict,
-        name=cfg.wandb_run_name
+        name=cfg.base.log.wandb_run_name
     )
       
     #   wandb.define_metric("train/*", step_metric="epoch")
