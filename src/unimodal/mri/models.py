@@ -49,7 +49,7 @@ class MRIEncoder(nn.Module):
             self.encoder.fc = nn.Identity()
 
     def forward(
-        self, x: torch.tensor
+        self, x: torch.tensor, masks=None
     ) -> Union[torch.tensor, Tuple[torch.tensor, torch.tensor]]:
         x = self.encoder(x)
         if hasattr(self, "projection_head"):
