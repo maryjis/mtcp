@@ -60,6 +60,7 @@ def run(cfg : DictConfig) -> None:
         wandb.summary["final"] = {"valid": final_valid_metrics, "test": final_test_metrics}
         wandb.finish()
 
+    return final_test_metrics
 
 if __name__ == "__main__":
     run()

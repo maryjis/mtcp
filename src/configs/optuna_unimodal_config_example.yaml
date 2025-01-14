@@ -1,0 +1,24 @@
+defaults: 
+  - model: mri_mae_model
+  - base: mri_mae_model
+  - data: mri_mae_pretrain
+  - override hydra/sweeper: optuna
+  - override hydra/sweeper/sampler: grid
+  - _self_
+
+hydra:
+  sweeper:
+    direction: maximize #!!! CHECK BEFORE LAUNCH !!!
+    study_name: mri_mae_pretrain_masking
+    storage: null
+    n_trials: 6
+    n_jobs: 6
+    # max_failure_rate: 0.0
+    params:
+      model.mask_ratio: choice(0.25, 0.75, 0.1, 0.9, 0.375, 0.625)
+
+base:
+  experiment_name: "mri_mae_model_t1c_masking_${model.mask_ratio}"
+
+model:
+  pretrained_model_name: "mri_mae_pretrain_t1c_masking_${model.mask_ratio}"

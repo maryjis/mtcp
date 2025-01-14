@@ -6,3 +6,5 @@ scaler_data.json
 *.ipynb
 *.pyc
 .venv/*
+multirun/
+src/configs/optuna_unimodal_config.yaml
