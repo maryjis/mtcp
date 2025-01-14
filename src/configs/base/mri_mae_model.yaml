@@ -1,6 +1,6 @@
-experiment_name: "mri_mae_model_t1c_test"
-splits: 1
-n_epochs: 2
+experiment_name: ??? #"mri_mae_model_t1c_masking_0.5"
+splits: 5
+n_epochs: 50
 
 n_intervals: 20
 random_seed: 1380
