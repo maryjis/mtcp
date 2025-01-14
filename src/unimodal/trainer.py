@@ -195,6 +195,7 @@ class UnimodalSurvivalTrainer(Trainer):
                     else:
                         datasets[split_name] = MRISurvivalDataset(
                             split, 
+                            self.cfg.data.mri.root_path,
                             self.cfg.data.mri.modalities, 
                             self.cfg.data.mri.sizes, 
                             transform = get_basic_tumor_transforms(self.cfg.data.mri.sizes) if self.cfg.data.mri.get("tensor_name", None) is None else None, 
@@ -313,6 +314,7 @@ class UnimodalMAETrainer(Trainer):
                 print(self.cfg.data)
                 datasets[split_name] = MRIDataset(
                     split, 
+                    self.cfg.data.mri.root_path,
                     self.cfg.data.mri.modalities, 
                     self.cfg.data.mri.sizes, 
                     transform = get_basic_tumor_transforms(self.cfg.data.mri.sizes) if self.cfg.data.mri.get("tensor_name", None) is None else None,
