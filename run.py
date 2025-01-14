@@ -6,12 +6,12 @@ from pathlib import Path
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.multimodal.trainer import MultiModalMAETrainer, MultiModalSurvivalTrainer
 
-@hydra.main(version_base=None, config_path="src/configs", config_name="unimodal_config")
+@hydra.main(version_base=None, config_path="src/configs", config_name="multimodal_config")
 def run(cfg : DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))
     seed_everything(cfg.base.random_seed)
     if cfg.base.log.logging:
-        init_wandb_logging(cfg.base.log)
+        init_wandb_logging(cfg)
     all_valid_metrics, all_test_metrics =[], []
     for fold_ind in range(cfg.base.splits):
 

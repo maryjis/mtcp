@@ -5,6 +5,7 @@ from transformers.models.vit_mae.modeling_vit_mae import ViTMAEModelOutput, ViTM
 from typing import Dict
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.unimodal.mri.mae import MriMAEModel
+from omegaconf import DictConfig, OmegaConf
 
 class UnimodalEncoder(nn.Module):
     def __init__(self, encoder, unimodal_hidden_size, multimodal_hidden_size = None, is_projection = False):
@@ -33,10 +34,17 @@ class UnimodalEncoder(nn.Module):
 class MultiMAEDecoder(RnaMAEDecoder):
     def __init__(self, config, num_patches):
         super().__init__(config, num_patches)
-        self.decoder_pred = nn.Linear(
-            config.decoder_hidden_size, config.patch_size * config.num_channels, bias=True
-        )  # encoder to decoder
-        self.initialize_weights(num_patches)   
+        self.modalities = config.modalities
+        if not config.postprocessing:
+            self.decoder_pred = nn.Linear(
+                config.decoder_hidden_size, config.patch_size * config.num_channels, bias=True
+            )  # encoder to decoder
+        else:
+             self.decoder_pred = nn.Identity()
+                 
+        self.initialize_weights(num_patches)
+        
+   
  
 class MultiMAEModel(nn.Module):
      
@@ -191,8 +199,10 @@ class MultiMAEModel(nn.Module):
             empty_sample_ids = torch.nonzero(~mask, as_tuple=True)[0].to(device)
             # Create tensors for empty samples
             mask_empty = torch.zeros(len(empty_sample_ids), seq_length, device=device)
-            ids_restore_empty = torch.arange(seq_length, device=device).repeat(len(empty_sample_ids), 1) + multimodal_lenths  
-            empty_sequence = self.mask_token.repeat(len(empty_sample_ids), seq_length+1, 1)
+            ids_restore_empty = torch.arange(seq_length, device=device).repeat(len(empty_sample_ids), 1) + multimodal_lenths 
+            len_keep = int(seq_length * (1 - self.cfg.mask_ratio))
+             
+            empty_sequence = self.mask_token.repeat(len(empty_sample_ids), len_keep+1, 1)
             return ViTMAEModelOutput(
                 last_hidden_state=empty_sequence,
                 mask=mask_empty,
@@ -218,9 +228,13 @@ class MultiMAEModel(nn.Module):
 
         # Process each modality
         is_first = True
+        print("Mae forward: ", self.modalities)
+        print(self.modalities)
         for modality in self.modalities:
+            print(modality)
             seq_length = self.get_patches_number(modality)
             sample = x[modality]
+            print("sample.shape: ", sample.shape)
             mask = masks[modality]
             
             # Get embeddings for this modality
@@ -243,7 +257,9 @@ class MultiMAEModel(nn.Module):
                 )
             encoder_outputs.append(embedded_sample)
             is_first = False
-    
+        print("len(encoder_outputs): ", len(encoder_outputs))
+        for out in encoder_outputs:
+            print("encoder_outputs.shape", out.last_hidden_state.shape)
         # Combine embeddings from all modalities
         last_hidden_states = [out.last_hidden_state for out in encoder_outputs]
         masks = [out.mask for out in encoder_outputs]
@@ -269,10 +285,19 @@ class MultiMaeForPretraining(nn.Module):
         self.modalities = cfg.modalities
         self.model = MultiMAEModel(self.cfg)
         self.decoder = MultiMAEDecoder(self.cfg, self.get_all_patches_number())
-    
+        if cfg.postprocessing:
+            self.postprocessors = nn.ModuleDict({f"postprocessor_{modality}" : nn.Conv1d(self.cfg.decoder_hidden_size,
+                                                                                         self.get_patch_size(modality), kernel_size =1, stride=1, padding=0) for modality in self.modalities})
         
 
-
+    def get_patch_size(self,  modality: str)-> int:
+        if modality =="rna":
+            return self.cfg.to_dict()[f"{modality}_model"]["patch_size"]
+        elif  modality =="mri":
+            return self.cfg.to_dict()[f"{modality}_model"]["patch_size"] ** 3
+        else:
+            raise NotImplementedError(f"This modality - {modality} hasn't implemeted yet")
+        
     def get_patches_number(self, modality: str) -> int:
         """Get number of patches for a specific modality.
         
@@ -369,7 +394,11 @@ class MultiMaeForPretraining(nn.Module):
             # Extract predictions and mask for current modality
             pred_modality = pred[:, start_idx:end_idx]
             mask_modality = mask[:, start_idx:end_idx]
-            
+            if self.cfg.postprocessing:
+                pred_modality = self.postprocessors[f"postprocessor_{modality}"](pred_modality.permute(0, 2, 1))
+                print("pred_modality.shape", pred_modality.shape)
+                pred_modality = pred_modality.permute(0, 2, 1)
+                print("pred_modality.shape", pred_modality.shape)
             # Calculate loss for current modality
             modality_loss = self.__forward_loss(
                 x[modality],
@@ -452,15 +481,20 @@ class MultiMaeForSurvival(nn.Module):
         if cfg.fusion_strategy == "mask_attention":
             self.fusion_strategy = MaskAttentionFusion(cfg.fusion_depth, cfg.fusion_dim, cfg.fusion_nhead,
                                                        cfg.fusion_dim_feedforward, cfg.fusion_dropout)
+        elif cfg.fusion_strategy =="linear":
+            self.fusion_strategy = nn.Identity()
         else:
             raise ValueError(f"Invalid fusion strategy: {cfg.fusion_strategy}")
         self.projection = nn.Linear(cfg.hidden_size, cfg.output_dim)
         
     def forward(self, x: Dict[str, torch.FloatTensor], masks: Dict[str, torch.FloatTensor], interpolate_pos_encoding: bool = False):
-        print({modality: value.shape for modality, value  in x.items()})
+        print({modality: value.mean() for modality, value  in x.items()})
         x = self.model(x, masks, interpolate_pos_encoding)
         print("Mask shape: ", x.mask.shape)
         print("Last_hidden_state shape: ", x.last_hidden_state.shape)
-        x = self.fusion_strategy(x.last_hidden_state, x.mask)
+        if self.cfg.fusion_strategy == "mask_attention":
+            x = self.fusion_strategy(x.last_hidden_state, x.mask)
+        else:
+            x = self.fusion_strategy(x.last_hidden_state)
         x = self.projection(x[:,0,:])
         return x
