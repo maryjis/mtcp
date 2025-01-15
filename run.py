@@ -8,7 +8,7 @@ from src.multimodal.trainer import MultiModalMAETrainer, MultiModalSurvivalTrain
 
 @hydra.main(version_base=None, config_path="src/configs", config_name="unimodal_config")
 def run(cfg : DictConfig) -> None:
-    OmegaConf.register_new_resolver("eval", eval)
+    if not OmegaConf.has_resolver("eval"): OmegaConf.register_new_resolver("eval", eval) #arithmetic in config params
     print(OmegaConf.to_yaml(cfg))
     seed_everything(cfg.base.random_seed)
     if cfg.base.log.logging:
