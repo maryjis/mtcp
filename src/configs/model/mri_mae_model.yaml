@@ -14,14 +14,14 @@ model_type: "vit_mae"
 norm_pix_loss: false
 num_attention_heads: 4
 num_channels: 1
-num_hidden_layers: 4
+num_hidden_layers: 4  
 qkv_bias: true
 
 patch_size: 8 #
 mri_size: 64
 
 #survival-specific
-is_load_pretrained: false
-pretrained_model_name: "mri_mae_pretrain_t1c_dummy_test"
+is_load_pretrained: true
+pretrained_model_name: "mri_mae_pretrain_t1c_test"
 output_dim: 20 #should 
 

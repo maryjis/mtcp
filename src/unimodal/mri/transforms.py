@@ -9,6 +9,7 @@ from monai.transforms import (
     ToTensord,
     NormalizeIntensity,
     SpatialPad,
+    ToTensor
 )
 
 import torch
@@ -16,9 +17,9 @@ import torch
 def get_basic_tumor_transforms(roi_size):
     return Compose(
         [
-            NormalizeIntensityd(keys=["image"], channel_wise=True, nonzero=True),
-            SpatialPadd(keys=["image"], spatial_size=roi_size),
-            ToTensord(keys=["image"], dtype=torch.float32),
+            NormalizeIntensity(channel_wise=True, nonzero=True),
+            SpatialPad(spatial_size=roi_size),
+            ToTensor(dtype=torch.float32),
         ]
     )
 
@@ -87,3 +88,5 @@ tumor_transforms = Compose(
         SpatialPad(spatial_size=(64, 64, 64)),
     ]
 )
+
+

@@ -9,18 +9,44 @@ import torch
 import pandas as pd
 from omegaconf import OmegaConf
 from src.datasets import BaseDataset
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning) #otherwise warnings from torch.load raise, weights_only is not an option: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly.
 
 __all__ = ["DatasetBraTSTumorCentered"]
 
+class DatasetBraTSTensor(Dataset):
+    def __init__(
+        self,
+        patients: List[str],
+        tag: str = "roi",
+        modalities: Union[str, List[str]] = "t1c",
+        size: Union[List[int], Tuple[int], Tuple[int, int], Tuple[int, int, int]] = (64, 64, 64),
+    ) -> None:
+        self.patients = patients
+        self.modalities = modalities
+        self.size = size
+        self.tag = tag
+
+    def __len__(self):
+        return len(self.patients)
+    
+    def __getitem__(self, idx):
+        return torch.load(
+            os.path.join(
+                self.patients[idx],
+                f"{self.tag}_{'_'.join(self.modalities)}_{'_'.join(list(map(str, self.size)))}.pt"
+            ),
+            weights_only=False
+        )
 
 class _BaseDatasetBraTS(Dataset):
     def __init__(
         self,
         path: str,
-        modality: Union[str, List[str]],
+        modality: Union[List[str]],
         patients: Optional[List[str]],
         return_mask: bool,
-        transform: Optional["monai.transforms"] = None,
+        transform: Optional["monai.transforms"] = None
     ) -> None:
         self.path = path
         self.modality = modality
@@ -74,22 +100,26 @@ class _BaseDatasetBraTS(Dataset):
 
 
 class MRIDataset(BaseDataset):
-    def __init__(self, data: pd.DataFrame,
+    def __init__(self, 
+                 data: pd.DataFrame,
                  root_dir: str,
-                 modality: Union[str, List[str]],
+                 modality: Union[List[str]],
                  sizes: Tuple[int, ...],
                  transform = None ,
                  is_hazard_logits = False,
-                 return_mask: bool = False):
+                 return_mask: bool = False,
+                 tensor_name: str = None):
         super().__init__(data, root_dir, transform, is_hazard_logits, return_mask)
         self.sizes = sizes
         self.modality = modality
+        self.tensor_name = tensor_name
 
     def _load_nifti_modalities(self, patient: str) -> np.ndarray:
+        patient_tag = patient.split(os.sep)[-1]
         if len(self.modality) == 1:
             img = nib.load(
                 os.path.join(
-                    self.root_dir, patient, patient + "-" + self.modality[0] + ".nii.gz"
+                    self.root_dir, patient_tag, patient_tag + "-" + self.modality[0] + ".nii.gz"
                 )
             ).get_fdata()
             img = np.expand_dims(img, 0)
@@ -100,7 +130,7 @@ class MRIDataset(BaseDataset):
                 early_fused.append(
                     nib.load(
                         os.path.join(
-                            self.root_dir, patient, patient + "-" + modality + ".nii.gz"
+                            self.root_dir, patient_tag, patient_tag + "-" + modality + ".nii.gz"
                         )
                     ).get_fdata()
                 )
@@ -118,8 +148,9 @@ class MRIDataset(BaseDataset):
         return item
 
     def _load_mask(self, patient: str) -> np.ndarray:
+        patient_tag = patient.split(os.sep)[-1]
         return nib.load(
-            os.path.join(self.root_dir, patient, patient + "-seg.nii.gz")
+            os.path.join(self.root_dir, patient_tag, patient_tag + "-seg.nii.gz")
         ).get_fdata()
     
     def _compute_subvolumes(
@@ -152,20 +183,33 @@ class MRIDataset(BaseDataset):
 
     
     def __getitem__(self, idx: int):
-        sample = self.data.iloc[idx]
+        sample = self.data.iloc[idx]["MRI"]
         mask = False
-        if not pd.isna(sample["MRI"]):
-            patient = sample["MRI"].split(os.sep)[-1]  
+        if not pd.isna(sample):
             mask = True
-            mask_img = self._load_mask(patient=patient)
-            img = self._load_nifti_modalities(patient=patient)
-            item = self._compute_subvolumes(img=img, mask=mask_img)
+            item = None
+            if self.tensor_name is not None:
+                item = torch.load(
+                    os.path.join(
+                        sample,
+                        f"{self.tensor_name}_{'_'.join(self.modality)}_{'_'.join(list(map(str, self.sizes)))}.pt"
+                    ),
+                    weights_only=False
+                )
+            
+            else:
+                mask_img = self._load_mask(patient=sample)
+                img = self._load_nifti_modalities(patient=sample)
+                item = self._compute_subvolumes(img=img, mask=mask_img)['image']
+            
             if self.transform is not None:
                 item = self.transform(item)
+
             if self.return_mask:
-                return item['image'], mask
+                return item, mask
             else:
-                return item['image']
+                return item
+            
         else:
             if self.return_mask:
                 return torch.zeros(OmegaConf.to_object(self.sizes)).unsqueeze(0), mask
@@ -174,8 +218,8 @@ class MRIDataset(BaseDataset):
 
 class MRISurvivalDataset(MRIDataset):
     def __init__(self, data: pd.DataFrame, root_dir: str, modality: Union[str, List[str]], sizes: Tuple[int, ...],
-                 transform = None, is_hazard_logits = False, return_mask: bool = False):
-        super().__init__(data, root_dir, modality, sizes, transform, is_hazard_logits, return_mask)
+                 transform = None, is_hazard_logits = False, return_mask: bool = False, tensor_name: str = None):
+        super().__init__(data, root_dir, modality, sizes, transform, is_hazard_logits, return_mask, tensor_name)
         if is_hazard_logits:
             self.time = torch.from_numpy(data["new_time"].values)
             self.event = torch.from_numpy(data["new_event"].values)

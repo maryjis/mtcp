@@ -1,6 +1,6 @@
 outputs/
 *.ipynb_checkpoints
-data/
+src/data/
 wandb/
 scaler_data.json
 *.ipynb
