@@ -16,6 +16,7 @@ from src.unimodal.mri.transforms import get_tumor_transforms
 from src.unimodal.commons.optim_contrastive import training_loop_contrastive
 from src.unimodal.commons.losses import ContrastiveLoss
 from src.logger import logger
+from src.unimodal.mri.utils import get_patients_from_BraTS
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -23,14 +24,14 @@ if __name__ == "__main__":
     parser.add_argument("--path_to_dataset_file", type=str, default="src/data/dataset.csv") #remember, counted from the place where the script was launched
     parser.add_argument("--path_to_save", type=str, default="outputs/models") #will be created if not exists
     parser.add_argument("--batch_size", type=int, default=48)
-    parser.add_argument("--epochs", type=int, default=30)
+    parser.add_argument("--epochs", type=int, default=2)
     parser.add_argument("--lr", type=float, default=1e-4)
     # parser.add_argument("--modalities", nargs="+", default=["t1ce", "flair"])
-    parser.add_argument("--modalities", nargs="+", default=["t1c", "t2f"]) #["t1c", "t2f"]
+    parser.add_argument("--modalities", nargs="+", default=["t1c"]) #["t1c", "t2f"]
     parser.add_argument("--weight_decay", type=float, default=1e-6)
     parser.add_argument("--entity", type=str, default="dmitriykornilov_team") #define will be used wandb logging or not
     parser.add_argument("--project", type=str, default="cancer_mtcp")
-    parser.add_argument("--run_name", type=str, default="mri_pretraining")
+    parser.add_argument("--run_name", type=str, default="mri_pretraining_test")
     parser.add_argument("--temperature", type=float, default=0.07)
     parser.add_argument("--tumor_centered", type=bool, default=True)
     # parser.add_argument("--n_cpus", type=int, default=40)
@@ -41,35 +42,12 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=1999)
     parser.add_argument("--train_percentage", type=float, default=0.75) #test patients are not included in train/val
     parser.add_argument("--use_monai_weights", type=bool, default=False)
-    parser.add_argument("--model_name_postfix", type=str, default="")
+    parser.add_argument("--model_name_postfix", type=str, default="_profiling")
     args = parser.parse_args()
 
     # Set seed
     seed_everything(args.seed)
-    patients = os.listdir(args.data_path)
-    logger.info("Total patients", len(patients))
-
-    #get patients only with target modalities
-    patients_with_needed_modalities = []
-    needed_modalities = set(args.modalities)
-    needed_modalities.add("seg") #segmentation mask used to compute center of tumor
-    for patient in patients:
-        available_modalities = set([x.split("-")[-1].split(".")[0] for x in os.listdir(os.path.join(args.data_path, patient))])
-        if needed_modalities.intersection(available_modalities) == needed_modalities:
-            patients_with_needed_modalities.append(patient)
-    patients = patients_with_needed_modalities
-    logger.info(f"Patients with all needed modalities: {len(patients)}")
-
-    dataframe = pd.read_csv(args.path_to_dataset_file)
-    dataframe_test = dataframe[dataframe["group"] == "test"]
-    # get patient ids where MRI is not NaN
-    dataframe_test = dataframe_test[~dataframe_test["MRI"].isna()]
-    patients_to_exclude = [
-        patient_path.split("/")[-1] for patient_path in dataframe_test.MRI.values
-    ]
-    patients = [patient for patient in patients if patient not in patients_to_exclude]
-    logger.info("Included patients (pre-train)", len(patients))
-    logger.info("Excluded patients (further test)", len(patients_to_exclude))
+    patients = get_patients_from_BraTS(args.data_path, args.modalities, with_mask=True, df_with_test=args.path_to_dataset_file)
 
     # split patient into train and val by taking random 70% of patients for training
     train_patients = np.random.choice(

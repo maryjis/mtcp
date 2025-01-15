@@ -4,10 +4,12 @@ from typing import Dict, List, Tuple, Union
 from omegaconf import DictConfig, OmegaConf
 import pandas as pd
 from src.unimodal.rna.dataset import RNADataset, RNASurvivalDataset
-from src.unimodal.mri.datasets import SurvivalMRIDataset, MRIEmbeddingDataset, DatasetBraTSTumorCentered, MRIDataset, MRISurvivalDataset
+
 from src.unimodal.dna.datasets import DNAmDataset, DNAmSurvivalDataset
 from src.unimodal.dna.models import initialise_dnam_mae_model,  initialise_dnam_model, DNAmMAEForPreTraining
 from src.unimodal.dna.preprocessor import DNAmPreprocessor
+from src.unimodal.mri.datasets import SurvivalMRIDataset, MRIEmbeddingDataset, MRIDataset, MRISurvivalDataset
+
 from src.unimodal.rna.preprocessor import RNAPreprocessor
 from src.preprocessor import BaseUnimodalPreprocessor
 from src.unimodal.rna.transforms import base_transforms, padded_transforms
@@ -31,13 +33,14 @@ from src.unimodal.rna.transforms import UpperQuartileNormalizer
 from src.unimodal.mri.transforms import get_basic_tumor_transforms
 from src.unimodal.dna.transforms import padded_transforms_simple
 
+from torch.profiler import profile, record_function, ProfilerActivity, schedule
+from src.utils import trace_handler
+from functools import partial
+
 class Trainer(object):
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
         self.cfg = cfg
-        if self.cfg.base.modalities[0] == "mri" and self.cfg.base.strategy == "mae":
-            pass
-        else:
-            self.preproc = self.initialise_preprocessing(splits, self.cfg.base.modalities[0])
+        self.preproc = self.initialise_preprocessing(splits, self.cfg.base.modalities[0])
  
     def initialise_preprocessing(self, splits, modality):
         
@@ -55,8 +58,11 @@ class Trainer(object):
             return preproc
 
         elif modality == "mri":
-            preproc = BaseUnimodalPreprocessor(splits["train"], self.cfg.base.n_intervals)
-            preproc.fit()
+            preproc = None
+            if self.cfg.base.strategy != "mae": #labels are not used for pre-training
+                preproc = BaseUnimodalPreprocessor(splits["train"], self.cfg.base.n_intervals)
+                preproc.fit()
+
             return preproc
         elif modality == "dnam":
             preproc = DNAmPreprocessor(splits["train"], self.cfg.data.dnam.dnam_dataset_path,self.cfg.base.n_intervals, 
@@ -72,22 +78,46 @@ class Trainer(object):
         # best_loss = np.infty
         # best_epoch = -1
 
-        for epoch in tqdm(range(self.cfg.base.n_epochs)):
-            print("Train...")
-            self.model.train()
-            train_metrics = self.__loop__("train",fold_ind, self.dataloaders['train'], self.cfg.base.device)
-            train_metrics.update({"epoch": epoch})
-            if self.cfg.base.log.logging:
-                wandb.log({f"train/fold_{fold_ind}/{key}" : value for key, value in train_metrics.items()})
-            
-            print("Val...")
-            self.model.eval()
-            with torch.no_grad():    
-                val_metrics = self.__loop__("val",fold_ind, self.dataloaders['val'], self.cfg.base.device)
-            val_metrics.update({"epoch": epoch})    
-            if self.cfg.base.log.logging:
-                wandb.log({f"val/fold_{fold_ind}/{key}" : value for key, value in val_metrics.items()})
+        with profile(
+            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+            record_shapes=True,
+            profile_memory=True,
+            with_flops=True,
+            schedule=schedule(
+                skip_first = 1 if self.cfg.base.get("profiling", None) is not None else 2147483647, #we want record only training part of epoch
+                wait = 0,
+                warmup = 1,
+                active = 1,
+                repeat = 1
+            ),
+            on_trace_ready=partial(
+                trace_handler, 
+                sort_by_keyword=self.cfg.base.profiling.sort_by_keyword if self.cfg.base.get("profiling", None) is not None else None, 
+                phase="train",
+                is_print=self.cfg.base.profiling.is_print if self.cfg.base.get("profiling", None) is not None else None
+            )
+        ) as prof:
+            for epoch in tqdm(range(self.cfg.base.n_epochs)):
+                print("Train...")
                 
+                self.model.train()
+                train_metrics = self.__loop__("train",fold_ind, self.dataloaders['train'], self.cfg.base.device)
+                train_metrics.update({"epoch": epoch})
+                if self.cfg.base.log.logging:
+                    wandb.log({f"train/fold_{fold_ind}/{key}" : value for key, value in train_metrics.items()})
+
+                prof.step()
+                
+                print("Val...")
+                self.model.eval()
+                with torch.no_grad():    
+                    val_metrics = self.__loop__("val",fold_ind, self.dataloaders['val'], self.cfg.base.device)
+                val_metrics.update({"epoch": epoch})    
+                if self.cfg.base.log.logging:
+                    wandb.log({f"val/fold_{fold_ind}/{key}" : value for key, value in val_metrics.items()})
+
+                prof.step()
+
         # if val_metrics[self.loss_key] < best_loss:
             # best_loss = val_metrics[self.loss_key]
             # best_epoch = epoch
@@ -99,17 +129,40 @@ class Trainer(object):
     
     def evaluate(self, fold_ind : int):
         print("Test...")
-        self.model.eval()
-        with torch.no_grad():
-            test_metrics_intersection = None
-            test_metrics = self.__loop__("test",fold_ind, self.dataloaders['test'], self.cfg.base.device)
-            if "test_intersection" in self.dataloaders:
-                 test_metrics_intersection = self.__loop__("test",fold_ind, self.dataloaders['test_intersection'], self.cfg.base.device)
-        if self.cfg.base.log.logging:
-            wandb.log({f"test/fold_{fold_ind}/{key}" : value for key, value in test_metrics.items()})
-            if "test_intersection" in self.dataloaders:
-                    wandb.log({f"test_intersection/fold_{fold_ind}/{key}" : value for key, value in test_metrics_intersection.items()})
-        return test_metrics, test_metrics_intersection    
+
+        with profile(
+            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+            record_shapes=True,
+            profile_memory=True,
+            with_flops=True,
+            schedule=schedule(
+                skip_first = 0 if self.cfg.base.get("profiling", None) is not None else 2147483647, #we want record only training part of epoch
+                wait = 0,
+                warmup = 1,
+                active = 1,
+                repeat = 1
+            ),
+            on_trace_ready=partial(
+                trace_handler, 
+                sort_by_keyword=self.cfg.base.profiling.sort_by_keyword if self.cfg.base.get("profiling", None) is not None else None, 
+                phase="test",
+                is_print=self.cfg.base.profiling.is_print if self.cfg.base.get("profiling", None) is not None else None
+            )
+        ) as prof:
+            prof.step() #just to skip warmup and do not see warning
+
+            self.model.eval()
+            with torch.no_grad():    
+                test_metrics_intersection = None
+                test_metrics = self.__loop__("test",fold_ind, self.dataloaders['test'], self.cfg.base.device)
+                if "test_intersection" in self.dataloaders:
+                    test_metrics_intersection = self.__loop__("test",fold_ind, self.dataloaders['test_intersection'], self.cfg.base.device)
+                if self.cfg.base.log.logging:
+                    wandb.log({f"test/fold_{fold_ind}/{key}" : value for key, value in test_metrics.items()})
+                    if "test_intersection" in self.dataloaders:
+                        wandb.log({f"test_intersection/fold_{fold_ind}/{key}" : value for key, value in test_metrics_intersection.items()})
+
+            return test_metrics, test_metrics_intersection   
         
 
 class UnimodalSurvivalTrainer(Trainer):
@@ -128,8 +181,9 @@ class UnimodalSurvivalTrainer(Trainer):
             transforms = padded_transforms_simple(cfg.model.size)        
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
 
-        self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False, batch_size=cfg.base.batch_size 
-                                              if split == "train" else 1)
+        self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False,
+                                              batch_size=cfg.base.batch_size if split == "train" else 1,
+                                              num_workers=self.cfg.base.get("num_workers", 0))
                             for split in splits.keys()}
 
         self.model =self.initialise_models().to(cfg.base.device)
@@ -155,8 +209,16 @@ class UnimodalSurvivalTrainer(Trainer):
                         dataset = MRIEmbeddingDataset(split, return_mask=False, embedding_name=self.cfg.data.mri.embedding_name)
                         datasets[split_name] = SurvivalMRIDataset(split, dataset, is_hazard_logits=True)
                     else:
-                        datasets[split_name] = MRISurvivalDataset(split, self.cfg.data.mri.root_path, self.cfg.data.mri.modalities, 
-                                                      self.cfg.data.mri.sizes, transform = get_basic_tumor_transforms(self.cfg.data.mri.sizes), return_mask=True, is_hazard_logits=True)
+                        datasets[split_name] = MRISurvivalDataset(
+                            split, 
+                            self.cfg.data.mri.root_path,
+                            self.cfg.data.mri.modalities, 
+                            self.cfg.data.mri.sizes, 
+                            transform = get_basic_tumor_transforms(self.cfg.data.mri.sizes) if self.cfg.data.mri.get("tensor_name", None) is None else None, 
+                            return_mask=True, 
+                            is_hazard_logits=True,
+                            tensor_name=self.cfg.data.mri.get("tensor_name", None)
+                        )
 
         elif modality == "dnam":
             for split_name, dataset in splits.items():
@@ -203,6 +265,7 @@ class UnimodalSurvivalTrainer(Trainer):
     def __loop__(self,split, fold_ind, dataloader, device):
         total_task_loss =0
         preds,times,events = [], [], []
+
         for batch in dataloader:
             
             data, mask,  time, event = batch
@@ -245,8 +308,8 @@ class UnimodalMAETrainer(Trainer):
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
-        self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False, batch_size=cfg.base.batch_size 
-                                              if split == "train" else 1)
+        self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False, batch_size=cfg.base.batch_size  
+                                              if split == "train" else 1, num_workers=self.cfg.base.get("num_workers", 0))
                             for split in splits.keys()}
 
         self.model =self.initialise_models().to(cfg.base.device)
@@ -270,7 +333,7 @@ class UnimodalMAETrainer(Trainer):
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising models for other modalities aren't declared") 
         
-    def initialise_datasets(self, splits, modality, preproc, transforms=None):
+    def initialise_datasets(self, splits, modality, preproc=None, transforms=None):
         datasets ={}
         # Todo - подумать нужно ли тут разббить для каждого trainerа - свой initialise_dataset
         if modality == "rna":
@@ -281,9 +344,16 @@ class UnimodalMAETrainer(Trainer):
 
         elif modality == "mri":
             for split_name, split in splits.items():
-                    print(self.cfg.data)
-                    datasets[split_name] = MRIDataset(split, self.cfg.data.mri.root_path, self.cfg.data.mri.modalities, 
-                                                      self.cfg.data.mri.sizes, transform = get_basic_tumor_transforms(self.cfg.data.mri.sizes), return_mask=True)
+                print(self.cfg.data)
+                datasets[split_name] = MRIDataset(
+                    split, 
+                    self.cfg.data.mri.root_path,
+                    self.cfg.data.mri.modalities, 
+                    self.cfg.data.mri.sizes, 
+                    transform = get_basic_tumor_transforms(self.cfg.data.mri.sizes) if self.cfg.data.mri.get("tensor_name", None) is None else None,
+                    return_mask=True,
+                    tensor_name=self.cfg.data.mri.get("tensor_name", None)  
+                )
 
         elif modality == "dnam":
             for split_name, dataset in splits.items():
