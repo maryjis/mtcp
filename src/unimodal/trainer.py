@@ -5,6 +5,9 @@ from omegaconf import DictConfig, OmegaConf
 import pandas as pd
 from src.unimodal.rna.dataset import RNADataset, RNASurvivalDataset
 from src.unimodal.mri.datasets import SurvivalMRIDataset, MRIEmbeddingDataset, DatasetBraTSTumorCentered, MRIDataset, MRISurvivalDataset
+from src.unimodal.dna.datasets import DNAmDataset, DNAmSurvivalDataset
+from src.unimodal.dna.models import initialise_dnam_mae_model,  initialise_dnam_model, DNAmMAEForPreTraining
+from src.unimodal.dna.preprocessor import DNAmPreprocessor
 from src.unimodal.rna.preprocessor import RNAPreprocessor
 from src.preprocessor import BaseUnimodalPreprocessor
 from src.unimodal.rna.transforms import base_transforms, padded_transforms
@@ -26,6 +29,7 @@ from tqdm.auto import tqdm
 from sklearn.preprocessing import QuantileTransformer, StandardScaler, MinMaxScaler
 from src.unimodal.rna.transforms import UpperQuartileNormalizer
 from src.unimodal.mri.transforms import get_basic_tumor_transforms
+from src.unimodal.dna.transforms import padded_transforms_simple
 
 class Trainer(object):
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
@@ -44,7 +48,7 @@ class Trainer(object):
             elif self.cfg.data.rna.scaling_method=="UpperQuartileNormalizer":
                  scaling_method = UpperQuartileNormalizer 
             print("Scaling method: ", scaling_method)
-            preproc = RNAPreprocessor(splits["train"], self.cfg.base.rna_dataset_path, self.cfg.base.n_intervals, scaling_method, 
+            preproc = RNAPreprocessor(splits["train"], self.cfg.data.rna.rna_dataset_path, self.cfg.base.n_intervals, scaling_method, 
                                           self.cfg.data.rna.scaling_params, self.cfg.data.rna.var_threshold,
                                           self.cfg.data.rna.is_cluster_genes , self.cfg.data.rna.clustering_threshold)
             preproc.fit()
@@ -54,7 +58,12 @@ class Trainer(object):
             preproc = BaseUnimodalPreprocessor(splits["train"], self.cfg.base.n_intervals)
             preproc.fit()
             return preproc
-
+        elif modality == "dnam":
+            preproc = DNAmPreprocessor(splits["train"], self.cfg.data.dnam.dnam_dataset_path,self.cfg.base.n_intervals, 
+                                           self.cfg.data.dnam.var_threshold,
+                                          self.cfg.data.dnam.is_cluster_genes , self.cfg.data.dnam.clustering_threshold)
+            preproc.fit()
+            return preproc
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising preprocessing for other modalities aren't declared")    
                 
@@ -91,11 +100,16 @@ class Trainer(object):
     def evaluate(self, fold_ind : int):
         print("Test...")
         self.model.eval()
-        with torch.no_grad():    
+        with torch.no_grad():
+            test_metrics_intersection = None
             test_metrics = self.__loop__("test",fold_ind, self.dataloaders['test'], self.cfg.base.device)
+            if "test_intersection" in self.dataloaders:
+                 test_metrics_intersection = self.__loop__("test",fold_ind, self.dataloaders['test_intersection'], self.cfg.base.device)
         if self.cfg.base.log.logging:
-            wandb.log({f"test/fold_{fold_ind}/{key}" : value for key, value in test_metrics.items()})    
-        return test_metrics    
+            wandb.log({f"test/fold_{fold_ind}/{key}" : value for key, value in test_metrics.items()})
+            if "test_intersection" in self.dataloaders:
+                    wandb.log({f"test_intersection/fold_{fold_ind}/{key}" : value for key, value in test_metrics_intersection.items()})
+        return test_metrics, test_metrics_intersection    
         
 
 class UnimodalSurvivalTrainer(Trainer):
@@ -107,16 +121,16 @@ class UnimodalSurvivalTrainer(Trainer):
         transforms = None
         if cfg.base.modalities[0]=="rna":
             if self.cfg.base.architecture=="MAE":
-                transforms = padded_transforms(self.preproc.get_scaling(), cfg.model.rna_size)
+                transforms = padded_transforms(self.preproc.get_scaling(), cfg.model.size)
             elif self.cfg.base.architecture=="CNN":    
                 transforms = base_transforms(self.preproc.get_scaling())
-                
+        elif self.cfg.base.modalities[0]=="dnam":
+            transforms = padded_transforms_simple(cfg.model.size)        
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
 
-        self.dataloaders = {"train" : DataLoader(self.datasets["train"],shuffle=True, batch_size =cfg.base.batch_size),
-                            "val" : DataLoader(self.datasets["val"],shuffle=False, batch_size = 1),
-                            "test" : DataLoader(self.datasets["test"],shuffle=False, batch_size =1)
-                            }
+        self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False, batch_size=cfg.base.batch_size 
+                                              if split == "train" else 1)
+                            for split in splits.keys()}
 
         self.model =self.initialise_models().to(cfg.base.device)
         self.initialise_loss()
@@ -144,13 +158,18 @@ class UnimodalSurvivalTrainer(Trainer):
                         datasets[split_name] = MRISurvivalDataset(split, self.cfg.data.mri.root_path, self.cfg.data.mri.modalities, 
                                                       self.cfg.data.mri.sizes, transform = get_basic_tumor_transforms(self.cfg.data.mri.sizes), return_mask=True, is_hazard_logits=True)
 
+        elif modality == "dnam":
+            for split_name, dataset in splits.items():
+                splits[split_name] = preproc.transform_labels(dataset)
+                datasets[split_name] = DNAmSurvivalDataset(splits[split_name], self.cfg.data.dnam.dnam_dataset_path, 
+                                                 transform = transforms, is_hazard_logits = True, column_order=preproc.get_column_order())
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
         
         return datasets
  
     def initialise_models(self):
-
+        # TODO check that is ok for multimodal
         if self.cfg.base.modalities[0]=="rna": 
                 if self.cfg.base.architecture=="MAE":
                     return initialise_rna_mae_model(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
@@ -165,6 +184,13 @@ class UnimodalSurvivalTrainer(Trainer):
                     return MRIEmbeddingEncoder(self.cfg.model.input_embedding_dim, self.cfg.model.dropout, self.cfg.base.n_intervals)
                 else:
                     raise NotImplementedError("Exist only MAE and CNN architectures for mri modality")
+        elif self.cfg.base.modalities[0]=="dnam":
+                if self.cfg.base.architecture=="MAE":
+                    return initialise_dnam_mae_model(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+                elif self.cfg.base.architecture=="CNN":
+                    return initialise_dnam_model(self.cfg.model)
+                else:
+                    raise NotImplementedError("Exist only for rna. Initialising datasets for other modalities aren't declared")
         else:
                 raise NotImplementedError("Exist only for rna and mri. Initialising models for other modalities aren't declared")   
 
@@ -213,17 +239,15 @@ class UnimodalMAETrainer(Trainer):
         super().__init__(splits, cfg)
         transforms = None
         if self.cfg.base.modalities[0]=="rna":
-            transforms = padded_transforms(self.preproc.get_scaling(), cfg.model.rna_size)
-            self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
-        elif self.cfg.base.modalities[0]=="mri":
-            self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
+            transforms = padded_transforms(self.preproc.get_scaling(), cfg.model.size)
+        elif self.cfg.base.modalities[0]=="dnam":
+            transforms = padded_transforms_simple(cfg.model.size)
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
-        
-        self.dataloaders = {"train" : DataLoader(self.datasets["train"],shuffle=True, batch_size =cfg.base.batch_size),
-                            "val" : DataLoader(self.datasets["val"],shuffle=False, batch_size = 1),
-                            "test" : DataLoader(self.datasets["test"],shuffle=False, batch_size =1)
-                            }
+        self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
+        self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False, batch_size=cfg.base.batch_size 
+                                              if split == "train" else 1)
+                            for split in splits.keys()}
 
         self.model =self.initialise_models().to(cfg.base.device)
         print(self.model)
@@ -241,6 +265,8 @@ class UnimodalMAETrainer(Trainer):
             return  RnaMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
         elif self.cfg.base.modalities[0]=="mri":
             return MriMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+        elif self.cfg.base.modalities[0]=="dnam":
+            return DNAmMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising models for other modalities aren't declared") 
         
@@ -259,6 +285,11 @@ class UnimodalMAETrainer(Trainer):
                     datasets[split_name] = MRIDataset(split, self.cfg.data.mri.root_path, self.cfg.data.mri.modalities, 
                                                       self.cfg.data.mri.sizes, transform = get_basic_tumor_transforms(self.cfg.data.mri.sizes), return_mask=True)
 
+        elif modality == "dnam":
+            for split_name, dataset in splits.items():
+                splits[split_name] = preproc.transform_labels(dataset)
+                datasets[split_name] = DNAmDataset(splits[split_name], self.cfg.data.dnam.dnam_dataset_path, 
+                                                 transform = transforms, is_hazard_logits = True, column_order=preproc.get_column_order())
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
         

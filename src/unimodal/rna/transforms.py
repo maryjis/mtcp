@@ -81,3 +81,6 @@ def padded_transforms(standart_scaler, size):
                                Scale(standart_scaler),
                                Padding(size)])
     
+def padded_transforms_simple(size):
+    return  Padding(size)
+    
