@@ -191,6 +191,8 @@ class UnimodalSurvivalTrainer(Trainer):
 
         print(self.model)
         print_vit_sizes(self.model)
+        torch.cuda.reset_peak_memory_stats(device=cfg.base.device)
+        print(f"gpu used {torch.cuda.max_memory_allocated(device=cfg.base.device)/1024/1024} Mb memory")
    
     def initialise_datasets(self, splits, modality, preproc, transforms=None):
         datasets ={}
@@ -315,7 +317,9 @@ class UnimodalMAETrainer(Trainer):
         self.model =self.initialise_models().to(cfg.base.device)
         print(self.model)
         print_vit_sizes(self.model)
-
+        torch.cuda.reset_peak_memory_stats(device=cfg.base.device)
+        print(f"gpu used {torch.cuda.max_memory_allocated(device=cfg.base.device)/1024/1024} Mb memory")
+        
         self.initialise_loss()
 
     
@@ -327,7 +331,6 @@ class UnimodalMAETrainer(Trainer):
         if self.cfg.base.modalities[0]=="rna":
             return  RnaMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
         elif self.cfg.base.modalities[0]=="mri":
-            print(OmegaConf.to_container(self.cfg.model))
             return MriMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
         elif self.cfg.base.modalities[0]=="dnam":
             return DNAmMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
