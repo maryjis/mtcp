@@ -91,7 +91,7 @@ class MriMAEEmbeddings(nn.Module):
         self.position_embeddings.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
         
         for layer in self.patch_embeddings.projection.modules():
-            if not isinstance(layer, nn.Sequential):
+            if hasattr(layer, "weight"):
                 w = layer.weight.data
                 torch.nn.init.xavier_uniform_(w)
 
@@ -170,7 +170,7 @@ class MriMAEDecoderPred(nn.Module):
         assert config.mri_size % config.patch_size == 0, "MRI size must be divisible by patch size"
         self.num_patches_along_axis = config.mri_size // config.patch_size
         
-        if config.to_dict().get("decoder_pred_layers", None):
+        if config.to_dict().get("decoder_pred_layers", None): 
             c = OmegaConf.create(config.to_dict())
             self.projector = nn.Sequential(*[getattr(nn, layer["name"])(*layer.get("args", []), **layer.get("kwargs", {})) for layer in c["decoder_pred_layers"]])
         else:
