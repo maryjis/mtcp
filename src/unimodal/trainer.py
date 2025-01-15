@@ -335,7 +335,6 @@ class UnimodalMAETrainer(Trainer):
         if self.cfg.base.modalities[0]=="rna":
             return  RnaMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
         elif self.cfg.base.modalities[0]=="mri":
-            print(OmegaConf.to_container(self.cfg.model))
             return MriMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
         elif self.cfg.base.modalities[0]=="dnam":
             return DNAmMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
