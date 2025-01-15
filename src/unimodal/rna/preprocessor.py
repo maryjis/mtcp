@@ -26,7 +26,7 @@ class RNAPreprocessor(BaseUnimodalPreprocessor):
         self.data_train = data_train
         self.train_dataset = RNADataset(data_train, dataset_dir)
         self.train_loaders = DataLoader(self.train_dataset)
-        print(scaling_prams)
+        
         self.pipe = Pipeline(steps=[('log', FunctionTransformer(log_transform)) , ('scaler', scaling_method(**scaling_prams)), ('var' , VarianceThreshold(var_threshold))])
         self.is_cluster_genes =is_cluster_genes
         self.column_order = None
@@ -34,6 +34,7 @@ class RNAPreprocessor(BaseUnimodalPreprocessor):
     
         
     def fit(self):
+        print("RNA Preprocessing......")
         super().fit() 
         data = self.load_data(self.train_loaders)
         data = pd.DataFrame(data = data, columns =self.train_dataset.get_column_names())

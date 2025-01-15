@@ -9,6 +9,7 @@ import wandb
 from omegaconf import DictConfig, OmegaConf
 from torch import nn
 
+MODALITY_TO_COLUMN_MAP ={"rna" : "RNA", "mri" : "MRI", "dnam" : "DNAm"}
 def print_vit_sizes(model):
     print(f"Total number of parameters : {count_parameters(model)}")
 
@@ -68,7 +69,8 @@ def seed_everything(seed: int):
     set_determinism(seed=seed, additional_settings=None)
     
     
-def load_splits(data_path: Path, fold_ind : int, remove_nan_column : str, max_samples_per_split : int = None) -> Dict[str,pd.DataFrame]:
+def load_splits(data_path: Path, fold_ind : int, remove_nan_column : str, 
+                max_samples_per_split : int = None, multimodal_intersection_test:bool = False, modalities: List[str] = None ) -> Dict[str,pd.DataFrame]:
     '''
     Use 'group' column to split data into train_validation/test sets
     Loads and splits a dataset from a CSV file into train/validation/test sets
@@ -84,6 +86,10 @@ def load_splits(data_path: Path, fold_ind : int, remove_nan_column : str, max_sa
             dataset =dataset.loc[dataset[remove_nan_column].notnull()]
         
         dataset_test = dataset.loc[dataset.group =='test']
+        
+        dataset_intersection_test = dataset_test.copy()
+       
+                
         dataset_train_val = dataset.loc[dataset.group =='train']
         
         if fold_ind in dataset_train_val.splits.unique():
@@ -97,10 +103,18 @@ def load_splits(data_path: Path, fold_ind : int, remove_nan_column : str, max_sa
             dataset_val = dataset_val.sample(max_samples_per_split)
             dataset_test = dataset_test.sample(max_samples_per_split)
             print(f"WARNING: max_samples_per_split={max_samples_per_split} is set.")
-            
-        return {"train" :dataset_train.reset_index(drop=True), 
-                "val" : dataset_val.reset_index(drop=True), 
-                "test" : dataset_test.reset_index(drop=True)}
+        
+        if multimodal_intersection_test:
+            for modality in modalities:
+                dataset_intersection_test =dataset_intersection_test.loc[dataset_intersection_test[MODALITY_TO_COLUMN_MAP[modality]].notnull()]
+            return {"train" :dataset_train.reset_index(drop=True), 
+                    "val" : dataset_val.reset_index(drop=True), 
+                    "test" : dataset_test.reset_index(drop=True),
+                    "test_intersection" : dataset_intersection_test.reset_index(drop=True)}
+        else:    
+            return {"train" :dataset_train.reset_index(drop=True), 
+                    "val" : dataset_val.reset_index(drop=True), 
+                    "test" : dataset_test.reset_index(drop=True)}
     else:
         raise Exception(f"Dataset file {data_path} didn't found.")
     

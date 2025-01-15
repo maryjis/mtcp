@@ -1,12 +1,18 @@
+
+modalities: ["rna", "dnam"]
+defaults: 
+  - rna_model: survival
+  - dna_model: survival
+
+hidden_size: 256
+is_projection: False
 attention_probs_dropout_prob: 0.0
-decoder_hidden_size: 128
+decoder_hidden_size: 256
 decoder_intermediate_size: 512
 decoder_num_attention_heads: 4
 decoder_num_hidden_layers: 2
 hidden_act: "gelu"
 hidden_dropout_prob: 0.0
-hidden_size: 256 # maybe 384?
-size: 16384
 initializer_range: 0.02
 intermediate_size: 1024
 layer_norm_eps: 1e-12
@@ -16,9 +22,15 @@ norm_pix_loss: false
 num_attention_heads: 4
 num_channels: 1
 num_hidden_layers: 4
-patch_size: 256
 qkv_bias: true
+patch_size: 512
 is_load_pretrained: false
-pretrained_model_name: "rsna_clusters_quantile_mae_pretrained"
+pretrained_model_name: ""
 pretrained_model_path: ""
 output_dim: 20
+fusion_strategy: "linear"
+fusion_depth: 1
+fusion_dim: 256
+fusion_nhead: 4
+fusion_dim_feedforward: 1024
+fusion_dropout: 0.1
