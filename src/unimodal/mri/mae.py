@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch
 import numpy as np
 from einops import rearrange
+from omegaconf import OmegaConf
 
 class MriTMAEPatchEmbeddings(nn.Module):
     """
@@ -29,7 +30,11 @@ class MriTMAEPatchEmbeddings(nn.Module):
         self.num_channels = num_channels
         self.num_patches = num_patches
 
-        self.projection = nn.Conv3d(num_channels, hidden_size, kernel_size=patch_size, stride=patch_size)
+        if cfg.to_dict().get("embeddings_layers", None):
+            c = OmegaConf.create(cfg.to_dict())
+            self.projection = nn.Sequential(*[getattr(nn, layer["name"])(*layer.get("args", []), **layer.get("kwargs", {})) for layer in c["embeddings_layers"]])
+        else:
+            self.projection = nn.Conv3d(num_channels, hidden_size, kernel_size=patch_size, stride=patch_size)
 
     def forward(self, mri_values):
         batch_size, num_channels, mri_size1, mri_size2, mri_size3 = mri_values.shape
@@ -84,9 +89,11 @@ class MriMAEEmbeddings(nn.Module):
             pos_embed
         ], axis=0)
         self.position_embeddings.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
-
-        w = self.patch_embeddings.projection.weight.data
-        torch.nn.init.xavier_uniform_(w)
+        
+        for layer in self.patch_embeddings.projection.modules():
+            if not isinstance(layer, nn.Sequential):
+                w = layer.weight.data
+                torch.nn.init.xavier_uniform_(w)
 
         # timm's trunc_normal_(std=.02) is effectively normal_(std=0.02) as cutoff is too big (2.)
         torch.nn.init.normal_(self.cls_token, std=self.config.initializer_range)
@@ -162,12 +169,17 @@ class MriMAEDecoderPred(nn.Module):
         super().__init__()
         assert config.mri_size % config.patch_size == 0, "MRI size must be divisible by patch size"
         self.num_patches_along_axis = config.mri_size // config.patch_size
-        self.projector = nn.ConvTranspose3d(
-            config.decoder_hidden_size, 
-            config.num_channels, 
-            config.patch_size, 
-            stride=config.patch_size
-        )
+        
+        if config.to_dict().get("decoder_pred_layers", None):
+            c = OmegaConf.create(config.to_dict())
+            self.projector = nn.Sequential(*[getattr(nn, layer["name"])(*layer.get("args", []), **layer.get("kwargs", {})) for layer in c["decoder_pred_layers"]])
+        else:
+            self.projector = nn.ConvTranspose3d(
+                config.decoder_hidden_size, 
+                config.num_channels, 
+                config.patch_size, 
+                stride=config.patch_size
+            )
 
     def forward(self, x):
         batch_size = x.shape[0]
