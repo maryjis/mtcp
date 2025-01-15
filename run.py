@@ -12,7 +12,7 @@ def run(cfg : DictConfig) -> None:
     seed_everything(cfg.base.random_seed)
     if cfg.base.log.logging:
         init_wandb_logging(cfg)
-    all_valid_metrics, all_test_metrics =[], []
+    all_valid_metrics, all_test_metrics , all_test_metrics_in_intersection =[], [], []
     for fold_ind in range(cfg.base.splits):
 
         print(f"Fold #{fold_ind}")
@@ -24,7 +24,9 @@ def run(cfg : DictConfig) -> None:
             Path(cfg.base.data_path), 
             fold_ind, 
             cfg.base.remove_nan_column, 
-            max_samples_per_split=cfg.base.get("max_samples_per_split", None)
+            max_samples_per_split=cfg.base.get("max_samples_per_split", None),
+            multimodal_intersection_test =cfg.base.multimodal_intersection_test,
+            modalities=cfg.base.modalities
         )
 
         if cfg.base.type == 'unimodal':
@@ -48,16 +50,23 @@ def run(cfg : DictConfig) -> None:
             raise NotImplementedError("Choose from 'multimodal' and 'unimodal' options")
 
         valid_metrics =trainer.train(fold_ind)
-        test_metrics =trainer.evaluate(fold_ind)
+        test_metrics, test_metrics_intersection =trainer.evaluate(fold_ind)
         all_valid_metrics.append(valid_metrics)
         all_test_metrics.append(test_metrics)
+        if cfg.base.multimodal_intersection_test:
+            all_test_metrics_in_intersection.append(test_metrics_intersection)
         
     # aggregate valid and test metrics for all folds
     final_valid_metrics = agg_fold_metrics(all_valid_metrics)
     final_test_metrics = agg_fold_metrics(all_test_metrics)
+    if cfg.base.multimodal_intersection_test:
+        final_test_metrics_intersection = agg_fold_metrics(all_test_metrics_in_intersection)
     
     if cfg.base.log.logging:
-        wandb.summary["final"] = {"valid": final_valid_metrics, "test": final_test_metrics}
+        final_metrics = {"valid": final_valid_metrics, "test": final_test_metrics}
+        if cfg.base.multimodal_intersection_test:
+            final_metrics.update({"test_in_intersection": final_test_metrics_intersection})
+        wandb.summary["final"] =final_metrics
         wandb.finish()
 
 
