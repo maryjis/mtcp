@@ -238,7 +238,6 @@ class MultiMAEModel(nn.Module):
         # Process each modality
         is_first = True
 
-        print(self.modalities)
         for modality in self.modalities:
             seq_length = self.get_patches_number(modality)
             sample = x[modality]
@@ -255,16 +254,15 @@ class MultiMAEModel(nn.Module):
             )
             
             multimodal_length += seq_length
-            if not is_first:
-                embedded_sample = ViTMAEModelOutput(
+            
+            embedded_sample = ViTMAEModelOutput(
                     last_hidden_state=embedded_sample.last_hidden_state[:,1:, :],
                     mask=embedded_sample.mask,
                     ids_restore=embedded_sample.ids_restore,
                     hidden_states=embedded_sample.hidden_states,
                     attentions=embedded_sample.attentions
                 )
-            encoder_outputs.append(embedded_sample)
-            is_first = False
+            encoder_outputs.append(embedded_sample)           
 
         # Combine embeddings from all modalities
         last_hidden_states = [out.last_hidden_state for out in encoder_outputs]
@@ -472,19 +470,20 @@ class MaskAttentionFusion(nn.Module):
             self.fusion_layers = nn.ModuleList([nn.MultiheadAttention(fusion_dim, fusion_nhead, dropout=fusion_dropout, batch_first=True) for _ in range(fusion_depth)])
         
     def forward(self, x, mask):
-        class_token = torch.full((mask.shape[0], 1), 1).to(x.device)
-        expanded_mask = torch.cat((class_token, mask, ), dim=1)
+        
         for layer in self.fusion_layers:
-            if self.fusion_dim_feedforward:
-                x = layer(x, src_key_padding_mask=1 - expanded_mask)
+            if self.fusion_dim_feedforward > 0:
+                x = layer(x, src_key_padding_mask=1 - mask)
             else:
-               x = layer(x, key_padding_mask  = 1 - expanded_mask)
+               x = layer(x,x,x, key_padding_mask  = 1 - mask)[0]           
         return x
         
 class MultiMaeForSurvival(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
+        self.modalities = self.cfg.modalities
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, cfg.hidden_size))
         if cfg.is_load_pretrained:
             self.model = MultiMAEModel.from_pretrained(cfg.pretrained_model_path, config=cfg)
         else:
@@ -494,18 +493,50 @@ class MultiMaeForSurvival(nn.Module):
                                                        cfg.fusion_dim_feedforward, cfg.fusion_dropout)
         elif cfg.fusion_strategy =="linear":
             self.fusion_strategy = nn.Identity()
+        
+        elif self.cfg.fusion_strategy == "disentangled_fusion":
+            self.fusion_strategy = MaskAttentionFusion(cfg.fusion_depth, cfg.fusion_dim, cfg.fusion_nhead,
+                                                       cfg.fusion_dim_feedforward, cfg.fusion_dropout)
+            self.agregation = nn.Linear(len(self.modalities)+1, 1)
+            
         else:
             raise ValueError(f"Invalid fusion strategy: {cfg.fusion_strategy}")
-        self.projection = nn.Linear(cfg.hidden_size, cfg.output_dim)
+            
+        self.projection = nn.Linear(cfg.fusion_dim, cfg.output_dim)
         
+    def initialize_weights(self):
+        torch.nn.init.normal_(self.cls_token, std=self.cfg.initializer_range)
+        
+            
     def forward(self, x: Dict[str, torch.FloatTensor], masks: Dict[str, torch.FloatTensor], interpolate_pos_encoding: bool = False):
         # print({modality: value.mean() for modality, value  in x.items()})
-        x = self.model(x, masks, interpolate_pos_encoding)
+        concat_x = self.model(x, masks, interpolate_pos_encoding)
         # print("Mask shape: ", x.mask.shape)
         # print("Last_hidden_state shape: ", x.last_hidden_state.shape)
+        cls_tokens = self.cls_token.expand(concat_x.last_hidden_state.shape[0], -1, -1)
+        
+        class_token_mask = torch.full((concat_x.mask.shape[0], 1), 1).to(concat_x.mask.device)
+        expanded_mask = torch.cat((class_token_mask, concat_x.mask), dim=1) 
+        
+        concat_x = torch.cat((cls_tokens, concat_x.last_hidden_state), dim=1)
+
         if self.cfg.fusion_strategy == "mask_attention":
-            x = self.fusion_strategy(x.last_hidden_state, x.mask)
+            concat_x = self.fusion_strategy(concat_x, expanded_mask)
+        elif self.cfg.fusion_strategy == "disentangled_fusion":
+            ## Get multimodal combination
+            concat_x = self.fusion_strategy(concat_x, expanded_mask)
+            
+            modalities_cls  =[]
+            for modality in self.modalities:
+                x_modality = x[modality] 
+                embedding_modality = self.model.encoders[modality](x_modality)
+                modalities_cls.append(embedding_modality.last_hidden_state[:,0,:])
+            fused_embedding = torch.stack((concat_x[:,0,:], *modalities_cls), dim=1)
+            print(fused_embedding.shape)
+            fused_embedding = fused_embedding.permute(0,2,1)
+            concat_x =self.agregation(fused_embedding).permute(0,2,1)
+            print(concat_x.shape)
         else:
-            x = self.fusion_strategy(x.last_hidden_state)
-        x = self.projection(x[:,0,:])
-        return x
+            concat_x = self.fusion_strategy(concat_x)
+        logits = self.projection(concat_x[:,0,:])
+        return logits
