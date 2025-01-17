@@ -85,7 +85,7 @@ class MultiMAEModel(nn.Module):
                     self.cfg.is_projection
                 )
             elif modality == "dnam":
-                cfg_dnam_model = ViTMAEConfig(**self.cfg.dna_model)
+                cfg_dnam_model = ViTMAEConfig(**self.cfg.dnam_model)
                 self.encoders[modality] = UnimodalEncoder(
                     DNAmMAEModel.from_pretrained(cfg_dnam_model.pretrained_model_path, config=cfg_dnam_model)
                     if cfg_dnam_model.is_load_pretrained
@@ -295,7 +295,7 @@ class MultiMaeForPretraining(nn.Module):
         
 
     def get_patch_size(self,  modality: str)-> int:
-        if modality =="rna":
+        if modality =="rna" or modality=="dnam":
             return self.cfg.to_dict()[f"{modality}_model"]["patch_size"]
         elif  modality =="mri":
             return self.cfg.to_dict()[f"{modality}_model"]["patch_size"] ** 3

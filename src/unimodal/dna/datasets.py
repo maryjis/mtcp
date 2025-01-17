@@ -8,7 +8,7 @@ import numpy as np
 class DNAmDataset(BaseDataset):
     """RNA dataset."""
 
-    def __init__(self, data_split, dataset_dir, transform = None, 
+    def __init__(self, data_split, dataset_file, transform = None, 
                  is_hazard_logits = False,
                  column_order = None,
                  return_mask = True):
@@ -19,8 +19,8 @@ class DNAmDataset(BaseDataset):
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
-        super().__init__(data_split, dataset_dir, transform, is_hazard_logits, return_mask)
-        self.dna_dataset = pd.read_csv(dataset_dir)
+        super().__init__(data_split, dataset_file, transform, is_hazard_logits, return_mask)
+        self.dna_dataset = pd.read_csv(dataset_file)
         self.column_order = column_order
         
         if isinstance(column_order, pd.Index): 

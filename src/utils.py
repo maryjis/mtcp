@@ -97,7 +97,6 @@ def load_splits(data_path: Path, fold_ind : int, remove_nan_column : str,
         
         dataset_test = dataset.loc[dataset.group =='test']
         
-        dataset_intersection_test = dataset_test.copy()
        
                 
         dataset_train_val = dataset.loc[dataset.group =='train']
@@ -115,6 +114,7 @@ def load_splits(data_path: Path, fold_ind : int, remove_nan_column : str,
             print(f"WARNING: max_samples_per_split={max_samples_per_split} is set.")
         
         if multimodal_intersection_test:
+            dataset_intersection_test = dataset_test.copy()
             for modality in modalities:
                 dataset_intersection_test =dataset_intersection_test.loc[dataset_intersection_test[MODALITY_TO_COLUMN_MAP[modality]].notnull()]
             return {"train" :dataset_train.reset_index(drop=True), 
