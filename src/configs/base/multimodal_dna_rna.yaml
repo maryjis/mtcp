@@ -1,4 +1,4 @@
-experiment_name: "multimodal_test_without_clusters_quantile_mae_dna_rna"
+experiment_name: "multimodal_test_without_clusters_quantile_mae_dna_rna_survival"
 n_epochs: 50
 n_intervals: 20
 random_seed: 1380
@@ -15,7 +15,7 @@ scheduler:
         eta_min: 5e-6
 
 type: "multimodal"
-strategy: "mae" # mae, survival
+strategy: "survival" # mae, survival
 modalities: ["rna", "dnam"]
 multimodal_intersection_test: true
 architecture: "MAE"

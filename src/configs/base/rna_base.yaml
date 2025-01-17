@@ -1,4 +1,4 @@
-experiment_name: "rsna_without_clusters_quantile_mae_survival"
+experiment_name: "rsna_mae_survival_random"
 n_epochs: 50
 n_intervals: 20
 random_seed: 1380
@@ -16,7 +16,7 @@ scheduler:
 
 
 type: "unimodal"
-strategy: "mae" # mae, survival
+strategy: "survival" # mae, survival
 modalities: ["rna"]
 architecture: "MAE"
 splits: 5

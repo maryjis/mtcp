@@ -6,7 +6,7 @@ from pathlib import Path
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.multimodal.trainer import MultiModalMAETrainer, MultiModalSurvivalTrainer
 
-@hydra.main(version_base=None, config_path="src/configs", config_name="multimodal_config")
+@hydra.main(version_base=None, config_path="src/configs", config_name="unimodal_config")
 def run(cfg : DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))
     seed_everything(cfg.base.random_seed)
@@ -59,7 +59,7 @@ def run(cfg : DictConfig) -> None:
     # aggregate valid and test metrics for all folds
     final_valid_metrics = agg_fold_metrics(all_valid_metrics)
     final_test_metrics = agg_fold_metrics(all_test_metrics)
-    if cfg.base.multimodal_intersection_test:
+    if cfg.base.get("multimodal_intersection_test", None):
         final_test_metrics_intersection = agg_fold_metrics(all_test_metrics_in_intersection)
     
     if cfg.base.log.logging:
