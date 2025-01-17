@@ -29,6 +29,14 @@ is_load_pretrained: false
 pretrained_model_name: ""
 pretrained_model_path: ""
 output_dim: 20
+
+encoder_fusion_strategy: "mask_attention"
+encoder_fusion_depth: 1
+encoder_fusion_dim: 256
+encoder_fusion_nhead: 4
+encoder_fusion_dim_feedforward: 1024
+encoder_fusion_dropout: 0.1
+
 fusion_strategy: "mask_attention"
 fusion_depth: 1
 fusion_dim: 256

@@ -54,8 +54,16 @@ class MultiMAEModel(nn.Module):
         self.cfg = cfg
         self.modalities = cfg.modalities
         self.__init_encoders__()
-        self.mask_token = nn.Parameter(torch.zeros(1, 1, cfg.decoder_hidden_size))
+        self.mask_token = nn.Parameter(torch.zeros(1, 1, cfg.hidden_size))
         self.encoders = nn.ModuleDict(self.encoders)
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, cfg.hidden_size))
+        if cfg.encoder_fusion_strategy == "mask_attention":
+            self.encoder_fusion_strategy = MaskAttentionFusion(cfg.encoder_fusion_depth, cfg.encoder_fusion_dim,
+                                                               cfg.encoder_fusion_nhead,
+                                                       cfg.encoder_fusion_dim_feedforward, cfg.encoder_fusion_dropout)
+        else:
+            self.encoder_fusion_strategy = nn.Identity()
+        self.initialize_weights()
 
     def __init_encoders__(self):
         """Initialize encoders for each modality."""
@@ -219,7 +227,10 @@ class MultiMAEModel(nn.Module):
                 hidden_states=None,
                 attentions=None
             )
-    
+            
+    def initialize_weights(self):
+        torch.nn.init.normal_(self.cls_token, std=self.cfg.initializer_range)
+        
     def forward(
         self,
         x: Dict[str, torch.FloatTensor],
@@ -262,17 +273,32 @@ class MultiMAEModel(nn.Module):
                     hidden_states=embedded_sample.hidden_states,
                     attentions=embedded_sample.attentions
                 )
-            encoder_outputs.append(embedded_sample)           
+            encoder_outputs.append(embedded_sample)
+            print(f"{modality} embed shape:", embedded_sample.last_hidden_state.shape)           
 
         # Combine embeddings from all modalities
-        last_hidden_states = [out.last_hidden_state for out in encoder_outputs]
-        masks = [out.mask for out in encoder_outputs]
-        ids_restores = [out.ids_restore for out in encoder_outputs]
-            
+        last_hidden_states = torch.cat([out.last_hidden_state for out in encoder_outputs], dim=1)
+        masks = torch.cat([out.mask for out in encoder_outputs], dim=1)
+        ids_restores = torch.cat([out.ids_restore for out in encoder_outputs],dim=1)
+        
+        print("last_hidden_states.shape: ", last_hidden_states.shape)  
+        print("masks.shape: ", masks.shape)  
+        cls_tokens = self.cls_token.expand(last_hidden_states.shape[0], -1, -1)
+        
+        class_token_mask = torch.full((masks.shape[0], 1), 1).to(masks.device)
+        masks = torch.cat((class_token_mask, masks), dim=1) 
+        
+        last_hidden_states = torch.cat((cls_tokens, last_hidden_states), dim=1)
+        
+        print("after preproc last_hidden_states.shape: ", last_hidden_states.shape)  
+        print("after preproc masks.shape: ", masks.shape)  
+        
+        last_hidden_states = self.encoder_fusion_strategy(last_hidden_states, None) 
+         
         concat_embedding = ViTMAEModelOutput(
-            last_hidden_state=torch.cat(last_hidden_states, dim=1),
-            mask=torch.cat(masks, dim=1),
-            ids_restore=torch.cat(ids_restores, dim=1),
+            last_hidden_state=last_hidden_states,
+            mask=masks,
+            ids_restore=ids_restores,
             hidden_states=None,
             attentions=None
         )    
@@ -473,9 +499,9 @@ class MaskAttentionFusion(nn.Module):
         
         for layer in self.fusion_layers:
             if self.fusion_dim_feedforward > 0:
-                x = layer(x, src_key_padding_mask=1 - mask)
+                x = layer(x, src_key_padding_mask= 1 - mask if mask is not None else None)
             else:
-               x = layer(x,x,x, key_padding_mask  = 1 - mask)[0]           
+               x = layer(x,x,x, key_padding_mask  = 1 - mask if mask is not None else None)[0]           
         return x
         
 class MultiMaeForSurvival(nn.Module):
@@ -483,7 +509,7 @@ class MultiMaeForSurvival(nn.Module):
         super().__init__()
         self.cfg = cfg
         self.modalities = self.cfg.modalities
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, cfg.hidden_size))
+        
         if cfg.is_load_pretrained:
             self.model = MultiMAEModel.from_pretrained(cfg.pretrained_model_path, config=cfg)
         else:
@@ -504,8 +530,6 @@ class MultiMaeForSurvival(nn.Module):
             
         self.projection = nn.Linear(cfg.fusion_dim, cfg.output_dim)
         
-    def initialize_weights(self):
-        torch.nn.init.normal_(self.cls_token, std=self.cfg.initializer_range)
         
             
     def forward(self, x: Dict[str, torch.FloatTensor], masks: Dict[str, torch.FloatTensor], interpolate_pos_encoding: bool = False):
@@ -513,18 +537,12 @@ class MultiMaeForSurvival(nn.Module):
         concat_x = self.model(x, masks, interpolate_pos_encoding)
         # print("Mask shape: ", x.mask.shape)
         # print("Last_hidden_state shape: ", x.last_hidden_state.shape)
-        cls_tokens = self.cls_token.expand(concat_x.last_hidden_state.shape[0], -1, -1)
-        
-        class_token_mask = torch.full((concat_x.mask.shape[0], 1), 1).to(concat_x.mask.device)
-        expanded_mask = torch.cat((class_token_mask, concat_x.mask), dim=1) 
-        
-        concat_x = torch.cat((cls_tokens, concat_x.last_hidden_state), dim=1)
 
         if self.cfg.fusion_strategy == "mask_attention":
-            concat_x = self.fusion_strategy(concat_x, expanded_mask)
+            concat_x = self.fusion_strategy(concat_x.last_hidden_state, concat_x.mask)
         elif self.cfg.fusion_strategy == "disentangled_fusion":
             ## Get multimodal combination
-            concat_x = self.fusion_strategy(concat_x, expanded_mask)
+            concat_x = self.fusion_strategy(concat_x.last_hidden_state, concat_x.mask)
             
             modalities_cls  =[]
             for modality in self.modalities:
@@ -537,6 +555,6 @@ class MultiMaeForSurvival(nn.Module):
             concat_x =self.agregation(fused_embedding).permute(0,2,1)
             print(concat_x.shape)
         else:
-            concat_x = self.fusion_strategy(concat_x)
+            concat_x = self.fusion_strategy(concat_x.last_hidden_state)
         logits = self.projection(concat_x[:,0,:])
         return logits
