@@ -34,6 +34,7 @@ class MriTMAEPatchEmbeddings(nn.Module):
             c = OmegaConf.create(cfg.to_dict())
             self.projection = nn.Sequential(*[getattr(nn, layer["name"])(*layer.get("args", []), **layer.get("kwargs", {})) for layer in c["embeddings_layers"]])
         else:
+            print("WARNING: you haven't parametrized encoder embeddings layers in model config, heavy default convolution is used")
             self.projection = nn.Conv3d(num_channels, hidden_size, kernel_size=patch_size, stride=patch_size)
 
     def forward(self, mri_values):
@@ -174,6 +175,7 @@ class MriMAEDecoderPred(nn.Module):
             c = OmegaConf.create(config.to_dict())
             self.projector = nn.Sequential(*[getattr(nn, layer["name"])(*layer.get("args", []), **layer.get("kwargs", {})) for layer in c["decoder_pred_layers"]])
         else:
+            print("WARNING: you haven't parametrized decoder projector layers in model config, heavy default convolution is used")
             self.projector = nn.ConvTranspose3d(
                 config.decoder_hidden_size, 
                 config.num_channels, 
