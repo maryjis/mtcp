@@ -25,7 +25,7 @@ def run(cfg : DictConfig) -> None:
             fold_ind, 
             cfg.base.remove_nan_column, 
             max_samples_per_split=cfg.base.get("max_samples_per_split", None),
-            multimodal_intersection_test =cfg.base.multimodal_intersection_test,
+            multimodal_intersection_test =cfg.base.get("multimodal_intersection_test", None),
             modalities=cfg.base.modalities
         )
 
@@ -53,7 +53,7 @@ def run(cfg : DictConfig) -> None:
         test_metrics, test_metrics_intersection =trainer.evaluate(fold_ind)
         all_valid_metrics.append(valid_metrics)
         all_test_metrics.append(test_metrics)
-        if cfg.base.multimodal_intersection_test:
+        if cfg.base.get("multimodal_intersection_test", None):
             all_test_metrics_in_intersection.append(test_metrics_intersection)
         
     # aggregate valid and test metrics for all folds
@@ -64,7 +64,7 @@ def run(cfg : DictConfig) -> None:
     
     if cfg.base.log.logging:
         final_metrics = {"valid": final_valid_metrics, "test": final_test_metrics}
-        if cfg.base.multimodal_intersection_test:
+        if cfg.base.get("multimodal_intersection_test", None):
             final_metrics.update({"test_in_intersection": final_test_metrics_intersection})
         wandb.summary["final"] =final_metrics
         wandb.finish()
