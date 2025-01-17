@@ -1,6 +1,6 @@
 experiment_name: "mri_mae_model_t1c_num_layers_enc_${model.num_hidden_layers}_dec_${model.decoder_num_hidden_layers}_test"
-splits: 1
-n_epochs: 2
+splits: 5
+n_epochs: 50
 
 n_intervals: 20
 random_seed: 1380
