@@ -9,7 +9,7 @@ hidden_size: 256 # maybe 384?
 initializer_range: 0.02
 intermediate_size: 1024
 layer_norm_eps: 1e-12
-mask_ratio: ??? #0.5
+mask_ratio: 0.5
 model_type: "vit_mae"
 norm_pix_loss: false
 num_attention_heads: 4
@@ -17,11 +17,44 @@ num_channels: 1
 num_hidden_layers: 4  
 qkv_bias: true
 
-patch_size: 8 #
+patch_size: 16 #
 mri_size: 64
 
 #survival-specific
 is_load_pretrained: true
-pretrained_model_name: ??? # "mri_mae_pretrain_t1c_masking_0.5"
+pretrained_model_name: "mri_mae_pretrain_t1c_num_layers_enc_${.num_hidden_layers}_dec_${.decoder_num_hidden_layers}"
 output_dim: 20 #should 
 
+embeddings_layers:
+  - name: "Conv3d"
+    args: 
+      - ${....num_channels} #in
+      - 16 #out
+      - ${eval:'${....patch_size}//4'} #kernel
+    kwargs:
+      stride: ${eval:'${....patch_size}//4'}
+  - name: "GELU"
+  - name: "Conv3d"
+    args: 
+      - 16 #in
+      - ${....hidden_size} #out
+      - 4 #kernel
+    kwargs:
+      stride: 4
+
+decoder_pred_layers:
+  - name: "ConvTranspose3d"
+    args:
+      - ${....decoder_hidden_size}
+      - 16
+      - 4
+    kwargs:
+      stride: 4
+  - name: "GELU"
+  - name: "ConvTranspose3d"
+    args:
+      - 16
+      - ${....num_channels}
+      - ${eval:'${....patch_size}//4'}
+    kwargs:
+      stride: ${eval:'${....patch_size}//4'}
