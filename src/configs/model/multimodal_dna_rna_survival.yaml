@@ -2,7 +2,7 @@
 modalities: ["rna", "dnam"]
 defaults: 
   - rna_model: survival
-  - dna_model: survival
+  - dnam_model: survival
 
 hidden_size: 256
 is_projection: False
@@ -28,7 +28,7 @@ is_load_pretrained: false
 pretrained_model_name: ""
 pretrained_model_path: ""
 output_dim: 20
-fusion_strategy: "disentangled_fusion"
+fusion_strategy: "mask_attention"
 fusion_depth: 1
 fusion_dim: 256
 fusion_nhead: 4
