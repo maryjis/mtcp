@@ -266,6 +266,7 @@ class UnimodalSurvivalTrainer(Trainer):
         
     def __loop__(self,split, fold_ind, dataloader, device):
         total_task_loss =0
+        num_samples = 0
         preds,times,events = [], [], []
 
         for batch in dataloader:
@@ -286,9 +287,10 @@ class UnimodalSurvivalTrainer(Trainer):
             preds.append(outputs)
             times.append(time)
             events.append(event)
-            total_task_loss+=loss
+            total_task_loss+=loss*len(batch)
+            num_samples+=len(batch)
             
-        metrics = {"task_loss": total_task_loss.cpu().detach().numpy() / len(dataloader.dataset)}
+        metrics = {"task_loss": total_task_loss.cpu().detach().numpy() / num_samples}
         if split!="train":
             preproc = self.preproc[next(iter(self.preproc))] if isinstance(self.preproc, dict) else self.preproc
             metrics.update(compute_survival_metrics( preds, torch.cat(times, dim=0), torch.cat(events, dim=0), cuts=preproc.get_hazard_cuts()))
@@ -371,7 +373,7 @@ class UnimodalMAETrainer(Trainer):
         
     def __loop__(self,split, fold_ind, dataloader, device):
         total_loss =0
-        
+        num_samples = 0
 
         for batch in tqdm(dataloader):
             if isinstance(batch, tuple) or isinstance(batch, list): data, mask = batch 
@@ -385,9 +387,10 @@ class UnimodalMAETrainer(Trainer):
                 outputs.loss.backward()
                 self.optimizer.step()
             
-            total_loss+=outputs.loss
+            total_loss+=outputs.loss*len(batch) #outputs.loss - mean loss across batch
+            num_samples+=len(batch)
         
-        metrics = {"mse_loss": total_loss.cpu().detach().numpy() / len(dataloader.dataset)}
+        metrics = {"mse_loss": total_loss.cpu().detach().numpy() / num_samples}
         
         if split=="train":
             self.scheduler.step()
