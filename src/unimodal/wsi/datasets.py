@@ -1,8 +1,11 @@
-from typing import Tuple, Union
+from typing import Tuple, Union, Any
 from PIL import Image
 import torch
 import pandas as pd
-from src.datasets import BaseDataset  
+from src.datasets import BaseDataset  # Обновлено на BaseDataset, согласно новым изменениям
+import os
+import numpy as np
+from torchvision import transforms
 
 
 class PatchDataset(torch.utils.data.Dataset):
@@ -62,15 +65,64 @@ class WSIDataset(BaseDataset):
         else:
             return data
 
+class WSIDataset_patches(BaseDataset):
+    def __init__(
+        self,
+        dataframe: pd.DataFrame,
+        return_mask: bool = False,
+        transform: "torchvision.transforms" = None,
+        is_hazard_logits = False  # Добавлен параметр
+    ) -> None:
+        super().__init__(data=dataframe, transform=transform, is_hazard_logits=is_hazard_logits)
+
+    def _load_patches(self, image_dir: str):
+        """Загружает патчи из папки `patches` для одного изображения"""
+        patch_dir = os.path.join(image_dir, "patches")  # Папка с патчами
+        patch_files = sorted(os.listdir(patch_dir))
+        
+        patches = []
+        for patch_file in patch_files:
+            if patch_file.endswith(".png"):
+                patch_path = os.path.join(patch_dir, patch_file)
+                patch = Image.open(patch_path).convert("RGB")
+                patch = transforms.ToTensor()(patch)  # Преобразуем патч в тензор
+                patches.append(patch)
+
+        return torch.stack(patches)  # Возвращаем все патчи как один тензор
+
+    def __getitem__(self, idx: int) -> Union[Tuple[torch.Tensor, bool], torch.Tensor]:
+        sample = self.data.iloc[idx]
+        
+        if not pd.isna(sample.WSI):
+            # Извлекаем путь до папки, где находится .svs файл
+            svs_path = sample.WSI
+            image_dir = os.path.dirname(svs_path)  # Папка, содержащая .svs файл
+
+            # Загружаем патчи из папки "patches"
+            patches = self._load_patches(image_dir)
+            mask = True
+
+            if self.transform:
+                patches = self.transform(patches)
+
+            # Сформируем батч патчей для одного изображения
+            batch = patches  # Патчи одного изображения
+
+            return batch, mask
+
+        else:
+            # Если данных нет, возвращаем пустой тензор
+            return torch.zeros((1, 3, 224, 224)), False
+        
 
 class SurvivalWSIDataset(torch.utils.data.Dataset):
     def __init__(
         self, 
         split: pd.DataFrame,  # DataFrame с временными и событийными данными
-        dataset: torch.utils.data.Dataset,  #  датасет для WSI, например, `PatchDataset`
+        dataset: torch.utils.data.Dataset,  
         is_hazard_logits: bool = False  # Параметр, который указывает, нужно ли использовать логиты
     ) -> None:
-        self.dataset = dataset  # Сам датасет (например, патчи WSI)
+        self.dataset = dataset 
         
         # В зависимости от того, логиты ли это, или другие данные, мы подбираем колонки для времени и события
         if is_hazard_logits:
