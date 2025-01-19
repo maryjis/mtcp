@@ -2,7 +2,7 @@ from typing import Tuple, Union
 from PIL import Image
 import torch
 import pandas as pd
-from src.datasets import BaseDataset  # Обновлено на BaseDataset, согласно новым изменениям
+from src.datasets import BaseDataset  
 
 
 class PatchDataset(torch.utils.data.Dataset):
@@ -30,14 +30,15 @@ class WSIDataset(BaseDataset):
         k: int,
         is_train: bool = True,
         return_mask: bool = False,
-        transform: "torchvision.transforms" = None
+        transform: "torchvision.transforms" = None,
+        is_hazard_logits = False # Добавлен параметр
     ) -> None:
-        super().__init__(data=dataframe, transform=transform, return_mask=return_mask)
+        super().__init__(data=dataframe, transform=transform, return_mask=return_mask, is_hazard_logits=is_hazard_logits)
         self.k = k
         self.is_train = is_train
 
     def __getitem__(self, idx: int) -> Union[Tuple[torch.Tensor, bool], torch.Tensor]:
-        sample = self.data.iloc[idx]  # используем self.data (dataframe)
+        sample = self.data.iloc[idx]
         
         if not pd.isna(sample.WSI):
             data = pd.read_csv(sample.WSI)
@@ -53,7 +54,6 @@ class WSIDataset(BaseDataset):
             data = torch.zeros(self.k, 512).float()
             mask = False
 
-        # Применяем трансформации, если они были переданы
         if self.transform:
             data = self.transform(data)
 
@@ -62,5 +62,27 @@ class WSIDataset(BaseDataset):
         else:
             return data
 
+
+class SurvivalWSIDataset(torch.utils.data.Dataset):
+    def __init__(
+        self, 
+        split: pd.DataFrame,  # DataFrame с временными и событийными данными
+        dataset: torch.utils.data.Dataset,  #  датасет для WSI, например, `PatchDataset`
+        is_hazard_logits: bool = False  # Параметр, который указывает, нужно ли использовать логиты
+    ) -> None:
+        self.dataset = dataset  # Сам датасет (например, патчи WSI)
+        
+        # В зависимости от того, логиты ли это, или другие данные, мы подбираем колонки для времени и события
+        if is_hazard_logits:
+            self.time = torch.from_numpy(split["new_time"].values)
+            self.event = torch.from_numpy(split["new_event"].values)
+        else:
+            self.time = torch.from_numpy(split["time"].values)
+            self.event = torch.from_numpy(split["event"].values)
+
+    def __getitem__(self, idx: int) -> Tuple[Any, torch.Tensor, torch.Tensor]:
+        # Возвращаем патч из датасета WSI, время и событие для выживания
+        return self.dataset[idx], self.time[idx], self.event[idx]
+
     def __len__(self) -> int:
-        return len(self.data)
+        return len(self.dataset)  # Размер датасета (количество патчей)
