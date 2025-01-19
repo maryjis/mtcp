@@ -266,6 +266,41 @@ def main(args):
     create_thumbnail_and_mask(args.gbm_data_path, downscale_factor=args.downscale_factor)  # Заменили base_path на gbm_data_path
     create_thumbnail_and_mask(args.lgg_data_path, downscale_factor=args.downscale_factor)  # Для LGG
     
+    # Создаем и сохраняем словарь id2path
+    id2path = {}
+    for patient_id, path in file_map.items():
+        if isinstance(path, tuple):
+            # Если несколько слайдов, отображаем их с миниатюрами
+            n_slides = len(path)
+            plt.figure(figsize=(12, 12))
+            for i in range(n_slides):
+                plt.subplot(1, n_slides, i+1)
+                plt.axis('off')
+                plt.title(pyvips.Image.new_from_file(path[i]).get('aperio.AppMag'))
+                thumbnail_path = '/'.join(path[i].split('/')[:-1])
+                thumbnail = np.array(Image.open(os.path.join(thumbnail_path, 'thumbnail.jpg')))
+                plt.imshow(thumbnail)
+            display.display(plt.gcf())
+            display.clear_output(wait=True)
+            plt.show()
+            idx = int(input())
+            id2path[patient_id] = path[idx]
+        else:
+            id2path[patient_id] = path
+
+    # Перезаписываем файл wsi_mapping.json
+    with open(args.mapping_path, 'w') as f:
+        json.dump(id2path, f)
+
+    # Считываем данные JSON и объединяем их с dataframe
+    with open(args.mapping_path, 'r') as f:
+        wsi_mapping = json.load(f)
+
+    WSI_mapping = pd.DataFrame([(k, v) for k, v in wsi_mapping.items()], columns=('submitter_id', 'WSI'))
+    print(WSI_mapping)
+    dataframe = dataframe.merge(WSI_mapping, how='left', on='submitter_id')
+    dataframe.to_csv(args.wsi_file_path, index=False)
+
     # Обрабатываем данные GBM и LGG
     num_patches = args.num_patches
     patch_size = args.patch_size
@@ -351,14 +386,14 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="WSI patch extraction and thumbnail generation")
-    parser.add_argument("--base_path", "-b", help="Base path for processed data (thumbnails, masks, etc.)")
-    parser.add_argument("--gbm_data_path", "-g", help="Path to the GBM data folder")
-    parser.add_argument("--lgg_data_path", "-l", help="Path to the LGG data folder")
-    parser.add_argument("--mapping_path", "-m", help="Path to WSI mapping file")
-    parser.add_argument("--num_patches", "-n", type=int, default=100, help="Number of patches to extract (100)")
+    parser.add_argument("--base_path", "-b", default="/home/belyaeva.a/WSI_GBMLGG", help="Base path for processed data (thumbnails, masks, etc.)")
+    parser.add_argument("--gbm_data_path", "-g", default="/home/belyaeva.a/TCGA-GBM_WSI", help="Path to the GBM data folder")
+    parser.add_argument("--lgg_data_path", "-l", default="/home/belyaeva.a/wsi", help="Path to the LGG data folder")
+    parser.add_argument("--mapping_path", "-m", default="/home/belyaeva.a/mtcp/src/data/wsi_mapping.json", help="Path to WSI mapping file")
+    parser.add_argument("--num_patches", "-n", type=int, default=5, help="Number of patches to extract (1000)")
     parser.add_argument("--patch_size", "-s", type=int, default=256, help="Size of the patches (256x256)")
-    parser.add_argument("--iterations", "-i", type=int, default=1000, help="Number of iterations for patch extraction")
-    parser.add_argument("--wsi_file_path", "-w", help="Path to the WSI files metadata")
+    parser.add_argument("--iterations", "-i", type=int, default=6, help="Number of iterations for patch extraction")
+    parser.add_argument("--wsi_file_path", "-w", default="/home/belyaeva.a/mtcp/src/data/dataset.csv", help="Path to the WSI files metadata")
     parser.add_argument("--downscale_factor", "-d", type=int, default=6, help="Downscale factor for thumbnail generation")
 
     args = parser.parse_args()
