@@ -11,7 +11,7 @@ import numpy as np
 
 class WsiTMAEPatchEmbeddings(nn.Module):
     """
-    Этот класс преобразует WSI данные (например, слайды с размером [batch_size, channels, height, width])
+    Этот класс преобразует WSI данные (патчи с размером [batch_size, channels, height, width])
     в начальные скрытые состояния (patch embeddings) с размером [batch_size, seq_length, hidden_size],
     которые можно использовать для трансформера.
     """
@@ -28,19 +28,24 @@ class WsiTMAEPatchEmbeddings(nn.Module):
         self.num_channels = num_channels
         self.num_patches = num_patches
 
+        # Свертка для получения эмбеддингов патчей
         self.projection = nn.Conv2d(num_channels, hidden_size, kernel_size=patch_size, stride=patch_size)
 
     def forward(self, wsi_values):
+        # Здесь мы получаем патчи с размером [batch_size, channels, height, width]
         batch_size, num_channels, img_size1, img_size2 = wsi_values.shape
         if num_channels != self.num_channels:
             raise ValueError("Убедитесь, что размерность канала WSI данных совпадает с указанной в конфигурации.")
 
+        # Преобразование в патчи
         wsi_values = rearrange(
             wsi_values,
             'b c (x p_x) (y p_y) -> (b x y) c p_x p_y', 
             p_x=self.patch_size, 
             p_y=self.patch_size
         )
+
+        # Проекция патчей в скрытые состояния
         x = self.projection(wsi_values)  # B*S, C, P_x, P_y -> B*S, E
         x = rearrange(x.squeeze(), '(b s) e -> b s e', b=batch_size)
         return x
@@ -57,7 +62,8 @@ class WsiMAEEmbeddings(nn.Module):
         self.cls_token = nn.Parameter(torch.zeros(1, 1, cfg.hidden_size))
         self.patch_embeddings = WsiTMAEPatchEmbeddings(cfg)
         self.num_patches = self.patch_embeddings.num_patches
-        # фиксированные синусо-косинусные эмбеддинги
+
+        # Фиксированные синусо-косинусные эмбеддинги
         self.position_embeddings = nn.Parameter(
             torch.zeros(1, self.num_patches + 1, cfg.hidden_size), requires_grad=False
         )
@@ -66,20 +72,22 @@ class WsiMAEEmbeddings(nn.Module):
         self.initialize_weights()
 
     def initialize_weights(self):
-        # Инициализируем (и замораживаем) позиционные эмбеддинги с помощью синусо-косинусных эмбеддингов
+        # Инициализация позиционных эмбеддингов с помощью синусо-косинусных значений
         pos_embed = get_1d_sincos_pos_embed_from_grid(
             self.position_embeddings.shape[-1], 
             np.arange(int(self.patch_embeddings.num_patches), dtype=np.float32)
         )
         pos_embed = np.concatenate([
-            np.zeros([1, self.position_embeddings.shape[-1]]),  # для CLS токена
+            np.zeros([1, self.position_embeddings.shape[-1]]),  # Для CLS токена
             pos_embed
         ], axis=0)
         self.position_embeddings.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
+        # Инициализация весов свертки
         w = self.patch_embeddings.projection.weight.data
         torch.nn.init.xavier_uniform_(w)
 
+        # Инициализация CLS токена
         torch.nn.init.normal_(self.cls_token, std=self.config.initializer_range)
 
     def random_masking(self, sequence, noise=None):
@@ -105,13 +113,15 @@ class WsiMAEEmbeddings(nn.Module):
         return sequence_unmasked, mask, ids_restore
 
     def forward(self, wsi_values, noise=None):
-        batch_size, num_channels, img_size1, img_size2 = wsi_values.shape
+        # Получаем эмбеддинги патчей
         embeddings = self.patch_embeddings(wsi_values)
         
+        # Добавляем позиционные эмбеддинги
         embeddings = embeddings + self.position_embeddings[:, 1:, :]
         
         embeddings, mask, ids_restore = self.random_masking(embeddings, noise)
 
+        # Добавляем CLS токен
         cls_token = self.cls_token + self.position_embeddings[:, :1, :]
         cls_tokens = cls_token.expand(embeddings.shape[0], -1, -1)
         embeddings = torch.cat((cls_tokens, embeddings), dim=1)
@@ -137,34 +147,50 @@ class WsiMAEModel(ViTMAEModel):
 class WsiMAEDecoder(nn.Module):
     def __init__(self, config, num_patches):
         super().__init__()
+        # Используем линейный слой для восстановления исходных данных
         self.decoder_pred = nn.Sequential(
-            nn.Linear(config.hidden_size, 256),
-            nn.BatchNorm1d(256),
-            nn.ReLU(),
-            nn.Linear(256, config.num_channels * config.img_size ** 2),
-            Rearrange("b (c h w) -> b c h w", c=config.num_channels, h=config.img_size, w=config.img_size)
+            nn.Linear(config.hidden_size, 256),  # Преобразуем размерность
+            nn.BatchNorm1d(256),  # Нормализация
+            nn.ReLU(),  # Функция активации
+            nn.Linear(256, config.num_channels * config.img_size ** 2),  # Преобразуем обратно к исходному размеру
+            rearrange("b (c h w) -> b c h w", c=config.num_channels, h=config.img_size, w=config.img_size)  # Восстановление 2D изображения
         )
 
     def forward(self, x):
         return self.decoder_pred(x)
 
-
 class WsiMAEForPreTraining(ViTMAEForPreTraining):
     def __init__(self, config):
         super().__init__(config)
         self.config = config
+        # Модель ViT для извлечения эмбеддингов
         self.vit = WsiMAEModel(config)
+        # Декодер для восстановления изображения
         self.decoder = WsiMAEDecoder(config, num_patches=self.vit.embeddings.num_patches)
         self.post_init()
 
     def patchify(self, imgs):
+        """
+        Преобразует изображения в патчи для подачи в трансформер.
+        """
         return rearrange(
             imgs, 
-            'b c (h p1) (w p2) -> b (h w) (c p1 p2)', 
+            'b c (h p1) (w p2) -> b (h w) (c p1 p2)',  # Разбиваем изображение на патчи
             p1=self.config.patch_size, 
             p2=self.config.patch_size
         )
 
+    def forward(self, wsi_values):
+        """
+        Основной forward проход для предобучения модели MAE.
+        """
+        # Получаем эмбеддинги с помощью ViT
+        embeddings, mask, ids_restore = self.vit(wsi_values)
+
+        # Применяем декодер для восстановления данных
+        reconstructed = self.decoder(embeddings)
+
+        return reconstructed, mask, ids_restore
 
 class WsiMaeSurvivalModel(nn.Module):
     def __init__(self, config):
