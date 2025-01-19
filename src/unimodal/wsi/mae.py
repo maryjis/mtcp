@@ -9,47 +9,47 @@ from transformers.models.vit_mae.modeling_vit_mae import (
 from einops import rearrange
 import numpy as np
 
-class WsiTMAEPatchEmbeddings(nn.Module):
+class WsiMAEPatchEmbeddings(nn.Module):
     """
-    Этот класс преобразует WSI данные (патчи с размером [batch_size, channels, height, width])
-    в начальные скрытые состояния (patch embeddings) с размером [batch_size, seq_length, hidden_size],
-    которые можно использовать для трансформера.
+    This class processes 2D MRI patches already stored in PNG format for each image,
+    turning them into the initial hidden states (patch embeddings) to be consumed by a Transformer.
     """
 
     def __init__(self, cfg):
         super().__init__()
-        img_size, patch_size = cfg.img_size, cfg.patch_size
-        num_channels, hidden_size = cfg.num_channels, cfg.hidden_size
-        assert img_size % patch_size == 0, "Размер изображения должен делиться на размер патча"
-        num_patches = (img_size ** 2) // (patch_size ** 2)
+        self.patch_size = cfg.patch_size
+        self.hidden_size = cfg.hidden_size
+        self.num_channels = cfg.num_channels
+        
+        # 2D convolution to extract features from patches
+        self.projection = nn.Conv2d(self.num_channels, self.hidden_size, kernel_size=self.patch_size, stride=self.patch_size)
 
-        self.img_size = img_size
-        self.patch_size = patch_size
-        self.num_channels = num_channels
-        self.num_patches = num_patches
+    def _load_patches(self, image_dir):
+        """Загружаем все патчи для изображения из соответствующей папки."""
+        patch_files = sorted(os.listdir(image_dir))
+        patches = []
 
-        # Свертка для получения эмбеддингов патчей
-        self.projection = nn.Conv2d(num_channels, hidden_size, kernel_size=patch_size, stride=patch_size)
+        for patch_file in patch_files:
+            if patch_file.endswith(".png"):
+                patch_path = os.path.join(image_dir, patch_file)
+                patch = Image.open(patch_path).convert("RGB")
+                patch = transforms.ToTensor()(patch)  # Преобразуем изображение в тензор
+                patches.append(patch)
 
-    def forward(self, wsi_values):
-        # Здесь мы получаем патчи с размером [batch_size, channels, height, width]
-        batch_size, num_channels, img_size1, img_size2 = wsi_values.shape
-        if num_channels != self.num_channels:
-            raise ValueError("Убедитесь, что размерность канала WSI данных совпадает с указанной в конфигурации.")
+        return torch.stack(patches)  # Возвращаем все патчи как один тензор
 
-        # Преобразование в патчи
-        wsi_values = rearrange(
-            wsi_values,
-            'b c (x p_x) (y p_y) -> (b x y) c p_x p_y', 
-            p_x=self.patch_size, 
-            p_y=self.patch_size
-        )
+    def forward(self, patches):
+        """
+        Передаем патчи, полученные из WSIDataset_patches, через модель для извлечения эмбеддингов.
+        patches: Размер: (num_patches, channels, patch_size, patch_size)
+        """
+        # Применяем свертку для извлечения эмбеддингов
+        x = self.projection(patches)  # Применяем 2D свертку
 
-        # Проекция патчей в скрытые состояния
-        x = self.projection(wsi_values)  # B*S, C, P_x, P_y -> B*S, E
-        x = rearrange(x.squeeze(), '(b s) e -> b s e', b=batch_size)
+        # Результат свертки будет иметь форму (num_patches, hidden_size, 1, 1)
+        x = rearrange(x, 'n c h w -> n c')  # Преобразуем в (num_patches, hidden_size)
+        
         return x
-
 
 class WsiMAEEmbeddings(nn.Module):
     """
@@ -60,7 +60,7 @@ class WsiMAEEmbeddings(nn.Module):
         super().__init__()
 
         self.cls_token = nn.Parameter(torch.zeros(1, 1, cfg.hidden_size))
-        self.patch_embeddings = WsiTMAEPatchEmbeddings(cfg)
+        self.patch_embeddings = WsiMAEPatchEmbeddings(cfg)
         self.num_patches = self.patch_embeddings.num_patches
 
         # Фиксированные синусо-косинусные эмбеддинги
@@ -205,3 +205,5 @@ class WsiMaeSurvivalModel(nn.Module):
         x = self.vit(wsi_values)
         x = self.projection(x.last_hidden_state[:, 0, :])
         return x.squeeze(-1)
+
+
