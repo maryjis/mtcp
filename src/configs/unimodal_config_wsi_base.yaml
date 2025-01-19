@@ -1,8 +1,8 @@
 defaults: 
-    - model: unimodal_wsi
+    - model: wsi_base
     - dataset: wsi_base
 base:
-    experiment_name: "mri_base_from_monai_t1c"
+    experiment_name: "wsi base from article"
     n_epochs: 50
     n_intervals: 20
     random_seed: 1380
@@ -27,7 +27,7 @@ base:
     root_path: "../"
     save_path : "outputs/models/"
     device: "cuda:0"
-    remove_nan_column: 'MRI'
+    remove_nan_column: 'WSI'
     batch_size: 24
 
     log:
