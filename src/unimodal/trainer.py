@@ -4,6 +4,7 @@ from typing import Dict, List, Tuple, Union
 from omegaconf import DictConfig, OmegaConf
 import pandas as pd
 from src.unimodal.rna.dataset import RNADataset, RNASurvivalDataset
+from src.unimodal.wsi.datasets import WSIDataset, WSIDataset_patches, SurvivalWSIDataset
 from src.unimodal.mri.datasets import SurvivalMRIDataset, MRIEmbeddingDataset, MRIDataset, MRISurvivalDataset
 from src.unimodal.rna.preprocessor import RNAPreprocessor
 from src.preprocessor import BaseUnimodalPreprocessor
@@ -14,6 +15,7 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR   
 from src.unimodal.rna.encoder import initialise_rna_model
 from src.unimodal.mri.models import MRIEmbeddingEncoder
+from src.unimodal.wsi.models import WSIEncoder
 from src.unimodal.rna.mae import initialise_rna_mae_model
 import torch
 from ..evaluation import compute_survival_metrics
@@ -21,12 +23,13 @@ import wandb
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.unimodal.rna.mae import RnaMAEForPreTraining
 from src.unimodal.mri.mae import MriMAEForPreTraining, MriMaeSurvivalModel
+from src.unimodal.wsi.mae import WsiMAEForPreTraining, WsiMaeSurvivalModel
 from src.utils import check_dir_exists, count_parameters, print_vit_sizes
 from tqdm.auto import tqdm
 from sklearn.preprocessing import QuantileTransformer, StandardScaler, MinMaxScaler
 from src.unimodal.rna.transforms import UpperQuartileNormalizer
 from src.unimodal.mri.transforms import get_basic_tumor_transforms
-
+from src.unimodal.wsi.transforms import NviewsAugment, contrastive_base, 
 from torch.profiler import profile, record_function, ProfilerActivity, schedule
 from src.utils import trace_handler
 from functools import partial
@@ -56,11 +59,17 @@ class Trainer(object):
             if self.cfg.base.strategy != "mae": #labels are not used for pre-training
                 preproc = BaseUnimodalPreprocessor(splits["train"], self.cfg.base.n_intervals)
                 preproc.fit()
-
+            return preproc
+        
+        elif modality == "wsi":
+            preproc = None
+            if self.cfg.base.strategy != "mae": #labels are not used for pre-training
+                preproc = BaseUnimodalPreprocessor(splits["train"], self.cfg.base.n_intervals)
+                preproc.fit()
             return preproc
 
         else:
-            raise NotImplementedError("Exist only for rna and mri. Initialising preprocessing for other modalities aren't declared")    
+            raise NotImplementedError("Exist only for rna and mri and wsi. Initialising preprocessing for other modalities aren't declared")    
                 
                 
     def train(self, fold_ind : int):
@@ -203,6 +212,18 @@ class UnimodalSurvivalTrainer(Trainer):
                             is_hazard_logits=True,
                             tensor_name=self.cfg.data.mri.get("tensor_name", None)
                         )
+        elif modality == "wsi":
+            splits = {split_name: preproc.transform_labels(split) for split_name, split in splits.items()}
+            for split_name, split in splits.items():
+                    # Определяем значение параметра num в зависимости от типа раздела
+                    is_train = True if split_name == "train" else False
+                    
+                    # Создаем датасет с нужными параметрами
+                    dataset = WSIDataset(
+                        split, self.cfg.data.wsi.k, transform=NviewsAugment(contrastive_base, n_views=self.cfg.data.wsi.n_views), is_train=is_train, return_mask=False)
+                    
+                    # Создаем SurvivalMRIDataset с нужными параметрами
+                    datasets[split_name] = SurvivalWSIDataset(split, dataset, is_hazard_logits=True)
 
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
@@ -223,6 +244,16 @@ class UnimodalSurvivalTrainer(Trainer):
                     return MriMaeSurvivalModel(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
                 elif self.cfg.base.architecture=="CNN":
                     return MRIEmbeddingEncoder(self.cfg.model.input_embedding_dim, self.cfg.model.dropout, self.cfg.base.n_intervals)
+                else:
+                    raise NotImplementedError("Exist only MAE and CNN architectures for mri modality")
+        elif self.cfg.base.modalities[0]=="wsi":
+                if self.cfg.base.architecture=="MAE":
+                    return WsiMaeSurvivalModel(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+                elif self.cfg.base.architecture=="CNN":
+                    return WSIEncoder(embedding_dim=self.cfg.model.input_embedding_dim, depth=self.cfg.model.depth,
+                                      heads=self.cfg.model.heads, dim=self.cfg.model.dim, pool=self.cfg.model.pool,
+                                      dim_head=self.cfg.model.dim_head, mlp_dim=self.cfg.model.mlp_dim, dropout=self.cfg.model.dropout,
+                                      emb_dropout=self.cfg.model.emb_dropout)
                 else:
                     raise NotImplementedError("Exist only MAE and CNN architectures for mri modality")
         else:
@@ -297,6 +328,8 @@ class UnimodalMAETrainer(Trainer):
             return  RnaMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
         elif self.cfg.base.modalities[0]=="mri":
             return MriMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+        elif self.cfg.base.modalities[0]=="wsi":
+            return WsiMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising models for other modalities aren't declared") 
         
@@ -322,6 +355,15 @@ class UnimodalMAETrainer(Trainer):
                     tensor_name=self.cfg.data.mri.get("tensor_name", None)  
                 )
 
+        elif modality == "wsi":
+            splits = {split_name: preproc.transform_labels(split) for split_name, split in splits.items()}
+            for split_name, split in splits.items():
+                    # Определяем значение параметра num в зависимости от типа раздела
+                    is_train = True if split_name == "train" else False
+                    
+                    # Создаем датасет с нужными параметрами
+                    dataset = WSIDataset_patches(
+                        split, transform=NviewsAugment(contrastive_base, n_views=self.cfg.data.wsi.n_views), is_train=is_train, return_mask=False)
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
         
