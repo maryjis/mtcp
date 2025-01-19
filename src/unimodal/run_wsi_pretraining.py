@@ -9,13 +9,13 @@ import numpy as np
 from imutils import paths
 
 # Local dependencies
-from drim.utils import seed_everything, seed_worker
-from drim.logger import logger
-from drim.wsi.transforms import contrastive_wsi_transforms
-from drim.wsi.datasets import PatchDataset
-from drim.wsi.models import ResNetWrapperSimCLR
-from drim.commons.optim_contrastive import training_loop_contrastive
-from drim.commons.losses import ContrastiveLoss
+from src.utils import seed_everything, seed_worker
+from src.logger import logger
+from src.unimodal.wsi.transforms import contrastive_wsi_transforms
+from src.unimodal.wsi.datasets import PatchDataset
+from src.unimodal.wsi.models import ResNetWrapperSimCLR
+from src.unimodal.commons.optim_contrastive import training_loop_contrastive
+from src.unimodal.commons.losses import ContrastiveLoss
 
 
 if __name__ == "__main__":
@@ -23,25 +23,28 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data_path",
         nargs="+",
-        default=["/home/belyaeva.a/WSI_GBM", "/home/belyaeva.a/WSI"],
+        default=["/home/belyaeva.a/TCGA-GBM_WSI", "/home/belyaeva.a/wsi"],
     )
     parser.add_argument("--batch_size", type=int, default=200)
-    parser.add_argument("--epochs", type=int, default=30)
+    parser.add_argument("--epochs", type=int, default=2)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--temperature", type=float, default=0.07)
     parser.add_argument("--weight_decay", type=float, default=1e-6)
     parser.add_argument("--out_dim", type=int, default=256)
-    parser.add_argument("--entity", type=str, default=None)
-    parser.add_argument("--project", type=str, default="DRIM")
+    parser.add_argument("--project", type=str, default="cancer_mtcp")
     parser.add_argument("--n_cpus", type=int, default=30)
     parser.add_argument("--n_gpus", type=int, default=4)
     parser.add_argument("--k", type=int, default=10)
     parser.add_argument("--seed", type=int, default=1999)
+    parser.add_argument("--model_path", type=str, default="outputs/models/wsi_encoder.pth")
+    parser.add_argument("--wandb_entity", type=str, default=None)  # Добавляем entity для wandb
+    parser.add_argument("--wandb_project", type=str, default="cancer_mtcp")  # Добавляем проект для wandb
     args = parser.parse_args()
 
     # Set seed
     seed_everything(args.seed)
-    # get every filepaths
+    
+    # Get all filepaths
     filepaths = []
     for path in args.data_path:
         temp_filepaths = list(paths.list_images(path))
@@ -51,8 +54,8 @@ if __name__ == "__main__":
         filepaths += temp_filepaths
 
     filepaths = np.array(filepaths)
-    # split patient into train and val by taking random 75% of patients for training
 
+    # Split into train and val
     train_idx = np.random.choice(
         np.arange(len(filepaths)), int(len(filepaths) * 0.75), replace=False
     )
@@ -65,8 +68,8 @@ if __name__ == "__main__":
     logger.info("Number of training images : {}.", len(train_filepaths))
     logger.info("Number of validation images : {}.", len(val_filepaths))
 
-    train_dataset = PatchDataset(train_filepaths, transforms=contrastive_wsi_transforms)
-    val_dataset = PatchDataset(val_filepaths, transforms=contrastive_wsi_transforms)
+    train_dataset = PatchDataset(train_filepaths, transform=contrastive_wsi_transforms)
+    val_dataset = PatchDataset(val_filepaths, transform=contrastive_wsi_transforms)
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
@@ -106,16 +109,15 @@ if __name__ == "__main__":
         optimizer, T_max=40, eta_min=5e-6
     )
 
-    path_to_save = f"data/models/wsi_encoder.pth"
-    wandb_logging = True if args.entity is not None else False
-    if wandb_logging:
-        run = wandb.init(
-            project=args.project,
-            entity=args.entity,
-            name=f"Pretraining_WSI",
-            reinit=True,
+    # Initialize wandb for logging
+    if args.wandb_entity:
+        wandb.init(
+            project=args.wandb_project,
+            entity=args.wandb_entity,
             config=vars(args),
         )
+        logger.info("Wandb logging initialized!")
+
     logger.info("Training started!")
     _, _ = training_loop_contrastive(
         model,
@@ -126,10 +128,12 @@ if __name__ == "__main__":
         train_loader,
         val_loader,
         device,
-        path_to_save,
-        wandb_logging=wandb_logging,
+        args.model_path,  # Save model to the specified path
+        wandb_logging=True,  # Enable wandb logging
         k=args.k,
     )
-    if wandb_logging:
-        run.finish()
+
+    if args.wandb_entity:
+        wandb.finish()  # End the wandb run
+
     logger.info("Training finished!")
