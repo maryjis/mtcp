@@ -1,4 +1,4 @@
-experiment_name: "mri_mae_t1c_masking_50"
+experiment_name: "wsi base"
 n_epochs: 50
 n_intervals: 20
 random_seed: 1380
@@ -16,14 +16,14 @@ scheduler:
 
 
 type: "unimodal"
-strategy: "mae" # mae, survival
-modalities: ["mri"] #rna, mri
+strategy: "survival" # mae, survival
+modalities: ["wsi"] #rna, mri
 splits: 5
 data_path: "src/data/dataset.csv"
 root_path: "../"
 save_path : "outputs/models/"
 device: "cuda:0"
-remove_nan_column: 'MRI'
+remove_nan_column: 'WSI'
 batch_size: 24
 
 log:
