@@ -22,7 +22,7 @@ mri_size: 64
 
 #survival-specific
 is_load_pretrained: true
-pretrained_model_name: "mri_mae_pretrain_t1c_num_layers_enc_${.num_hidden_layers}_dec_${.decoder_num_hidden_layers}"
+pretrained_model_name: "mri_mae_pretrain_t1c_epochs"
 output_dim: 20 #should 
 
 embeddings_layers:
