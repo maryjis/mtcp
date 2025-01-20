@@ -8,7 +8,9 @@ from monai.transforms import (
     Compose,
     NormalizeIntensity,
     SpatialPad,
-    ToTensor
+    ToTensor,
+    CropForeground, 
+    Resize
 )
 
 from src.unimodal.mri.datasets import MRIProcessor
@@ -16,10 +18,10 @@ from src.logger import logger
 from src.unimodal.mri.utils import get_patients_from_BraTS
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--skip_existing_roi", type=bool, default=False)
+parser.add_argument("--skip_existing_roi", type=bool, default=True)
 parser.add_argument("--data_path", type=str, default="/data/BraTS_2023/MRI")
 parser.add_argument("--modalities", type=str, nargs="+", default=["t1c"]) #["t1c", "t2f"]
-parser.add_argument("--roi_name", type=str, default="roi")
+parser.add_argument("--roi_name", type=str, default="scale")
 args = parser.parse_args()
 
 # Load the data
@@ -32,14 +34,16 @@ for mri_path in tqdm.tqdm(patients):
             continue
 
         mri_path = os.path.join(args.data_path, mri_path)
-        size = (64, 64, 64)
+        size = (128, 128, 128)
         process = MRIProcessor(
             mri_path,
-            tumor_centered=True,
+            tumor_centered=False,
             transform=Compose(
                 [
-                    NormalizeIntensity(channel_wise=True, nonzero=True),
+                    CropForeground(select_fn=lambda x: x > 0, margin=0, allow_smaller=True),
+                    Resize(max(size), size_mode="longest"),
                     SpatialPad(spatial_size=size),
+                    NormalizeIntensity(channel_wise=True, nonzero=True),
                     ToTensor(dtype=torch.float32),
                 ]
             ),
