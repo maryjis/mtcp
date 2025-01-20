@@ -75,9 +75,6 @@ class Trainer(object):
                 
                 
     def train(self, fold_ind : int):
-        #early stopping
-        best_val_loss = np.infty
-        best_epoch = -1
         if self.cfg.base.get("early_stopping", None) is not None:
             self.early_stopper = EarlyStopper(patience=self.cfg.base.early_stopping.patience, eps=self.cfg.base.early_stopping.eps)
 
@@ -122,12 +119,9 @@ class Trainer(object):
                 prof.step()
 
                 if self.cfg.base.get("early_stopping", None) is not None:
-                    if self.early_stopper.early_stop(val_metrics[self.loss_key]):
+                    if self.early_stopper.early_stop(val_metrics[self.cfg.base.early_stopping.value_to_track]):
                         break
 
-        # if val_metrics[self.loss_key] < best_loss:
-            # best_loss = val_metrics[self.loss_key]
-            # best_epoch = epoch
         check_dir_exists(self.cfg.base.save_path)
         torch.save(self.model.state_dict(), self.cfg.base.save_path)
 
