@@ -94,23 +94,3 @@ class WSIEncoder(nn.Module):
         x = self.output_layer(x)
 
         return x
-
-
-class WSIDecoder(nn.Module):
-    """
-    A vanilla mlp-based decoder for WSI data.
-    """
-
-    def __init__(self, embedding_dim: int, dropout: float) -> None:
-        super().__init__()
-        self.decoder = nn.Sequential(
-            nn.Linear(embedding_dim, 256),
-            nn.BatchNorm1d(256),
-            nn.Dropout(dropout),
-            nn.LeakyReLU(),
-            nn.Linear(256, 5120),
-            Rearrange("b (p e) -> b p e", p=10),
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.decoder(x)
