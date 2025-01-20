@@ -6,7 +6,7 @@ random_seed: 1380
 optimizer:
     name: "AdamW"
     params:
-        lr: 1e-3
+        lr: 2e-5
         weight_decay: 1e-2
 
 scheduler: 
@@ -25,7 +25,6 @@ save_path : "outputs/models/"
 device: "cuda:0"
 remove_nan_column: 'MRI'
 batch_size: 24
-save_best_model: True
 
 log:
     logging: True
@@ -35,3 +34,4 @@ log:
 early_stopping:
     patience: 20
     eps: 0
+    value_to_track: "task_loss"
