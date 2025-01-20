@@ -309,6 +309,8 @@ class UnimodalMAETrainer(Trainer):
             transforms = padded_transforms(self.preproc.get_scaling(), cfg.model.size)
         elif self.cfg.base.modalities[0]=="dnam":
             transforms = padded_transforms_simple(cfg.model.get("size", None))
+        elif self.cfg.base.modalities[0]=="mri":
+            transforms = None
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
