@@ -55,10 +55,7 @@ class RnaMAEEmbeddings(nn.Module):
                 mainly used for testing purposes to control randomness and maintain the reproducibility
         """
         batch_size, seq_length, dim = sequence.shape
-        print("seq_length:", seq_length)
         len_keep = int(seq_length * (1 - self.config.mask_ratio))
-        print(self.config.mask_ratio, self.config.mask_ratio)
-        print("len_keep", len_keep)
 
         if noise is None:
             noise = torch.rand(batch_size, seq_length, device=sequence.device)  # noise in [0, 1]
@@ -107,7 +104,7 @@ class RnaTMAEPatchEmbeddings(nn.Module):
 
     def __init__(self, cfg):
         super().__init__()
-        rna_size, patch_size = cfg.rna_size, cfg.patch_size
+        rna_size, patch_size = cfg.size, cfg.patch_size
         num_channels, hidden_size = cfg.num_channels, cfg.hidden_size
 
         num_patches = rna_size // patch_size
@@ -183,7 +180,7 @@ class RnaMAEModel(ViTMAEModel):
                 Pixel values.
         """
         patch_size, num_channels = self.config.patch_size, self.config.num_channels
-        original_rna_size = original_rna_size if original_rna_size is not None else self.config.rna_size
+        original_rna_size = original_rna_size if original_rna_size is not None else self.config.size
         
         num_patches = original_rna_size // patch_size
    

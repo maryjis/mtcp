@@ -17,6 +17,7 @@ scheduler:
 type: "multimodal"
 strategy: "mae" # mae, survival
 modalities: ["rna", "mri"]
+multimodal_intersection_test: false
 architecture: "MAE"
 splits: 5
 data_path: "src/data/dataset.csv"

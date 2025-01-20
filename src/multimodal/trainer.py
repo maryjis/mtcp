@@ -9,6 +9,7 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.unimodal.rna.transforms import base_transforms, padded_transforms
+from src.unimodal.dna.transforms import padded_transforms_simple
 from src.unimodal.trainer import Trainer, UnimodalSurvivalTrainer, UnimodalMAETrainer
 from src.multimodal.models import MultiMaeForPretraining, MultiMaeForSurvival
 import torch
@@ -41,12 +42,11 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
     
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
         super().__init__(splits, cfg)
-        transforms = {"rna": padded_transforms(self.preproc["rna"].get_scaling(), cfg.model.rna_model.rna_size), "mri" : None, "wsi" : None }
+        transforms = {"rna": padded_transforms(self.preproc["rna"].get_scaling(), cfg.model.rna_model.size), "dnam" : padded_transforms_simple(cfg.model.dnam_model.get("size", None)), "mri" : None, "wsi" : None }
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities, self.preproc, transforms)
-        self.dataloaders = {"train" : DataLoader(self.datasets["train"],shuffle=True, batch_size =cfg.base.batch_size),
-                            "val" : DataLoader(self.datasets["val"],shuffle=False, batch_size = 1),
-                            "test" : DataLoader(self.datasets["test"],shuffle=False, batch_size =1)
-                            }
+        self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False, batch_size=cfg.base.batch_size 
+                                              if split == "train" else 1)
+                            for split in splits.keys()}
         self.model =self.initialise_models().to(cfg.base.device)
         print(self.model)
         self.initialise_loss()
@@ -104,12 +104,11 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
 class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
         super().__init__(splits, cfg)
-        transforms = {"rna": padded_transforms(self.preproc["rna"].get_scaling(), cfg.model.rna_model.rna_size), "mri" : None, "wsi" : None }
+        transforms = {"rna": padded_transforms(self.preproc["rna"].get_scaling(), cfg.model.rna_model.size), "dnam" : padded_transforms_simple(cfg.model.dnam_model.get("size", None)), "mri" : None, "wsi" : None }
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities, self.preproc, transforms)
-        self.dataloaders = {"train" : DataLoader(self.datasets["train"],shuffle=True, batch_size =cfg.base.batch_size),
-                            "val" : DataLoader(self.datasets["val"],shuffle=False, batch_size = 1),
-                            "test" : DataLoader(self.datasets["test"],shuffle=False, batch_size =1)
-                            }
+        self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False, batch_size=cfg.base.batch_size 
+                                              if split == "train" else 1)
+                            for split in splits.keys()}
         self.model = self.initialise_models().to(cfg.base.device)
         self.initialise_loss()
         print(self.model)
@@ -126,6 +125,7 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
         datasets = defaultdict(list)
         for modality in modalities:
             transform = transforms[modality] if transforms is not None else None
+            print(modality, transform)
             mdata = super().initialise_datasets(splits,modality,preprocs[modality],transform)
             for key, value in mdata.items():
                 datasets[key].append((modality,value))

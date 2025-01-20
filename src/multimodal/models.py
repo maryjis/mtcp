@@ -5,7 +5,9 @@ from transformers.models.vit_mae.modeling_vit_mae import ViTMAEModelOutput, ViTM
 from typing import Dict
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.unimodal.mri.mae import MriMAEModel
+from src.unimodal.dna.models import DNAmSurvivalModel, DNAmMAEModel
 from omegaconf import DictConfig, OmegaConf
+
 
 class UnimodalEncoder(nn.Module):
     def __init__(self, encoder, unimodal_hidden_size, multimodal_hidden_size = None, is_projection = False):
@@ -53,8 +55,16 @@ class MultiMAEModel(nn.Module):
         self.cfg = cfg
         self.modalities = cfg.modalities
         self.__init_encoders__()
-        self.mask_token = nn.Parameter(torch.zeros(1, 1, cfg.decoder_hidden_size))
+        self.mask_token = nn.Parameter(torch.zeros(1, 1, cfg.hidden_size))
         self.encoders = nn.ModuleDict(self.encoders)
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, cfg.hidden_size))
+        if cfg.encoder_fusion_strategy == "mask_attention":
+            self.encoder_fusion_strategy = MaskAttentionFusion(cfg.encoder_fusion_depth, cfg.encoder_fusion_dim,
+                                                               cfg.encoder_fusion_nhead,
+                                                       cfg.encoder_fusion_dim_feedforward, cfg.encoder_fusion_dropout)
+        else:
+            self.encoder_fusion_strategy = nn.Identity()
+        self.initialize_weights()
 
     def __init_encoders__(self):
         """Initialize encoders for each modality."""
@@ -83,7 +93,16 @@ class MultiMAEModel(nn.Module):
                     self.cfg.hidden_size,
                     self.cfg.is_projection
                 )
-                
+            elif modality == "dnam":
+                cfg_dnam_model = ViTMAEConfig(**self.cfg.dnam_model)
+                self.encoders[modality] = UnimodalEncoder(
+                    DNAmMAEModel.from_pretrained(cfg_dnam_model.pretrained_model_path, config=cfg_dnam_model)
+                    if cfg_dnam_model.is_load_pretrained
+                    else DNAmMAEModel(cfg_dnam_model),
+                    cfg_dnam_model.hidden_size, 
+                    self.cfg.hidden_size,
+                    self.cfg.is_projection
+                )
             else:
                 # Add support for other modalities
                 raise NotImplementedError(f"Encoder for modality {modality} not implemented")
@@ -128,14 +147,14 @@ class MultiMAEModel(nn.Module):
         # print(mask)
         # If mask is all True, process entire batch normally
         if torch.all(mask):
-            print("Torch_all: mask")
+
             embedded_sample = self.encoders[modality](sample)
             # Offset ids_restore by cumulative sequence length
             embedded_sample.ids_restore = embedded_sample.ids_restore + multimodal_lenths
             return embedded_sample
 
         elif torch.any(mask):
-            print("Torch_any: mask")
+
             # Get indices of masked and unmasked samples
             empty_sample_ids = torch.nonzero(~mask, as_tuple=True)[0].to(device)
           # Create tensors for empty samples
@@ -195,7 +214,6 @@ class MultiMAEModel(nn.Module):
                 attentions=None
             )
         else:
-            print("Torch_empty: mask")
             empty_sample_ids = torch.nonzero(~mask, as_tuple=True)[0].to(device)
             # Create tensors for empty samples
             mask_empty = torch.zeros(len(empty_sample_ids), seq_length, device=device)
@@ -210,7 +228,10 @@ class MultiMAEModel(nn.Module):
                 hidden_states=None,
                 attentions=None
             )
-    
+            
+    def initialize_weights(self):
+        torch.nn.init.normal_(self.cls_token, std=self.cfg.initializer_range)
+        
     def forward(
         self,
         x: Dict[str, torch.FloatTensor],
@@ -228,13 +249,11 @@ class MultiMAEModel(nn.Module):
 
         # Process each modality
         is_first = True
-        print("Mae forward: ", self.modalities)
-        print(self.modalities)
+
         for modality in self.modalities:
-            print(modality)
             seq_length = self.get_patches_number(modality)
             sample = x[modality]
-            print("sample.shape: ", sample.shape)
+
             mask = masks[modality]
             
             # Get embeddings for this modality
@@ -247,8 +266,8 @@ class MultiMAEModel(nn.Module):
             )
             
             multimodal_length += seq_length
-            if not is_first:
-                embedded_sample = ViTMAEModelOutput(
+            
+            embedded_sample = ViTMAEModelOutput(
                     last_hidden_state=embedded_sample.last_hidden_state[:,1:, :],
                     mask=embedded_sample.mask,
                     ids_restore=embedded_sample.ids_restore,
@@ -256,19 +275,31 @@ class MultiMAEModel(nn.Module):
                     attentions=embedded_sample.attentions
                 )
             encoder_outputs.append(embedded_sample)
-            is_first = False
-        print("len(encoder_outputs): ", len(encoder_outputs))
-        for out in encoder_outputs:
-            print("encoder_outputs.shape", out.last_hidden_state.shape)
+            print(f"{modality} embed shape:", embedded_sample.last_hidden_state.shape)           
+
         # Combine embeddings from all modalities
-        last_hidden_states = [out.last_hidden_state for out in encoder_outputs]
-        masks = [out.mask for out in encoder_outputs]
-        ids_restores = [out.ids_restore for out in encoder_outputs]
-            
+        last_hidden_states = torch.cat([out.last_hidden_state for out in encoder_outputs], dim=1)
+        masks = torch.cat([out.mask for out in encoder_outputs], dim=1)
+        ids_restores = torch.cat([out.ids_restore for out in encoder_outputs],dim=1)
+        
+        print("last_hidden_states.shape: ", last_hidden_states.shape)  
+        print("masks.shape: ", masks.shape)  
+        cls_tokens = self.cls_token.expand(last_hidden_states.shape[0], -1, -1)
+        
+        class_token_mask = torch.full((masks.shape[0], 1), 1).to(masks.device)
+        masks = torch.cat((class_token_mask, masks), dim=1) 
+        
+        last_hidden_states = torch.cat((cls_tokens, last_hidden_states), dim=1)
+        
+        print("after preproc last_hidden_states.shape: ", last_hidden_states.shape)  
+        print("after preproc masks.shape: ", masks.shape)  
+        
+        last_hidden_states = self.encoder_fusion_strategy(last_hidden_states, None) 
+         
         concat_embedding = ViTMAEModelOutput(
-            last_hidden_state=torch.cat(last_hidden_states, dim=1),
-            mask=torch.cat(masks, dim=1),
-            ids_restore=torch.cat(ids_restores, dim=1),
+            last_hidden_state=last_hidden_states,
+            mask=masks,
+            ids_restore=ids_restores,
             hidden_states=None,
             attentions=None
         )    
@@ -291,7 +322,7 @@ class MultiMaeForPretraining(nn.Module):
         
 
     def get_patch_size(self,  modality: str)-> int:
-        if modality =="rna":
+        if modality =="rna" or modality=="dnam":
             return self.cfg.to_dict()[f"{modality}_model"]["patch_size"]
         elif  modality =="mri":
             return self.cfg.to_dict()[f"{modality}_model"]["patch_size"] ** 3
@@ -396,9 +427,8 @@ class MultiMaeForPretraining(nn.Module):
             mask_modality = mask[:, start_idx:end_idx]
             if self.cfg.postprocessing:
                 pred_modality = self.postprocessors[f"postprocessor_{modality}"](pred_modality.permute(0, 2, 1))
-                print("pred_modality.shape", pred_modality.shape)
                 pred_modality = pred_modality.permute(0, 2, 1)
-                print("pred_modality.shape", pred_modality.shape)
+    
             # Calculate loss for current modality
             modality_loss = self.__forward_loss(
                 x[modality],
@@ -459,21 +489,28 @@ class MaskAttentionFusion(nn.Module):
     def __init__(self, fusion_depth, fusion_dim, fusion_nhead, fusion_dim_feedforward, fusion_dropout):
         super().__init__()
         self.fusion_depth = fusion_depth
-
-        self.fusion_layers = nn.ModuleList([nn.TransformerEncoderLayer(fusion_dim, fusion_nhead, dim_feedforward=fusion_dim_feedforward, dropout=fusion_dropout,
+        self.fusion_dim_feedforward = fusion_dim_feedforward
+        if self.fusion_dim_feedforward > 0:
+            self.fusion_layers = nn.ModuleList([nn.TransformerEncoderLayer(fusion_dim, fusion_nhead, dim_feedforward=fusion_dim_feedforward, dropout=fusion_dropout,
                                    layer_norm_eps=1e-05, batch_first=True) for _ in range(fusion_depth)])
+        else:    
+            self.fusion_layers = nn.ModuleList([nn.MultiheadAttention(fusion_dim, fusion_nhead, dropout=fusion_dropout, batch_first=True) for _ in range(fusion_depth)])
         
     def forward(self, x, mask):
-        class_token = torch.full((mask.shape[0], 1), 1).to(x.device)
-        expanded_mask = torch.cat((mask, class_token), dim=1)
+        
         for layer in self.fusion_layers:
-            x = layer(x, src_key_padding_mask=1 - expanded_mask)
+            if self.fusion_dim_feedforward > 0:
+                x = layer(x, src_key_padding_mask= 1 - mask if mask is not None else None)
+            else:
+               x = layer(x,x,x, key_padding_mask  = 1 - mask if mask is not None else None)[0]           
         return x
         
 class MultiMaeForSurvival(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
+        self.modalities = self.cfg.modalities
+        
         if cfg.is_load_pretrained:
             self.model = MultiMAEModel.from_pretrained(cfg.pretrained_model_path, config=cfg)
         else:
@@ -483,18 +520,42 @@ class MultiMaeForSurvival(nn.Module):
                                                        cfg.fusion_dim_feedforward, cfg.fusion_dropout)
         elif cfg.fusion_strategy =="linear":
             self.fusion_strategy = nn.Identity()
+        
+        elif self.cfg.fusion_strategy == "disentangled_fusion":
+            self.fusion_strategy = MaskAttentionFusion(cfg.fusion_depth, cfg.fusion_dim, cfg.fusion_nhead,
+                                                       cfg.fusion_dim_feedforward, cfg.fusion_dropout)
+            self.agregation = nn.Linear(len(self.modalities)+1, 1)
+            
         else:
             raise ValueError(f"Invalid fusion strategy: {cfg.fusion_strategy}")
-        self.projection = nn.Linear(cfg.hidden_size, cfg.output_dim)
+            
+        self.projection = nn.Linear(cfg.fusion_dim, cfg.output_dim)
         
+        
+            
     def forward(self, x: Dict[str, torch.FloatTensor], masks: Dict[str, torch.FloatTensor], interpolate_pos_encoding: bool = False):
-        print({modality: value.mean() for modality, value  in x.items()})
-        x = self.model(x, masks, interpolate_pos_encoding)
-        print("Mask shape: ", x.mask.shape)
-        print("Last_hidden_state shape: ", x.last_hidden_state.shape)
+        # print({modality: value.mean() for modality, value  in x.items()})
+        concat_x = self.model(x, masks, interpolate_pos_encoding)
+        # print("Mask shape: ", x.mask.shape)
+        # print("Last_hidden_state shape: ", x.last_hidden_state.shape)
+
         if self.cfg.fusion_strategy == "mask_attention":
-            x = self.fusion_strategy(x.last_hidden_state, x.mask)
+            concat_x = self.fusion_strategy(concat_x.last_hidden_state, concat_x.mask)
+        elif self.cfg.fusion_strategy == "disentangled_fusion":
+            ## Get multimodal combination
+            concat_x = self.fusion_strategy(concat_x.last_hidden_state, concat_x.mask)
+            
+            modalities_cls  =[]
+            for modality in self.modalities:
+                x_modality = x[modality] 
+                embedding_modality = self.model.encoders[modality](x_modality)
+                modalities_cls.append(embedding_modality.last_hidden_state[:,0,:])
+            fused_embedding = torch.stack((concat_x[:,0,:], *modalities_cls), dim=1)
+            print(fused_embedding.shape)
+            fused_embedding = fused_embedding.permute(0,2,1)
+            concat_x =self.agregation(fused_embedding).permute(0,2,1)
+            print(concat_x.shape)
         else:
-            x = self.fusion_strategy(x.last_hidden_state)
-        x = self.projection(x[:,0,:])
-        return x
+            concat_x = self.fusion_strategy(concat_x.last_hidden_state)
+        logits = self.projection(concat_x[:,0,:])
+        return logits
