@@ -7,7 +7,6 @@ import os
 import numpy as np
 from torchvision import transforms
 
-
 class PatchDataset(torch.utils.data.Dataset):
     def __init__(self, filepaths: Tuple[str, ...], transform: "torchvision.transforms" = None) -> None:
         self.filepaths = filepaths
@@ -65,15 +64,21 @@ class WSIDataset(BaseDataset):
         else:
             return data
 
-class WSIDataset_patches(BaseDataset):
+class WSIDataset_patches(Dataset):
     def __init__(
         self,
         dataframe: pd.DataFrame,
         return_mask: bool = False,
         transform: "torchvision.transforms" = None,
-        is_hazard_logits = False  # Добавлен параметр
+        is_hazard_logits: bool = False,  # Добавлен параметр
+        batch_size: int = 16,  # Новый параметр для размера батча (количество папок)
+        resize_to: tuple = (256, 256)  # Размер, до которого нужно привести все патчи
     ) -> None:
-        super().__init__(data=dataframe, transform=transform, is_hazard_logits=is_hazard_logits)
+        self.data = dataframe
+        self.transform = transform
+        self.is_hazard_logits = is_hazard_logits
+        self.batch_size = batch_size  # Сохраняем batch_size (количество папок)
+        self.resize_to = resize_to  # Размер для изменения всех патчей
 
     def _load_patches(self, image_dir: str):
         """Загружает патчи из папки `patches` для одного изображения"""
@@ -85,12 +90,11 @@ class WSIDataset_patches(BaseDataset):
             if patch_file.endswith(".png"):
                 patch_path = os.path.join(patch_dir, patch_file)
                 patch = Image.open(patch_path).convert("RGB")
-                patch = transforms.ToTensor()(patch)  # Преобразуем патч в тензор
                 patches.append(patch)
 
-        return torch.stack(patches)  # Возвращаем все патчи как один тензор
+        return patches  # Возвращаем список изображений
 
-    def __getitem__(self, idx: int) -> Union[Tuple[torch.Tensor, bool], torch.Tensor]:
+    def __getitem__(self, idx: int):
         sample = self.data.iloc[idx]
         
         if not pd.isna(sample.WSI):
@@ -101,15 +105,25 @@ class WSIDataset_patches(BaseDataset):
             # Загружаем патчи из папки "patches"
             patches = self._load_patches(image_dir)
             mask = True
-
+            print(type(patches))
+            
+            # Преобразуем патчи в тензоры с применением трансформаций
             if self.transform:
-                patches = self.transform(patches)
+                patches = [transforms.functional.pil_to_tensor(self.transform(patch)) for patch in patches]  # Применяем трансформацию
+            else:
+                patches = [transforms.functional.pil_to_tensor(patch) for patch in patches]  # В случае, если это уже тензор
 
-            # Сформируем батч патчей для одного изображения
-            batch = patches  # Патчи одного изображения
+            # Приводим все патчи к одному размеру
+            resize_transform = transforms.Resize(self.resize_to)  # Устанавливаем трансформацию на resize
+            patches = [resize_transform(patch) for patch in patches]  # Применяем resize
 
-            return batch, mask
+            # Преобразуем каждый патч в тензор (если они не тензоры)
+            patches = [patch.float() if isinstance(patch, torch.Tensor) else transforms.functional.pil_to_tensor(patch).float() for patch in patches] 
 
+            # Преобразуем список патчей в тензор
+            patches = torch.stack(patches)  # Преобразуем в тензор
+
+            return patches, mask
         else:
             # Если данных нет, возвращаем пустой тензор
             return torch.zeros((1, 3, 224, 224)), False
