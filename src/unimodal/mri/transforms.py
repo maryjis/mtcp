@@ -9,7 +9,9 @@ from monai.transforms import (
     ToTensord,
     NormalizeIntensity,
     SpatialPad,
-    ToTensor
+    ToTensor,
+    CropForeground, 
+    Resize
 )
 
 import torch

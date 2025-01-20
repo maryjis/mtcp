@@ -1,0 +1,147 @@
+defaults: 
+  - base@pretrain.base: mri_mae_pretrain
+  - model@pretrain.model: mri_mae_pretrain
+  - data@pretrain.data: mri_mae
+  - base@task.base: mri_mae_model
+  - model@task.model: mri_mae_model
+  - data@task.data: mri_mae
+  - override hydra/sweeper: optuna
+  - override hydra/sweeper/sampler: grid
+  - _self_
+
+hydra:
+  sweeper:
+    direction: maximize #!!! CHECK BEFORE LAUNCH !!!
+    study_name: mri_mae_t1c_scale
+    storage: null
+    n_trials: 1
+    n_jobs: 1
+    params:
+      pretrain.data.mri.sizes: choice([128, 128, 128])
+      task.data.mri.sizes: choice([128, 128, 128])
+
+pretrain:
+  base:
+    experiment_name: "mri_mae_pretrain_t1c_scale_${pretrain.data.mri.sizes}"
+    n_epochs: 50
+    splits: 5
+  data:
+    mri:
+      tensor_name: "scale"
+  model:
+    patch_size: 32
+    mri_size: 128
+    embeddings_layers:
+      - name: "Conv3d" #(1, 32, 32, 32) -> (16, 16, 16, 16)
+        args: 
+          - ${....num_channels} #in
+          - 16 #out
+          - 4
+        kwargs:
+          stride: 2
+          padding: 1
+      - name: "GELU"
+      - name: "Conv3d" #(16, 16, 16, 16) -> (16, 4, 4, 4)
+        args: 
+          - 16 #in
+          - 16 #out
+          - 4 #kernel
+        kwargs:
+          stride: 4
+      - name: "GELU"
+      - name: "Conv3d" #(16, 4, 4, 4) -> (e, 1, 1, 1)
+        args: 
+          - 16 #in
+          - ${....hidden_size} #out
+          - 4 #kernel
+        kwargs:
+          stride: 4
+    decoder_pred_layers:
+      - name: "ConvTranspose3d" #(e, 1, 1, 1) -> (16, 4, 4, 4)
+        args:
+          - ${....decoder_hidden_size}
+          - 16
+          - 4
+        kwargs:
+          stride: 4
+      - name: "GELU"
+      - name: "ConvTranspose3d"
+        args:
+          - 16
+          - 16
+          - 4
+        kwargs:
+          stride: 4
+      - name: "GELU"
+      - name: "ConvTranspose3d"
+        args: 
+          - 16 #in
+          - ${....num_channels} #out
+          - 4
+        kwargs:
+          stride: 2
+          padding: 1
+  
+task:
+  base:
+    experiment_name: "mri_mae_model_t1c_scale_${task.data.mri.sizes}"
+    n_epochs: 50
+    splits: 5
+  data:
+    mri:
+      tensor_name: "scale"
+  model:
+    pretrained_model_name: "mri_mae_pretrain_t1c_scale_${pretrain.data.mri.sizes}"
+    is_load_pretrained: true
+    patch_size: 32
+    mri_size: 128
+    embeddings_layers:
+      - name: "Conv3d" #(1, 32, 32, 32) -> (16, 16, 16, 16)
+        args: 
+          - ${....num_channels} #in
+          - 16 #out
+          - 4
+        kwargs:
+          stride: 2
+          padding: 1
+      - name: "GELU"
+      - name: "Conv3d" #(16, 16, 16, 16) -> (16, 4, 4, 4)
+        args: 
+          - 16 #in
+          - 16 #out
+          - 4 #kernel
+        kwargs:
+          stride: 4
+      - name: "GELU"
+      - name: "Conv3d" #(16, 4, 4, 4) -> (e, 1, 1, 1)
+        args: 
+          - 16 #in
+          - ${....hidden_size} #out
+          - 4 #kernel
+        kwargs:
+          stride: 4
+    decoder_pred_layers:
+      - name: "ConvTranspose3d" #(e, 1, 1, 1) -> (16, 4, 4, 4)
+        args:
+          - ${....decoder_hidden_size}
+          - 16
+          - 4
+        kwargs:
+          stride: 4
+      - name: "GELU"
+      - name: "ConvTranspose3d"
+        args:
+          - 16
+          - 16
+          - 4
+        kwargs:
+          stride: 4
+      - name: "GELU"
+      - name: "ConvTranspose3d"
+        args: 
+          - 16 #in
+          - ${....num_channels} #out
+          - 4
+        kwargs:
+          stride: 2
+          padding: 1
