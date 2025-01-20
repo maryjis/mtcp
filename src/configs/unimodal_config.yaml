@@ -1,4 +1,5 @@
 defaults: 
-    - model: rna_mae
-    - base: unimodal_config_rna_mae
-    - data: data_base
+    - model: dnam_base
+    - base: dnam_base
+    - data: dnam_base
+
