@@ -8,6 +8,7 @@ from src.unimodal.mri.mae import MriMAEModel
 from src.unimodal.dna.models import DNAmSurvivalModel, DNAmMAEModel
 from omegaconf import DictConfig, OmegaConf
 
+
 class UnimodalEncoder(nn.Module):
     def __init__(self, encoder, unimodal_hidden_size, multimodal_hidden_size = None, is_projection = False):
         super().__init__()

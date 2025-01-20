@@ -178,7 +178,7 @@ class UnimodalSurvivalTrainer(Trainer):
             elif self.cfg.base.architecture=="CNN":    
                 transforms = base_transforms(self.preproc.get_scaling())
         elif self.cfg.base.modalities[0]=="dnam":
-            transforms = padded_transforms_simple(cfg.model.size)        
+            transforms = padded_transforms_simple(cfg.model.get("size", None))        
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
 
         self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False,
@@ -304,7 +304,7 @@ class UnimodalMAETrainer(Trainer):
         if self.cfg.base.modalities[0]=="rna":
             transforms = padded_transforms(self.preproc.get_scaling(), cfg.model.size)
         elif self.cfg.base.modalities[0]=="dnam":
-            transforms = padded_transforms_simple(cfg.model.size)
+            transforms = padded_transforms_simple(cfg.model.get("size", None))
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
