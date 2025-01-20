@@ -1,5 +1,5 @@
 defaults: 
-    - model: rna_mae
-    - base: rna_base
-    - data: data_base
+    - model: dnam_base
+    - base: dnam_base
+    - data: dnam_base
 
