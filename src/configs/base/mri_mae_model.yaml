@@ -1,4 +1,4 @@
-experiment_name: "mri_mae_model_t1c_test"
+experiment_name: "mri_mae_model_t1c_mask_ratio_0.0"
 splits: 5
 n_epochs: 50
 
@@ -39,7 +39,11 @@ profiling:
     row_limit: 10 #how many rows should be in profiler output
     is_print: True
 
-# early_stopping:
-#     patience: 20
-#     eps: 0
-#     value_to_track: "task_loss"
+early_stopping:
+    early_stopper:
+        patience: 20
+        eps: 0
+        smoothing: "running_average"
+        smoothing_period: 10
+        direction: "min"
+    value_to_track: "task_loss"

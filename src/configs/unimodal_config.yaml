@@ -1,5 +1,5 @@
 defaults: 
-    - model: dnam_base
-    - base: dnam_base
-    - data: dnam_base
+    - model: mri_mae_model
+    - base: mri_mae_model
+    - data: mri_mae
 
