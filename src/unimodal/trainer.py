@@ -253,7 +253,7 @@ class UnimodalSurvivalTrainer(Trainer):
                      return WSIEncoder(embedding_dim=self.cfg.model.input_embedding_dim, depth=self.cfg.model.depth,
                                       heads=self.cfg.model.heads, dim=self.cfg.model.dim, pool=self.cfg.model.pool,
                                       dim_head=self.cfg.model.dim_head, mlp_dim=self.cfg.model.mlp_dim, dropout=self.cfg.model.dropout,
-                                      emb_dropout=self.cfg.model.emb_dropout, self.cfg.base.n_intervals)
+                                      emb_dropout=self.cfg.model.emb_dropout, n_outputs=self.cfg.base.n_intervals)
                 else:
                     raise NotImplementedError("Exist only MAE and CNN architectures for mri modality")
         else:
