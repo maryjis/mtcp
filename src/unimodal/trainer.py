@@ -76,7 +76,7 @@ class Trainer(object):
                 
     def train(self, fold_ind : int):
         if self.cfg.base.get("early_stopping", None) is not None:
-            self.early_stopper = EarlyStopper(patience=self.cfg.base.early_stopping.patience, eps=self.cfg.base.early_stopping.eps)
+            self.early_stopper = EarlyStopper(**self.cfg.base.early_stopping.early_stopper)
 
         with profile(
             activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
