@@ -1,5 +1,6 @@
 defaults: 
     - model: wsi_base
+    - base: unimodal_wsi
     - dataset: wsi_base
 base:
     experiment_name: "wsi base from article"
