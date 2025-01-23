@@ -2,7 +2,7 @@ import hydra
 from hydra import compose, initialize
 from omegaconf import DictConfig, OmegaConf
 from run_multistage_study import run_multistage_study
-from run import run
+from run_study import run_study
 import json
 from functools import reduce
 import os
@@ -39,7 +39,7 @@ def run_schedule(configs_path : str) -> None:
         else:
             @hydra.main(version_base=None, config_path=configs_path, config_name=next_config)
             def run_wrapper(cfg : DictConfig) -> None:
-                return run_multistage_study(cfg)
+                return run_study(cfg)
             run_wrapper()
         append_config_mode(next_config, "done", base_path=configs_path)
     print("FINISH")
