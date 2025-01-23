@@ -1,6 +1,6 @@
 outputs/
 *.ipynb_checkpoints
-data/
+src/data/
 wandb/
 scaler_data.json
 *.ipynb
@@ -8,3 +8,5 @@ scaler_data.json
 .venv/*
 multirun/
 src/configs/optuna_unimodal_config.yaml
+src/configs/multistage_optuna_unimodal_config.yaml
+src/configs/schedule

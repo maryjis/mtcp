@@ -7,6 +7,7 @@ defaults:
   - _self_
 
 hydra:
+  mode: MULTIRUN
   sweeper:
     direction: maximize #!!! CHECK BEFORE LAUNCH !!!
     study_name: mri_mae_pretrain_masking
