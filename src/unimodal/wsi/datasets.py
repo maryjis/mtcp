@@ -6,6 +6,7 @@ from src.datasets import BaseDataset  # Обновлено на BaseDataset, с�
 import os
 import numpy as np
 from torchvision import transforms
+from torchvision.transforms import functional as F
 
 class PatchDataset(torch.utils.data.Dataset):
     def __init__(self, filepaths: Tuple[str, ...], transform: "torchvision.transforms" = None) -> None:
@@ -64,69 +65,69 @@ class WSIDataset(BaseDataset):
         else:
             return data
 
-class WSIDataset_patches(Dataset):
+from torchvision.transforms import functional as F
+
+class WSIDataset_patches(torch.utils.data.Dataset):
     def __init__(
         self,
         dataframe: pd.DataFrame,
         return_mask: bool = False,
         transform: "torchvision.transforms" = None,
-        is_hazard_logits: bool = False,  # Добавлен параметр
-        batch_size: int = 16,  # Новый параметр для размера батча (количество папок)
-        resize_to: tuple = (256, 256)  # Размер, до которого нужно привести все патчи
+        is_hazard_logits: bool = False,
+        batch_size: int = 16,
+        resize_to: tuple = (256, 256),
+        patch_size: tuple = (64, 64),  # Новый параметр для размера подпатча
     ) -> None:
         self.data = dataframe
         self.transform = transform
         self.is_hazard_logits = is_hazard_logits
-        self.batch_size = batch_size  # Сохраняем batch_size (количество папок)
-        self.resize_to = resize_to  # Размер для изменения всех патчей
+        self.batch_size = batch_size
+        self.resize_to = resize_to
+        self.patch_size = patch_size  # Сохраняем размер подпатча
 
-    def _load_patches(self, image_dir: str):
-        """Загружает патчи из папки `patches` для одного изображения"""
-        patch_dir = os.path.join(image_dir, "patches")  # Папка с патчами
+    def _load_and_split_patches(self, image_dir: str):
+        """Загружает патчи и делит их на подпатчи."""
+        patch_dir = os.path.join(image_dir, "patches")
         patch_files = sorted(os.listdir(patch_dir))
         
-        patches = []
+        sub_patches = []
         for patch_file in patch_files:
             if patch_file.endswith(".png"):
                 patch_path = os.path.join(patch_dir, patch_file)
                 patch = Image.open(patch_path).convert("RGB")
-                patches.append(patch)
-
-        return patches  # Возвращаем список изображений
+                patch = F.resize(patch, self.resize_to)  # Изменяем размер основного патча
+                
+                # Разбиваем патч на подпатчи 64x64
+                for i in range(0, patch.size[1], self.patch_size[1]):
+                    for j in range(0, patch.size[0], self.patch_size[0]):
+                        sub_patch = F.crop(patch, i, j, self.patch_size[1], self.patch_size[0])
+                        sub_patches.append(sub_patch)
+        
+        return sub_patches
 
     def __getitem__(self, idx: int):
         sample = self.data.iloc[idx]
         
-        if not pd.isna(sample.WSI):
-            # Извлекаем путь до папки, где находится .svs файл
-            svs_path = sample.WSI
-            image_dir = os.path.dirname(svs_path)  # Папка, содержащая .svs файл
-
-            # Загружаем патчи из папки "patches"
-            patches = self._load_patches(image_dir)
-            mask = True
-            print(type(patches))
+        if not pd.isna(sample.WSI_initial):
+            svs_path = sample.WSI_initial
+            image_dir = os.path.dirname(svs_path)
+            sub_patches = self._load_and_split_patches(image_dir)
             
-            # Преобразуем патчи в тензоры с применением трансформаций
             if self.transform:
-                patches = [transforms.functional.pil_to_tensor(self.transform(patch)) for patch in patches]  # Применяем трансформацию
+                sub_patches = [F.pil_to_tensor(self.transform(patch)) for patch in sub_patches]
             else:
-                patches = [transforms.functional.pil_to_tensor(patch) for patch in patches]  # В случае, если это уже тензор
-
-            # Приводим все патчи к одному размеру
-            resize_transform = transforms.Resize(self.resize_to)  # Устанавливаем трансформацию на resize
-            patches = [resize_transform(patch) for patch in patches]  # Применяем resize
-
-            # Преобразуем каждый патч в тензор (если они не тензоры)
-            patches = [patch.float() if isinstance(patch, torch.Tensor) else transforms.functional.pil_to_tensor(patch).float() for patch in patches] 
-
-            # Преобразуем список патчей в тензор
-            patches = torch.stack(patches)  # Преобразуем в тензор
-
-            return patches, mask
+                sub_patches = [F.pil_to_tensor(patch) for patch in sub_patches]
+            
+            sub_patches = [patch.float() for patch in sub_patches]
+            sub_patches = torch.stack(sub_patches)  # Преобразуем в тензор
+            
+            # Отбрасываем лишние патчи
+            num_full_batches = len(sub_patches) // self.batch_size
+            sub_patches = sub_patches[:num_full_batches * self.batch_size]
+            
+            return sub_patches, True
         else:
-            # Если данных нет, возвращаем пустой тензор
-            return torch.zeros((1, 3, 224, 224)), False
+            return torch.zeros((1, 3, *self.patch_size)), False
         
 
 class SurvivalWSIDataset(torch.utils.data.Dataset):

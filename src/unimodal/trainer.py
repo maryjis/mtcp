@@ -29,7 +29,7 @@ from tqdm.auto import tqdm
 from sklearn.preprocessing import QuantileTransformer, StandardScaler, MinMaxScaler
 from src.unimodal.rna.transforms import UpperQuartileNormalizer
 from src.unimodal.mri.transforms import get_basic_tumor_transforms
-from src.unimodal.wsi.transforms import NviewsAugment, contrastive_base, 
+from src.unimodal.wsi.transforms import NviewsAugment, contrastive_base
 from torch.profiler import profile, record_function, ProfilerActivity, schedule
 from src.utils import trace_handler
 from functools import partial

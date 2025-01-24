@@ -1,8 +1,3 @@
-outputs/
-*.ipynb_checkpoints
-data/
-wandb/
-scaler_data.json
-*.ipynb
-*.pyc
-.venv/*
+
+drim/
+

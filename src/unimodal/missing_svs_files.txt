@@ -1,0 +1,1 @@
+Нет .svs файла в папке: /mnt/public-datasets/drim/TCGA-GBM_WSI/77609699-3a3b-4add-a2b7-9895fbd9cc56

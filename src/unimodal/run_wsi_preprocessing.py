@@ -154,35 +154,77 @@ def segment(
     masked_image = cv2.bitwise_and(img, img, mask=img_otsu)
     return masked_image, img_otsu
 
+import os
+import pyvips
+import tqdm
+import cv2
+import numpy as np
+from PIL import Image
 
 def create_thumbnail_and_mask(data_path, downscale_factor=6):
     """Создание миниатюр и масок"""
     subdirectories = os.listdir(data_path)
     for subdirectory in tqdm.tqdm(subdirectories):
         subdirectory_path = os.path.join(data_path, subdirectory)
-        filenames = os.listdir(subdirectory_path)
-        wsi_filename = [f for f in filenames if f.endswith("svs") or f.endswith("tif")][0]
-        slide = pyvips.Image.new_from_file(os.path.join(subdirectory_path, wsi_filename))
+
+        if os.path.isdir(subdirectory_path):  # Если это директория
+            filenames = os.listdir(subdirectory_path)
+        else:
+            print(f"Пропущено, не директория: {subdirectory_path}")
+            continue  # Пропускаем эту итерацию, если это не директория
+        
+        # Фильтрация файлов по расширениям .svs и .tif
+        wsi_files = [f for f in filenames if f.endswith("svs") or f.endswith("tif")]
+
+        if not wsi_files:
+            print(f"В папке {subdirectory_path} нет файлов .svs или .tif")
+            continue  # Пропускаем эту папку, если нет нужных файлов
+
+        # Берем первый файл из списка
+        wsi_filename = wsi_files[0]
+        wsi_file_path = os.path.join(subdirectory_path, wsi_filename)
+
+        # Проверяем, что это файл, а не директория
+        if not os.path.isfile(wsi_file_path):
+            print(f"Пропущено, {wsi_file_path} не является файлом")
+            continue
+
+        try:
+            # Загружаем изображение с помощью pyvips
+            slide = pyvips.Image.new_from_file(wsi_file_path)
+        except Exception as e:
+            print(f"Ошибка при загрузке изображения {wsi_file_path}: {e}")
+            continue  # Пропускаем эту итерацию при ошибке
+
+        # Устанавливаем масштаб для миниатюры
         if int(float(slide.get("aperio.AppMag"))) == 40:
             d = downscale_factor + 1
         else:
             d = downscale_factor
+
+        # Создаём миниатюру изображения
         thumbnail = pyvips.Image.thumbnail(
-            os.path.join(subdirectory_path, wsi_filename),
+            wsi_file_path,
             slide.width / (2**d),
             height=slide.height / (2**d),
         ).numpy()
 
+        # Преобразуем в цветовое пространство RGB
         thumbnail = cv2.cvtColor(thumbnail, cv2.COLOR_RGBA2RGB)
         thumbnail_hsv = cv2.cvtColor(thumbnail, cv2.COLOR_RGB2HSV)
-        # to filter out felt-tip marks
+
+        # Создание маски для удаления felt-tip marks
         mask_hsv = np.tile(thumbnail_hsv[:, :, 1] < 160, (3, 1, 1)).transpose(1, 2, 0)
         thumbnail *= mask_hsv
+
+        # Сегментация изображения
         masked_image, mask = segment(thumbnail)
+
+        # Сохранение результатов
         masked_image = Image.fromarray(masked_image).convert("RGB")
-        # save
         masked_image.save(os.path.join(subdirectory_path, "thumbnail.jpg"))
         np.save(os.path.join(subdirectory_path, "mask.npy"), mask)
+
 
 
 
@@ -386,14 +428,13 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="WSI patch extraction and thumbnail generation")
-    parser.add_argument("--base_path", "-b", default="/home/belyaeva.a/WSI_GBMLGG", help="Base path for processed data (thumbnails, masks, etc.)")
-    parser.add_argument("--gbm_data_path", "-g", default="/home/belyaeva.a/TCGA-GBM_WSI", help="Path to the GBM data folder")
-    parser.add_argument("--lgg_data_path", "-l", default="/home/belyaeva.a/wsi", help="Path to the LGG data folder")
-    parser.add_argument("--mapping_path", "-m", default="/home/belyaeva.a/mtcp/src/data/wsi_mapping.json", help="Path to WSI mapping file")
-    parser.add_argument("--num_patches", "-n", type=int, default=5, help="Number of patches to extract (1000)")
+    parser.add_argument("--gbm_data_path", "-g", default="/mnt/public-datasets/drim/TCGA-GBM_WSI", help="Path to the GBM data folder")
+    parser.add_argument("--lgg_data_path", "-l", default="/mnt/public-datasets/drim/wsi", help="Path to the LGG data folder")
+    parser.add_argument("--mapping_path", "-m", default="/home/a.beliaeva/mtcp/src/data/wsi_mapping.json", help="Path to WSI mapping file")
+    parser.add_argument("--num_patches", "-n", type=int, default=100, help="Number of patches to extracе")
     parser.add_argument("--patch_size", "-s", type=int, default=256, help="Size of the patches (256x256)")
-    parser.add_argument("--iterations", "-i", type=int, default=6, help="Number of iterations for patch extraction")
-    parser.add_argument("--wsi_file_path", "-w", default="/home/belyaeva.a/mtcp/src/data/dataset.csv", help="Path to the WSI files metadata")
+    parser.add_argument("--iterations", "-i", type=int, default=1000, help="Number of iterations for patch extraction")
+    parser.add_argument("--wsi_file_path", "-w", default="/home/a.beliaeva/mtcp/src/data/dataset.csv", help="Path to the WSI files metadata")
     parser.add_argument("--downscale_factor", "-d", type=int, default=6, help="Downscale factor for thumbnail generation")
 
     args = parser.parse_args()

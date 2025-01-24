@@ -25,15 +25,15 @@ if __name__ == "__main__":
         nargs="+",
         default=["/mnt/public-datasets/drim/TCGA-GBM_WSI", "/mnt/public-datasets/drim/wsi"],
     )
-    parser.add_argument("--batch_size", type=int, default=256)
-    parser.add_argument("--epochs", type=int, default=30)
+    parser.add_argument("--batch_size", type=int, default=64)
+    parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--temperature", type=float, default=0.07)
     parser.add_argument("--weight_decay", type=float, default=1e-6)
     parser.add_argument("--out_dim", type=int, default=256)
     parser.add_argument("--project", type=str, default="cancer_mtcp")
     parser.add_argument("--n_cpus", type=int, default=30)
-    parser.add_argument("--n_gpus", type=int, default=4)
+    parser.add_argument("--n_gpus", type=int, default=3)
     parser.add_argument("--k", type=int, default=10)
     parser.add_argument("--seed", type=int, default=1999)
     parser.add_argument("--model_path", type=str, default="/home/a.beliaeva/mtcp/src/outputs/models/wsi_encoder.pth")
@@ -51,9 +51,20 @@ if __name__ == "__main__":
         temp_filepaths = [
             filepath for filepath in temp_filepaths if "patches" in filepath
         ]
-        filepaths += temp_filepaths
+        # Группируем файлы по папкам и оставляем только первые 100
+        grouped_filepaths = {}
+        for filepath in temp_filepaths:
+            folder = os.path.dirname(filepath)
+            if folder not in grouped_filepaths:
+                grouped_filepaths[folder] = []
+            grouped_filepaths[folder].append(filepath)
+        
+        for folder, files in grouped_filepaths.items():
+            files = sorted(files)  # Сортируем файлы в каждой папке
+            filepaths.extend(files[:10])  # Оставляем только первые 100 файлов
 
     filepaths = np.array(filepaths)
+
 
     # Split into train and val
     train_idx = np.random.choice(
