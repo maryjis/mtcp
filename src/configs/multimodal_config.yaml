@@ -1,4 +1,4 @@
 defaults: 
-    - model: multimodal_dna_rna_survival
-    - base: multimodal_dna_rna
+    - model: multimodal_survival
+    - base: multimodal_config_survival
     - data: multimodal_data

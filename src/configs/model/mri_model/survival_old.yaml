@@ -28,16 +28,16 @@ output_dim: 20 #should
 embeddings_layers:
   - name: "Conv3d"
     args: 
-      - 1 #in
+      - ${....num_channels} #in
       - 16 #out
-      - 4 #kernel
+      - ${eval:'${....patch_size}//4'} #kernel
     kwargs:
-      stride: 4
+      stride: ${eval:'${....patch_size}//4'}
   - name: "GELU"
   - name: "Conv3d"
     args: 
       - 16 #in
-      - 256 #out
+      - ${....hidden_size} #out
       - 4 #kernel
     kwargs:
       stride: 4
@@ -45,7 +45,7 @@ embeddings_layers:
 decoder_pred_layers:
   - name: "ConvTranspose3d"
     args:
-      - 128
+      - ${....decoder_hidden_size}
       - 16
       - 4
     kwargs:
@@ -54,7 +54,7 @@ decoder_pred_layers:
   - name: "ConvTranspose3d"
     args:
       - 16
-      - 1
-      - 4
+      - ${....num_channels}
+      - ${eval:'${....patch_size}//4'}
     kwargs:
-      stride: 4
+      stride: ${eval:'${....patch_size}//4'}
