@@ -21,6 +21,7 @@ class RNADataset(BaseDataset):
         """
         super().__init__(data_split, dataset_file, transform, is_hazard_logits, return_mask)
         self.rna_dataset = pd.read_csv(dataset_file)
+        print(self.rna_dataset["file_id"])
         self.column_order = column_order
         
         if isinstance(column_order, pd.Index): 

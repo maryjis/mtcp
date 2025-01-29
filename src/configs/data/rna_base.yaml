@@ -1,6 +1,7 @@
 rna:
-  is_cluster_genes: True
+  is_cluster_genes: False
   clustering_threshold: 0.7
   scaling_method: UpperQuartileNormalizer
   scaling_params: {"quantile" : 50}
   var_threshold: 0.0
+  rna_dataset_path: "src/data/rna_dataset.csv"

@@ -1,4 +1,4 @@
-experiment_name: "multimodal_test_without_clusters_quantile_mae_survival"
+experiment_name: "multimodal_test_mri_rna_mae"
 n_epochs: 50
 n_intervals: 20
 random_seed: 1380

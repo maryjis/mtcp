@@ -1,5 +1,5 @@
 attention_probs_dropout_prob: 0.0
-decoder_hidden_size: 128
+decoder_hidden_size: 256
 decoder_intermediate_size: 512
 decoder_num_attention_heads: 4
 decoder_num_hidden_layers: 2
@@ -25,3 +25,36 @@ is_load_pretrained: false
 pretrained_model_name: "mri_mae_pretrain_t1c_dummy_test"
 output_dim: 20 #should 
 
+embeddings_layers:
+  - name: "Conv3d"
+    args: 
+      - ${....num_channels} #in
+      - 16 #out
+      - ${eval:'${....patch_size}//4'} #kernel
+    kwargs:
+      stride: ${eval:'${....patch_size}//4'}
+  - name: "GELU"
+  - name: "Conv3d"
+    args: 
+      - 16 #in
+      - ${....hidden_size} #out
+      - 4 #kernel
+    kwargs:
+      stride: 4
+
+decoder_pred_layers:
+  - name: "ConvTranspose3d"
+    args:
+      - ${....decoder_hidden_size}
+      - 16
+      - 4
+    kwargs:
+      stride: 4
+  - name: "GELU"
+  - name: "ConvTranspose3d"
+    args:
+      - 16
+      - ${....num_channels}
+      - ${eval:'${....patch_size}//4'}
+    kwargs:
+      stride: ${eval:'${....patch_size}//4'}

@@ -22,3 +22,4 @@ is_load_pretrained: false
 pretrained_model_name: "rsna_clusters_quantile_mae_pretrained"
 pretrained_model_path: ""
 output_dim: 20
+return_order: true
