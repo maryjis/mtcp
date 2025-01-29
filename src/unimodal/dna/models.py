@@ -101,7 +101,7 @@ class DNAmEncoderSurvival(DNAmEncoder):
     def __init__(self, embedding_dim: int, dropout: float, n_out: int) -> None:
         super().__init__(embedding_dim, dropout)
         self.projection = nn.Linear(embedding_dim, n_out)
-        
+
         
     def forward(self, x: torch.Tensor, masks=None) -> torch.Tensor:
         x = super().forward(x)

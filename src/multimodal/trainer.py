@@ -42,7 +42,8 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
     
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
         super().__init__(splits, cfg)
-        transforms = {"rna": padded_transforms(self.preproc["rna"].get_scaling(), cfg.model.rna_model.size), "dnam" : padded_transforms_simple(cfg.model.dnam_model.get("size", None)), "mri" : None, "wsi" : None }
+        transforms = {"rna": padded_transforms(self.preproc["rna"].get_scaling(), cfg.model.rna_model.size), 
+                      "dnam" : padded_transforms_simple(cfg.model.dnam_model.get("size", None)) if cfg.model.get("dnam_model", None) else None, "mri" : None, "wsi" : None }
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities, self.preproc, transforms)
         self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False, batch_size=cfg.base.batch_size 
                                               if split == "train" else 1)
@@ -104,7 +105,8 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
 class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
         super().__init__(splits, cfg)
-        transforms = {"rna": padded_transforms(self.preproc["rna"].get_scaling(), cfg.model.rna_model.size), "dnam" : padded_transforms_simple(cfg.model.dnam_model.get("size", None)), "mri" : None, "wsi" : None }
+        transforms = {"rna": padded_transforms(self.preproc["rna"].get_scaling(), cfg.model.rna_model.size), 
+                      "dnam" : padded_transforms_simple(cfg.model.dnam_model.get("size", None)) if cfg.model.get("dnam_model", None) else None, "mri" : None, "wsi" : None }
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities, self.preproc, transforms)
         self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False, batch_size=cfg.base.batch_size 
                                               if split == "train" else 1)

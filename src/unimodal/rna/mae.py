@@ -131,6 +131,7 @@ class RnaMAEModel(ViTMAEModel):
     def __init__(self, config):
         super().__init__(config)
         self.embeddings = RnaMAEEmbeddings(config)
+        self.mask_token = nn.Parameter(torch.zeros(1, 1, config.hidden_size))
         self.post_init()
         
     def patchify(self, rna_values, interpolate_pos_encoding: bool = False):
@@ -316,15 +317,15 @@ class RnaMAEForPreTraining(ViTMAEForPreTraining):
 class RnaSurvivalModel(nn.Module):
     def __init__(self, config):
         super().__init__()
+        self.config =config
         if config.is_load_pretrained:
-            self.vit = RnaMAEModel.from_pretrained(config.pretrained_model_path, config = config)
+            self.vit = RnaMAEModel.from_pretrained(self.config.pretrained_model_path, config = self.config)
         else:
             self.vit = RnaMAEModel(config)
-        self.projection = nn.Linear(config.hidden_size, config.output_dim)
+        self.projection = nn.Linear(self.config.hidden_size, self.config.output_dim)
         
     def forward(self, rna_values, masks=None):
         x = self.vit(rna_values)
-
         x = self.projection(x.last_hidden_state[:,0,:])
         return x.squeeze(-1)
     
