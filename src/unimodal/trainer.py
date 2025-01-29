@@ -220,7 +220,7 @@ class UnimodalSurvivalTrainer(Trainer):
                     
                     # Создаем датасет с нужными параметрами
                     dataset = WSIDataset(
-                        split, self.cfg.data.wsi.k, transform=NviewsAugment(contrastive_base, n_views=self.cfg.data.wsi.n_views), is_train=is_train, return_mask=False)
+                        split, self.cfg.data.wsi.k, is_train=is_train, return_mask=False)
                     
                     # Создаем SurvivalMRIDataset с нужными параметрами
                     datasets[split_name] = SurvivalWSIDataset(split, dataset, is_hazard_logits=True)

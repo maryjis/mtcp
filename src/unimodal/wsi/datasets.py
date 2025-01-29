@@ -135,10 +135,9 @@ class SurvivalWSIDataset(torch.utils.data.Dataset):
         self, 
         split: pd.DataFrame,  # DataFrame с временными и событийными данными
         dataset: torch.utils.data.Dataset,  
-        is_hazard_logits: bool = False  # Параметр, который указывает, нужно ли использовать логиты
+        is_hazard_logits: bool = False,
     ) -> None:
         self.dataset = dataset 
-        
         # В зависимости от того, логиты ли это, или другие данные, мы подбираем колонки для времени и события
         if is_hazard_logits:
             self.time = torch.from_numpy(split["new_time"].values)
@@ -149,7 +148,7 @@ class SurvivalWSIDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx: int) -> Tuple[Any, torch.Tensor, torch.Tensor]:
         # Возвращаем патч из датасета WSI, время и событие для выживания
-        return self.dataset[idx], self.time[idx], self.event[idx]
+            return self.dataset[idx], self.time[idx], self.event[idx]
 
     def __len__(self) -> int:
         return len(self.dataset)  # Размер датасета (количество патчей)
