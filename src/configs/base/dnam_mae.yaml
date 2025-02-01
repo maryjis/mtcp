@@ -22,7 +22,7 @@ splits: 5
 data_path: "src/data/dataset.csv"
 root_path: "../"
 save_path : "outputs/models/"
-device: "cuda:0"
+device: "cuda:1"
 remove_nan_column: 'DNAm'
 batch_size: 24
 
