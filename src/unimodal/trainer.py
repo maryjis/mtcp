@@ -220,8 +220,7 @@ class UnimodalSurvivalTrainer(Trainer):
                     
                     # Создаем датасет с нужными параметрами
                     dataset = WSIDataset(
-                        split, self.cfg.data.wsi.k, is_train=is_train, return_mask=False)
-                    
+                        split, self.cfg.data.wsi.k, is_train=is_train, return_mask=True)
                     # Создаем SurvivalMRIDataset с нужными параметрами
                     datasets[split_name] = SurvivalWSIDataset(split, dataset, is_hazard_logits=True)
 
@@ -271,8 +270,9 @@ class UnimodalSurvivalTrainer(Trainer):
 
         for batch in dataloader:
             
-            data, mask,  time, event = batch
-   
+            data_with_mask, time, event = batch
+            data = data_with_mask[0] 
+            mask = data_with_mask[1] 
             data = {modality :value.to(device) for modality, value in data.items()} if isinstance(data, dict) else data.to(device)
 
             outputs =self.model(data, masks = mask)
@@ -356,14 +356,11 @@ class UnimodalMAETrainer(Trainer):
                 )
 
         elif modality == "wsi":
-            splits = {split_name: preproc.transform_labels(split) for split_name, split in splits.items()}
             for split_name, split in splits.items():
-                    # Определяем значение параметра num в зависимости от типа раздела
-                    is_train = True if split_name == "train" else False
-                    
+                    # Определяем значение параметра num в зависимости от типа раздела                  
                     # Создаем датасет с нужными параметрами
-                    dataset = WSIDataset_patches(
-                        split, transform=NviewsAugment(contrastive_base, n_views=self.cfg.data.wsi.n_views), is_train=is_train, return_mask=False)
+                    datasets[split_name] = WSIDataset_patches(
+                        split, return_mask=False)
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
         
