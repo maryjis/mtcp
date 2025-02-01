@@ -1,0 +1,5 @@
+dnam:
+    is_cluster_genes: False
+    clustering_threshold: 0.7
+    var_threshold: 0.0
+    dnam_dataset_path: "src/data/dna_dataset.csv"
