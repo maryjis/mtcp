@@ -1,6 +1,6 @@
 rna:
-  is_cluster_genes: False
-  clustering_threshold: 0.7
+  is_cluster_genes: true
+  clustering_threshold: 0.8
   scaling_method: UpperQuartileNormalizer
   scaling_params: {"quantile" : 50}
   var_threshold: 0.0

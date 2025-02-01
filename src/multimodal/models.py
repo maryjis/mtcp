@@ -238,7 +238,7 @@ class MultiMAEModel(PreTrainedModel):
             
     def initialize_weights(self):
         torch.nn.init.normal_(self.cls_token, std=self.cfg.initializer_range)
-        torch.nn.init.normal_(self.mask_token, std=self.config.initializer_range)
+        #torch.nn.init.normal_(self.mask_token, std=self.config.initializer_range)
         
     def forward(
         self,
@@ -416,6 +416,20 @@ class MultiMaeForPretraining(nn.Module):
         
         return loss
     
+    def split_modalities(self, pred: torch.FloatTensor):
+        start_idx = 0
+        splitted_x = {}
+        for modality in self.modalities:
+            # Get number of patches for current modality
+            num_patches = self.get_patches_number(modality)
+            end_idx = start_idx + num_patches
+            
+            # Extract predictions and mask for current modality
+            splitted_x[modality] = pred[:, start_idx:end_idx]
+            start_idx = end_idx
+        
+        return splitted_x
+
     def forward_loss(self, x: dict[str, torch.FloatTensor],modality_masks: Dict[str, torch.FloatTensor], pred: torch.FloatTensor, mask: torch.FloatTensor, interpolate_pos_encoding: bool = False) -> torch.FloatTensor:
         """
         Calculate reconstruction loss across all modalities.
@@ -543,21 +557,21 @@ class PerceiverMultiResampler(nn.Module):
                                 num_latents = modalities_dim[modality]) for modality in self.modalities})
          
      def forward(self, x,mask, modality_intervals):
-            print("Mask: ", mask)
-            concat_x = [x[:,:1,:]]
-            concat_mask = [mask[:,:1]]
+            concat_x, concat_mask = [x[:,:1,:]], None
+            if mask is not None:
+                concat_mask = [mask[:,:1]]
             for modality in self.modalities:
                 print(modality_intervals[modality])
-                print("Before: ", x[:,modality_intervals[modality][0]:modality_intervals[modality][1],:].shape)
-                mask_modality =mask[:, modality_intervals[modality][0]:modality_intervals[modality][1]]
+                if mask is not None:
+                    mask_modality =mask[:, modality_intervals[modality][0]:modality_intervals[modality][1]]
                 x_perceived =self.perceivers[modality](x[:,modality_intervals[modality][0]:modality_intervals[modality][1],:])
-                print("After: ", x_perceived.shape)
-                mask_modality = mask_modality[:,:x_perceived.shape[2]]
-                print("Mask shape ", mask_modality.shape)
-                print("Mask: ", mask_modality)
+                if mask is not None:
+                    mask_modality = mask_modality[:,:x_perceived.shape[2]]
+                    concat_mask.append(mask_modality)
                 concat_x.append(torch.squeeze(x_perceived,1))
-                concat_mask.append(mask_modality)               
-            return torch.cat(concat_x, dim=1), torch.cat(concat_mask, dim=1) 
+            if mask is not None:
+                concat_mask = torch.cat(concat_mask, dim=1)       
+            return torch.cat(concat_x, dim=1), mask
                        
 class MultiMaeForSurvival(nn.Module):
     def __init__(self, cfg):
@@ -569,6 +583,12 @@ class MultiMaeForSurvival(nn.Module):
             self.model = MultiMAEModel.from_pretrained(cfg.pretrained_model_path, config=cfg)
         else:
             self.model = MultiMAEModel(cfg)
+            
+        if cfg.missing_modalities_strategy =="decoder":
+            self.decoder_mm = MultiMaeForPretraining(cfg.decoder_config).load_state_dict(cfg.pretrained_model_path)
+            for param in self.decoder_mm.parameters():
+                param.requires_grad = False
+            
         if cfg.fusion_strategy == "mask_attention":
             self.fusion_strategy = MaskAttentionFusion(cfg.fusion_depth, cfg.fusion_dim, cfg.fusion_nhead,
                                                        cfg.fusion_dim_feedforward, cfg.fusion_dropout)
@@ -615,11 +635,28 @@ class MultiMaeForSurvival(nn.Module):
             
     def forward(self, x: Dict[str, torch.FloatTensor], masks: Dict[str, torch.FloatTensor], interpolate_pos_encoding: bool = False):
         # print({modality: value.mean() for modality, value  in x.items()})
+        
+        if self.cfg.missing_modalities_strategy =="decoder":
+            decoded_x = self.decoder_mm(x, masks, interpolate_pos_encoding)
+            decoded_x = self.split_modalities(decoded_x)
+            for modality in self.modalities:
+                if torch.any(masks[modality]):
+                    missing_modalities_ids = torch.nonzero(~mask, as_tuple=True)[0].to(decoded_x.device)
+                    ##  patchify todo
+                    x[modality][missing_modalities_ids] = decoded_x[modality][missing_modalities_ids]
+                    
+            
+            
         concat_x = self.model(x, masks, interpolate_pos_encoding)
+        
       
         if self.cfg.return_order:
             concat_x.last_hidden_state = self.get_primary_order(concat_x.last_hidden_state, concat_x.ids_restore)
 
+        if self.cfg.fusion_masking:
+            print("Cfg masking = None")
+            concat_x.mask = None
+            
         if self.cfg.fusion_strategy == "perceived_attention":
             start_idx = 1
             intervals = dict()

@@ -1,5 +1,5 @@
 
-modalities: ["rna","dnam"]
+modalities: ["rna","dnam", "mri"]
 defaults: 
   - rna_model: survival
   - mri_model: survival
@@ -31,6 +31,8 @@ pretrained_model_path: ""
 output_dim: 20
 return_order: true
 
+missing_modalities_strategy: "zeros"
+
 encoder_fusion_strategy: "identity"
 
 encoder_fusion_depth: 1
@@ -39,7 +41,7 @@ encoder_fusion_nhead: 4
 encoder_fusion_dim_feedforward: 1024
 encoder_fusion_dropout: 0.1
 
-fusion_strategy: "perceived_modality_attention"
+fusion_strategy: "mask_attention"
 
 perceiver_fusion_depth: 1 
 perceiver_fusion_dim: 256 
@@ -51,6 +53,7 @@ perceiver_fusion_nhead: 2
 fusion_depth: 1
 fusion_dim: 256
 fusion_nhead: 4
-fusion_dim_feedforward: 1024
-fusion_dropout: 0.1
+fusion_dim_feedforward: 0
+fusion_dropout: 0.4
 fusion_logits: "mean"
+fusion_masking: false
