@@ -24,7 +24,7 @@ class DNAmDataset(BaseDataset):
         self.column_order = column_order
         
         if isinstance(column_order, pd.Index): 
-            self.column_order.append(pd.Index(["file_id"]))
+            self.column_order = self.column_order.append(pd.Index(["file_id"]))
             self.dna_dataset = self.dna_dataset[self.column_order]
         elif isinstance(column_order,np.ndarray):
             self.column_order = np.append(self.column_order, "file_id")

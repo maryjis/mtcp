@@ -168,7 +168,7 @@ class RnaMAEModel(ViTMAEModel):
         )
         return patchified_rna_values
 
-    def unpatchify(self, patchified_rna_values, original_rna_size: int):
+    def unpatchify(self, patchified_rna_values, original_rna_size: int=None):
         """
         Args:
             patchified_rna_values (`torch.FloatTensor` of shape `(batch_size, num_patches, patch_size * num_channels)`:
@@ -199,7 +199,7 @@ class RnaMAEModel(ViTMAEModel):
             patch_size,
             num_channels,
         )
-        patchified_rna_values = patchified_rna_values.permute(0, 3, 1, 2)
+        patchified_pixel_values = patchified_pixel_values.permute(0, 3, 1, 2)
         pixel_values = patchified_pixel_values.reshape(
             batch_size,
             num_channels,
@@ -305,7 +305,7 @@ class RnaMAEForPreTraining(ViTMAEForPreTraining):
             patch_size,
             num_channels,
         )
-        patchified_rna_values = patchified_rna_values.permute(0, 3, 1, 2)
+        patchified_pixel_values = patchified_pixel_values.permute(0, 3, 1, 2)
         pixel_values = patchified_pixel_values.reshape(
             batch_size,
             num_channels,
