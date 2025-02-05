@@ -2,4 +2,4 @@ mri:
   sizes: [64, 64, 64]
   modalities: ["t1c"] # ["t1c","t1n","t2w","t2f"]
   tensor_name : "roi"
-  root_path: "/data/BraTS_2023/MRI"
+  root_path: "/mnt/data/d.kornilov/BraTS_2023/MRI"
