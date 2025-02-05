@@ -189,9 +189,11 @@ class MRIDataset(BaseDataset):
             mask = True
             item = None
             if self.tensor_name is not None:
+                patient_tag = sample.split(os.sep)[-1]
                 item = torch.load(
                     os.path.join(
-                        sample,
+                        self.root_dir,
+                        patient_tag,
                         f"{self.tensor_name}_{'_'.join(self.modality)}_{'_'.join(list(map(str, self.sizes)))}.pt"
                     ),
                     weights_only=False
