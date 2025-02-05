@@ -69,7 +69,7 @@ def run(cfg: DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))
 
     num_folds = cfg.base.splits
-    available_gpus = cfg.base.get("available_gpus", [0, 1, 2])  # Список доступных GPU
+    available_gpus = cfg.base.get("available_gpus", [0, 1, 2, 3])  # Список доступных GPU
 
     print(f"Available GPUs: {available_gpus}, running {num_folds} folds in parallel.")
 

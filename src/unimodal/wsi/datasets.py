@@ -154,7 +154,7 @@ class SurvivalWSIDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx: int) -> Tuple[Any, torch.Tensor, torch.Tensor]:
         data, mask = self.dataset[idx]  # Разбиваем tuple
         #print(f"Index {idx} -> Data shape: {data.shape},  Time: {self.time[idx]}, Event: {self.event[idx]}")
-        return self.dataset[idx], self.time[idx], self.event[idx]
+        return data, mask, self.time[idx], self.event[idx]
 
     def __len__(self) -> int:
         return len(self.dataset)

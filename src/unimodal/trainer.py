@@ -274,9 +274,7 @@ class UnimodalSurvivalTrainer(Trainer):
 
         for batch in dataloader:
             
-            data_with_mask, time, event = batch
-            data = data_with_mask[0] 
-            mask = data_with_mask[1] 
+            data, mask,  time, event = batch 
             data = {modality :value.to(device) for modality, value in data.items()} if isinstance(data, dict) else data.to(device)
 
             outputs =self.model(data, masks = mask)
