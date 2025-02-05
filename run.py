@@ -6,7 +6,7 @@ from pathlib import Path
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.multimodal.trainer import MultiModalMAETrainer, MultiModalSurvivalTrainer
 
-@hydra.main(version_base=None, config_path="src/configs", config_name="unimodal_config")
+@hydra.main(version_base=None, config_path="src/configs", config_name="multimodal_config")
 def run(cfg : DictConfig) -> None:
     if not OmegaConf.has_resolver("eval"): OmegaConf.register_new_resolver("eval", eval) #arithmetic in config params
     print(OmegaConf.to_yaml(cfg))
@@ -22,6 +22,8 @@ def run(cfg : DictConfig) -> None:
             with open_dict(cfg):
                 print("Model path", f"outputs/models/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth")
                 cfg.model.pretrained_model_path = f"outputs/models/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth"
+        
+             
         splits = load_splits(
             Path(cfg.base.data_path), 
             fold_ind, 
@@ -42,22 +44,7 @@ def run(cfg : DictConfig) -> None:
                 raise NotImplementedError(f"Such strategy - {cfg.base.strategy} isn't implemented in unimodal approach.")
         elif cfg.base.type == 'multimodal':
               
-              
-            if cfg.model.get("rna_model", False):
-                with open_dict(cfg):
-                    print("Model path", f"outputs/models/{cfg.model.rna_model.pretrained_model_name}_split_{fold_ind}.pth")
-                    cfg.model.rna_model.pretrained_model_path = f"outputs/models/{cfg.model.rna_model.pretrained_model_name}_split_{fold_ind}.pth"
-            
-            if cfg.model.get("mri_model", False):
-                with open_dict(cfg):
-                    print("Model path", f"outputs/models/{cfg.model.mri_model.pretrained_model_name}_split_{fold_ind}.pth")
-                    cfg.model.mri_model.pretrained_model_path = f"outputs/models/{cfg.model.mri_model.pretrained_model_name}_split_{fold_ind}.pth"
-            
-            if cfg.model.get("dnam_model", False):
-                with open_dict(cfg):
-                    print("Model path", f"outputs/models/{cfg.model.dnam_model.pretrained_model_name}_split_{fold_ind}.pth")
-                    cfg.model.dnam_model.pretrained_model_path = f"outputs/models/{cfg.model.dnam_model.pretrained_model_name}_split_{fold_ind}.pth"
-                                           
+            cfg = add_model_paths_to_config(cfg,fold_ind)                      
             if cfg.base.strategy == "mae": 
                 trainer = MultiModalMAETrainer(splits, cfg)
             elif cfg.base.strategy == "survival":

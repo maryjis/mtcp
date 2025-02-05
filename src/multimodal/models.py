@@ -74,11 +74,14 @@ class MultiMAEModel(PreTrainedModel):
         for modality in self.modalities:
             if modality == "rna":
                 cfg_rna_model = ViTMAEConfig(**self.cfg.rna_model)
-                encoder = (
-                    RnaMAEModel.from_pretrained(cfg_rna_model.pretrained_model_path, config=cfg_rna_model)
-                    if cfg_rna_model.is_load_pretrained
-                    else RnaMAEModel(cfg_rna_model)
-                )
+                encoder = None
+                if cfg_rna_model.is_load_pretrained:
+                    encoder = RnaMAEModel.from_pretrained(cfg_rna_model.pretrained_model_path, config=cfg_rna_model)
+                    for param in encoder.parameters():
+                        param.requires_grad = False
+                else:
+                    encoder = RnaMAEModel(cfg_rna_model)
+                
                 self.encoders[modality] = UnimodalEncoder(
                     encoder,
                     cfg_rna_model.hidden_size, 
@@ -87,20 +90,32 @@ class MultiMAEModel(PreTrainedModel):
                 )
             elif modality == "mri":
                 cfg_mri_model = ViTMAEConfig(**self.cfg.mri_model)
+                encoder = None
+                if cfg_mri_model.is_load_pretrained:
+                    encoder = MriMAEModel.from_pretrained(cfg_mri_model.pretrained_model_path, config=cfg_mri_model)
+                    for param in encoder.parameters():
+                        param.requires_grad = False
+                else:
+                    encoder = MriMAEModel(cfg_mri_model)
+                
                 self.encoders[modality] = UnimodalEncoder(
-                    MriMAEModel.from_pretrained(cfg_mri_model.pretrained_model_path, config=cfg_mri_model)
-                    if cfg_mri_model.is_load_pretrained
-                    else MriMAEModel(cfg_mri_model), 
+                    encoder, 
                     cfg_mri_model.hidden_size, 
                     self.cfg.hidden_size,
                     self.cfg.is_projection
                 )
             elif modality == "dnam":
                 cfg_dnam_model = ViTMAEConfig(**self.cfg.dnam_model)
+                encoder = None
+                if cfg_dnam_model.is_load_pretrained:
+                    encoder = DNAmMAEModel.from_pretrained(cfg_dnam_model.pretrained_model_path, config=cfg_dnam_model)
+                    for param in encoder.parameters():
+                        param.requires_grad = False
+                else:
+                    encoder = DNAmMAEModel(cfg_dnam_model)
+                    
                 self.encoders[modality] = UnimodalEncoder(
-                    DNAmMAEModel.from_pretrained(cfg_dnam_model.pretrained_model_path, config=cfg_dnam_model)
-                    if cfg_dnam_model.is_load_pretrained
-                    else DNAmMAEModel(cfg_dnam_model),
+                    encoder,
                     cfg_dnam_model.hidden_size, 
                     self.cfg.hidden_size,
                     self.cfg.is_projection
@@ -425,7 +440,10 @@ class MultiMaeForPretraining(nn.Module):
             end_idx = start_idx + num_patches
             
             # Extract predictions and mask for current modality
-            splitted_x[modality] = pred[:, start_idx:end_idx]
+            if self.cfg.postprocessing:
+                splitted_x[modality] = self.postprocessors[f"postprocessor_{modality}"](pred[:, start_idx:end_idx])
+            else:
+                splitted_x[modality] = pred[:, start_idx:end_idx]
             start_idx = end_idx
         
         return splitted_x
@@ -461,11 +479,10 @@ class MultiMaeForPretraining(nn.Module):
             # Extract predictions and mask for current modality
             pred_modality = pred[:, start_idx:end_idx]
             mask_modality = mask[:, start_idx:end_idx]
-            
 
             if self.cfg.postprocessing:
                 pred_modality = self.postprocessors[f"postprocessor_{modality}"](pred_modality)
-    
+
             # Calculate loss for current modality
             modality_loss = self.__forward_loss(
                 x[modality],
@@ -580,12 +597,28 @@ class MultiMaeForSurvival(nn.Module):
         self.modalities = self.cfg.modalities
         
         if cfg.is_load_pretrained:
-            self.model = MultiMAEModel.from_pretrained(cfg.pretrained_model_path, config=cfg)
+            model_state_dict = torch.load(cfg.pretrained_model_path)
+            #  model_state_dict = {k.replace("model.", "", 1) if k.startswith("model.") else k: v 
+            #                for k, v in model_state_dict.items()} 
+            model_state_dict = {k.replace("model.", "", 1): v for k, v in model_state_dict.items() if k.startswith("model.")}     
+            print("Load keys: ", model_state_dict.keys())
+            self.model = MultiMAEModel(cfg)
+            print("Model keys:", list(self.model.state_dict().keys()))
+            self.model.load_state_dict(model_state_dict)
+            if cfg.freezing_strategy:
+                print("Freezing!")
+                for param in self.model.parameters():
+                    param.requires_grad = False
+                
         else:
             self.model = MultiMAEModel(cfg)
             
         if cfg.missing_modalities_strategy =="decoder":
-            self.decoder_mm = MultiMaeForPretraining(cfg.decoder_config).load_state_dict(cfg.pretrained_model_path)
+            model_state_dict = torch.load(cfg.mm_pretrained_model_path)
+            print(model_state_dict.keys())
+            self.decoder_mm = MultiMaeForPretraining(ViTMAEConfig(**cfg.mm_decoder_config))
+            self.decoder_mm.load_state_dict(model_state_dict)
+            
             for param in self.decoder_mm.parameters():
                 param.requires_grad = False
             
@@ -638,13 +671,14 @@ class MultiMaeForSurvival(nn.Module):
         
         if self.cfg.missing_modalities_strategy =="decoder":
             decoded_x = self.decoder_mm(x, masks, interpolate_pos_encoding)
-            decoded_x = self.split_modalities(decoded_x)
+            decoded_x = self.decoder_mm.split_modalities(decoded_x.logits)
             for modality in self.modalities:
-                if torch.any(masks[modality]):
-                    missing_modalities_ids = torch.nonzero(~mask, as_tuple=True)[0].to(decoded_x.device)
+                if torch.any(~masks[modality]):
+                    missing_modalities_ids = torch.nonzero(~masks[modality], as_tuple=True)[0].to(masks[modality].device)
                     ##  patchify todo
-                    x[modality][missing_modalities_ids] = decoded_x[modality][missing_modalities_ids]
-                    
+                    x[modality][missing_modalities_ids] = self.decoder_mm.model.encoders[modality].encoder.unpatchify(decoded_x[modality][missing_modalities_ids] , None)
+                    masks[modality].fill_(1)
+
             
             
         concat_x = self.model(x, masks, interpolate_pos_encoding)

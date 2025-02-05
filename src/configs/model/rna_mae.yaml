@@ -16,7 +16,7 @@ norm_pix_loss: false
 num_attention_heads: 4
 num_channels: 1
 num_hidden_layers: 6
-patch_size: 256
+patch_size: 512
 qkv_bias: true
 is_load_pretrained: false
 pretrained_model_name: "rsna_clusters_quantile_mae_pretrained"

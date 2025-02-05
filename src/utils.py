@@ -6,7 +6,7 @@ import pandas as pd
 from pathlib import Path
 from typing import Dict, List, Tuple, Union
 import wandb
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, OmegaConf, open_dict
 from torch import nn
 
 
@@ -117,6 +117,7 @@ def load_splits(data_path: Path, fold_ind : int, remove_nan_column : str,
             dataset_intersection_test = dataset_test.copy()
             for modality in modalities:
                 dataset_intersection_test =dataset_intersection_test.loc[dataset_intersection_test[MODALITY_TO_COLUMN_MAP[modality]].notnull()]
+            print("Multimodal intersection test: ", dataset_intersection_test.shape)
             return {"train" :dataset_train.reset_index(drop=True), 
                     "val" : dataset_val.reset_index(drop=True), 
                     "test" : dataset_test.reset_index(drop=True),
@@ -152,4 +153,33 @@ def agg_fold_metrics(lst: list[dict[str, float]]):
 def compute_stats(lst: list[float]) -> dict[str, np.ndarray]:
     """Compute some stats from a list of floats"""
     arr = np.array(lst)
-    return {"mean": arr.mean(), "std": arr.std(), "min": arr.min(), "max": arr.max()}      
+    return {"mean": arr.mean(), "std": arr.std(), "min": arr.min(), "max": arr.max()} 
+
+def add_model_paths_to_config(cfg : DictConfig, fold_ind: int):
+    
+            if cfg.model.get("rna_model", False):
+                with open_dict(cfg):
+                    print("Model path", f"outputs/models/{cfg.model.rna_model.pretrained_model_name}_split_{fold_ind}.pth")
+                    cfg.model.rna_model.pretrained_model_path = f"outputs/models/{cfg.model.rna_model.pretrained_model_name}_split_{fold_ind}.pth"
+            
+            if cfg.model.get("mri_model", False):
+                with open_dict(cfg):
+                    print("Model path", f"outputs/models/{cfg.model.mri_model.pretrained_model_name}_split_{fold_ind}.pth")
+                    cfg.model.mri_model.pretrained_model_path = f"outputs/models/{cfg.model.mri_model.pretrained_model_name}_split_{fold_ind}.pth"
+            
+            if cfg.model.get("dnam_model", False):
+                with open_dict(cfg):
+                    print("Model path", f"outputs/models/{cfg.model.dnam_model.pretrained_model_name}_split_{fold_ind}.pth")
+                    cfg.model.dnam_model.pretrained_model_path = f"outputs/models/{cfg.model.dnam_model.pretrained_model_name}_split_{fold_ind}.pth"
+            
+            if cfg.model.get("missing_modalities_strategy", False)=="decoder":
+                with open_dict(cfg):
+                    print("Model path", f"outputs/models/{cfg.model.mm_pretrained_model_name}_split_{fold_ind}.pth")
+                    cfg.model.mm_pretrained_model_path = f"outputs/models/{cfg.model.mm_pretrained_model_name}_split_{fold_ind}.pth" 
+                    if cfg.model.mm_decoder_config.get("mri_model", False):
+                        with open_dict(cfg):
+                            print("Model path", f"outputs/models/{cfg.model.mri_model.pretrained_model_name}_split_{fold_ind}.pth")
+                            cfg.model.mm_decoder_config.mri_model.pretrained_model_path = f"outputs/models/{cfg.model.mri_model.pretrained_model_name}_split_{fold_ind}.pth"
+                            print(cfg.model.mm_decoder_config.mri_model.pretrained_model_path)
+                print("cfg.model.mm_pretrained_model_path", cfg.model.mm_pretrained_model_path)
+            return cfg       

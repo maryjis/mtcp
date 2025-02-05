@@ -1,4 +1,4 @@
-experiment_name: "multimodal_test_mri_rna_mae"
+experiment_name: "multimodal_rna_mae_pretrained_model_freeze_mri_clustered_05_feb"
 n_epochs: 50
 n_intervals: 20
 random_seed: 1380
@@ -16,14 +16,14 @@ scheduler:
 
 type: "multimodal"
 strategy: "mae" # mae, survival
-modalities: ["rna", "mri"]
+modalities: ["rna","dnam", "mri"]
 multimodal_intersection_test: false
 architecture: "MAE"
 splits: 5
 data_path: "src/data/dataset.csv"
 save_path : "outputs/models/"
 rna_dataset_path: "src/data/rna_dataset.csv"
-device: "cuda:0"
+device: "cuda:2"
 remove_nan_column: 'RNA'
 batch_size: 24
 

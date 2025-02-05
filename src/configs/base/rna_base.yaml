@@ -1,4 +1,4 @@
-experiment_name: "rsna_mae_survival_random"
+experiment_name: "rsna_mae_survival_random_final_version"
 n_epochs: 50
 n_intervals: 20
 random_seed: 1380
