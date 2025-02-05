@@ -1,4 +1,4 @@
-experiment_name: "multimodal_pretrained_rna_dnam_without_mask_survival"
+experiment_name: "multimodal_pretrained_rna_dnam_survival_3_mod_freeze_cluster_mri"
 n_epochs: 50
 n_intervals: 20
 random_seed: 1380
@@ -23,7 +23,7 @@ splits: 5
 data_path: "src/data/dataset.csv"
 save_path : "outputs/models/"
 rna_dataset_path: "src/data/rna_dataset.csv"
-device: "cuda:4"
+device: "cuda:1"
 remove_nan_column: 'RNA'
 batch_size: 24
 
