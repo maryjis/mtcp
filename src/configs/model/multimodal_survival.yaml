@@ -62,7 +62,7 @@ fusion_depth: 1
 fusion_dim: 256
 fusion_nhead: 4
 fusion_dim_feedforward: 0
-fusion_dropout: 0.1
+fusion_dropout: 0.4
 fusion_logits: "mean"
 fusion_masking: false
 
