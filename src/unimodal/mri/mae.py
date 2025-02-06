@@ -164,6 +164,14 @@ class MriMAEModel(ViTMAEModel):
             p2=self.config.patch_size, 
             p3=self.config.patch_size
         )
+        
+    def unpatchify(self, imgs, original_size: int =None):
+        batch_size = imgs.shape[0]
+        return imgs.reshape(batch_size,
+                            self.config.num_channels,
+                            self.config.mri_size,
+                            self.config.mri_size,
+                            self.config.mri_size)
 
 class MriMAEDecoderPred(nn.Module):
     def __init__(self, config):
@@ -230,6 +238,7 @@ class MriMAEForPreTraining(ViTMAEForPreTraining):
             p2=self.config.patch_size, 
             p3=self.config.patch_size
         )
+    
 
 class MriMaeSurvivalModel(nn.Module):
     def __init__(self, config):

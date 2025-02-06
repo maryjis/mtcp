@@ -1,0 +1,60 @@
+attention_probs_dropout_prob: 0.0
+decoder_hidden_size: 256
+decoder_intermediate_size: 512
+decoder_num_attention_heads: 4
+decoder_num_hidden_layers: 2
+hidden_act: "gelu"
+hidden_dropout_prob: 0.0
+hidden_size: 256 # maybe 384?
+initializer_range: 0.02
+intermediate_size: 1024
+layer_norm_eps: 1e-12
+mask_ratio: 0.0
+model_type: "vit_mae"
+norm_pix_loss: false
+num_attention_heads: 4
+num_channels: 1
+num_hidden_layers: 4
+qkv_bias: true
+
+patch_size: 16 #
+mri_size: 64
+
+#survival-specific
+is_load_pretrained: true
+pretrained_model_name: "mri_mae_pretrain_t1c_num_layers_enc_4_dec_2"
+output_dim: 20 #should 
+
+embeddings_layers:
+  - name: "Conv3d"
+    args: 
+      - 1 #in
+      - 16 #out
+      - 4 #kernel
+    kwargs:
+      stride: 4
+  - name: "GELU"
+  - name: "Conv3d"
+    args: 
+      - 16 #in
+      - 256 #out
+      - 4 #kernel
+    kwargs:
+      stride: 4
+
+decoder_pred_layers:
+  - name: "ConvTranspose3d"
+    args:
+      - 256
+      - 16
+      - 4
+    kwargs:
+      stride: 4
+  - name: "GELU"
+  - name: "ConvTranspose3d"
+    args:
+      - 16
+      - 1
+      - 4
+    kwargs:
+      stride: 4
