@@ -5,6 +5,9 @@ from omegaconf import DictConfig, OmegaConf
 import pandas as pd
 from src.unimodal.rna.dataset import RNADataset, RNASurvivalDataset
 from src.unimodal.wsi.datasets import WSIDataset, WSIDataset_patches, SurvivalWSIDataset
+from src.unimodal.dna.datasets import DNAmDataset, DNAmSurvivalDataset
+from src.unimodal.dna.models import initialise_dnam_mae_model,  initialise_dnam_model, DNAmMAEForPreTraining
+from src.unimodal.dna.preprocessor import DNAmPreprocessor
 from src.unimodal.mri.datasets import SurvivalMRIDataset, MRIEmbeddingDataset, MRIDataset, MRISurvivalDataset
 from src.unimodal.rna.preprocessor import RNAPreprocessor
 from src.preprocessor import BaseUnimodalPreprocessor
@@ -33,6 +36,8 @@ from src.unimodal.wsi.transforms import NviewsAugment, contrastive_base
 from torch.profiler import profile, record_function, ProfilerActivity, schedule
 from src.utils import trace_handler
 from functools import partial
+from src.unimodal.dna.transforms import padded_transforms_simple
+from src.early_stopper import EarlyStopper
 
 class Trainer(object):
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
@@ -66,6 +71,13 @@ class Trainer(object):
             if self.cfg.base.strategy != "mae": #labels are not used for pre-training
                 preproc = BaseUnimodalPreprocessor(splits["train"], self.cfg.base.n_intervals)
                 preproc.fit()
+            return preproc
+        
+        elif modality == "dnam":
+            preproc = DNAmPreprocessor(splits["train"], self.cfg.data.dnam.dnam_dataset_path,self.cfg.base.n_intervals, 
+                                           self.cfg.data.dnam.var_threshold,
+                                          self.cfg.data.dnam.is_cluster_genes , self.cfg.data.dnam.clustering_threshold)
+            preproc.fit()
             return preproc
 
         else:
@@ -226,7 +238,11 @@ class UnimodalSurvivalTrainer(Trainer):
                         dataset = WSIDataset_patches(split, return_mask=True)
                         # Создаем SurvivalMRIDataset с нужными параметрами
                         datasets[split_name] = SurvivalWSIDataset(split, dataset, is_hazard_logits=True)
-
+        elif modality == "dnam":
+            for split_name, dataset in splits.items():
+                splits[split_name] = preproc.transform_labels(dataset)
+                datasets[split_name] = DNAmSurvivalDataset(splits[split_name], self.cfg.data.dnam.dnam_dataset_path, 
+                                                 transform = transforms, is_hazard_logits = True, column_order=preproc.get_column_order())
 
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
@@ -259,6 +275,13 @@ class UnimodalSurvivalTrainer(Trainer):
                                       emb_dropout=self.cfg.model.emb_dropout, n_outputs=self.cfg.base.n_intervals)
                 else:
                     raise NotImplementedError("Exist only MAE and CNN architectures for mri modality")
+        elif self.cfg.base.modalities[0]=="dnam":
+                if self.cfg.base.architecture=="MAE":
+                    return initialise_dnam_mae_model(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+                elif self.cfg.base.architecture=="CNN":
+                    return initialise_dnam_model(self.cfg.model)
+                else:
+                    raise NotImplementedError("Exist only for rna. Initialising datasets for other modalities aren't declared")      
         else:
                 raise NotImplementedError("Exist only for rna and mri. Initialising models for other modalities aren't declared")   
 
@@ -332,6 +355,8 @@ class UnimodalMAETrainer(Trainer):
             return MriMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
         elif self.cfg.base.modalities[0]=="wsi":
             return WsiMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+        elif self.cfg.base.modalities[0]=="dnam":
+            return DNAmMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))        
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising models for other modalities aren't declared") 
         
@@ -363,6 +388,12 @@ class UnimodalMAETrainer(Trainer):
                     # Создаем датасет с нужными параметрами
                     datasets[split_name] = WSIDataset_patches(
                         split, return_mask=False)
+        
+        elif modality == "dnam":
+            for split_name, dataset in splits.items():
+                splits[split_name] = preproc.transform_labels(dataset)
+                datasets[split_name] = DNAmDataset(splits[split_name], self.cfg.data.dnam.dnam_dataset_path, 
+                                                 transform = transforms, is_hazard_logits = True, column_order=preproc.get_column_order())
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
         
