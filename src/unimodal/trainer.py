@@ -202,7 +202,7 @@ class UnimodalSurvivalTrainer(Trainer):
             for split_name, dataset in splits.items():
                 splits[split_name] = preproc.transform_labels(dataset)
                 datasets[split_name] = RNASurvivalDataset(splits[split_name], self.cfg.data.rna.rna_dataset_path, 
-                                                 transform = transforms, is_hazard_logits = True, column_order=preproc.get_column_order())
+                                                 transform = transforms, is_hazard_logits = True, column_order=preproc.get_column_order(), debug_mode = self.cfg.data.rna.get("debug_mode", False))
 
         elif modality == "mri":
                 splits = {split_name: preproc.transform_labels(split) for split_name, split in splits.items()}

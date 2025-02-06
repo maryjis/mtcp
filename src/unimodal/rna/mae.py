@@ -319,6 +319,7 @@ class RnaSurvivalModel(nn.Module):
         super().__init__()
         self.config =config
         if config.is_load_pretrained:
+            print("RnaSurvivalModel", self.config.pretrained_model_path)
             self.vit = RnaMAEModel.from_pretrained(self.config.pretrained_model_path, config = self.config)
         else:
             self.vit = RnaMAEModel(config)
