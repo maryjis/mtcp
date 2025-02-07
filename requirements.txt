@@ -15,3 +15,4 @@ loguru==0.7.3
 pycox==0.3.0
 transformers==4.47.1
 pyvips==2.2.1
+pillow
