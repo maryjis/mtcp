@@ -116,6 +116,8 @@ def load_splits(data_path: Path, fold_ind : int, remove_nan_column : str,
         if multimodal_intersection_test:
             dataset_intersection_test = dataset_test.copy()
             for modality in modalities:
+                if modality == "clinical":
+                    continue
                 dataset_intersection_test =dataset_intersection_test.loc[dataset_intersection_test[MODALITY_TO_COLUMN_MAP[modality]].notnull()]
             print("Multimodal intersection test: ", dataset_intersection_test.shape)
             return {"train" :dataset_train.reset_index(drop=True), 

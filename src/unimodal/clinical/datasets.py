@@ -26,13 +26,15 @@ class ClinicalDataset(BaseDataset):
     def len(self):
         return self.data.shape[0]
     
-    def get_column_names(self):
-        return self.column_order
     
     def __getitem__(self, idx):
         sample = self.data.iloc[idx]
         mask = False
-        sample = sample[self.selected_columns]
+        sample = sample[self.selected_columns].values.reshape(1, -1).astype(np.float32)
+        sample = torch.from_numpy(sample)
+        if self.transform:
+            sample = self.transform(sample)
+            sample = torch.from_numpy(sample)
         return sample.float(), mask
  
             
@@ -42,11 +44,6 @@ class ClinicalSurvivalDataset(ClinicalDataset):
             is_hazard_logits = False, return_mask =True):
             super().__init__(data_split, dataset_dir, selected_columns= selected_columns,transform = transform, is_hazard_logits = is_hazard_logits, return_mask=return_mask)
             
-            # TODO подумать как тут лучше сделать выгрузку для мультимодальных данных 
-            # TODO добавить return_mask
-            # if not return_nan:
-            #     self.data  = self.data.loc[self.data['RNA'].isin(self.rna_dataset['file_id'].to_list())]
-
         def __getitem__(self, idx):
             sample, mask = super().__getitem__(idx)
             if self.is_hazard_logits:

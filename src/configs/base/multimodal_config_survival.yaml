@@ -1,5 +1,5 @@
-experiment_name: "multimodal_pretrained_rna_dnam_survival_3_mod_freeze_cluster_mri"
-n_epochs: 50
+experiment_name: "multimodal_pretrained_rna_dnam_survival_3_mod_freeze_mri_clinical"
+n_epochs: 10
 n_intervals: 20
 random_seed: 1380
 
@@ -16,7 +16,7 @@ scheduler:
 
 type: "multimodal"
 strategy: "survival" # mae, survival
-modalities: ["rna", "dnam", "mri"]
+modalities: ["rna", "dnam", "mri", "clinical"]
 multimodal_intersection_test: true
 architecture: "MAE"
 splits: 5

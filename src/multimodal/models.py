@@ -120,6 +120,8 @@ class MultiMAEModel(PreTrainedModel):
                     self.cfg.hidden_size,
                     self.cfg.is_projection
                 )
+            elif modality == "clinical":
+                pass  
             else:
                 # Add support for other modalities
                 raise NotImplementedError(f"Encoder for modality {modality} not implemented")
@@ -274,6 +276,8 @@ class MultiMAEModel(PreTrainedModel):
         is_first = True
 
         for modality in self.modalities:
+            if modality =="clinical":
+                continue
             seq_length = self.get_patches_number(modality)
             sample = x[modality]
             
@@ -470,6 +474,8 @@ class MultiMaeForPretraining(nn.Module):
         modality_losses = {}
         
         for modality in self.modalities:
+            if modality =="clinical":
+                continue
             if modality not in modality_losses:
                 modality_losses[modality] = 0
             # Get number of patches for current modality
@@ -615,7 +621,6 @@ class MultiMaeForSurvival(nn.Module):
             
         if cfg.missing_modalities_strategy =="decoder":
             model_state_dict = torch.load(cfg.mm_pretrained_model_path)
-            print(model_state_dict.keys())
             self.decoder_mm = MultiMaeForPretraining(ViTMAEConfig(**cfg.mm_decoder_config))
             self.decoder_mm.load_state_dict(model_state_dict)
             
@@ -653,8 +658,19 @@ class MultiMaeForSurvival(nn.Module):
             
         else:
             raise ValueError(f"Invalid fusion strategy: {cfg.fusion_strategy}")
-            
-        self.projection = nn.Linear(cfg.fusion_dim, cfg.output_dim)
+        
+        if cfg.fusion_strategy_is_pretrained:
+                model_state_dict = torch.load(cfg.pretrained_model_path)
+                print(model_state_dict.keys())
+                model_state_dict = {k.replace("fusion_strategy.", "", 1): v for k, v in model_state_dict.items() if k.startswith("fusion_strategy.")}  
+                self.fusion_strategy.load_state_dict(model_state_dict)
+                for param in self.fusion_strategy.parameters():
+                    param.requires_grad = False
+        if "clinical" in self.modalities:
+            #TODO add special param for it -> cfg.fusion_dim+3
+            self.projection = nn.Linear(cfg.fusion_dim+3, cfg.output_dim)
+        else:           
+            self.projection = nn.Linear(cfg.fusion_dim, cfg.output_dim)
         
     def get_primary_order(self, x,ids_restore):
         mask_tokens = self.model.mask_token.repeat(x.shape[0], ids_restore.shape[1] + 1 - x.shape[1], 1)
@@ -668,11 +684,18 @@ class MultiMaeForSurvival(nn.Module):
             
     def forward(self, x: Dict[str, torch.FloatTensor], masks: Dict[str, torch.FloatTensor], interpolate_pos_encoding: bool = False):
         # print({modality: value.mean() for modality, value  in x.items()})
-        
+        if "clinical" in x.keys():
+
+            clinical_data = x["clinical"].clone()
+            del x["clinical"]
+            del masks["clinical"]
+            
         if self.cfg.missing_modalities_strategy =="decoder":
             decoded_x = self.decoder_mm(x, masks, interpolate_pos_encoding)
             decoded_x = self.decoder_mm.split_modalities(decoded_x.logits)
             for modality in self.modalities:
+                if modality == "clinical":
+                    continue
                 if torch.any(~masks[modality]):
                     missing_modalities_ids = torch.nonzero(~masks[modality], as_tuple=True)[0].to(masks[modality].device)
                     ##  patchify todo
@@ -680,7 +703,7 @@ class MultiMaeForSurvival(nn.Module):
                     masks[modality].fill_(1)
 
             
-            
+                
         concat_x = self.model(x, masks, interpolate_pos_encoding)
         
       
@@ -727,6 +750,14 @@ class MultiMaeForSurvival(nn.Module):
         else:
             concat_x = self.fusion_strategy(concat_x.last_hidden_state)
         
-
-        logits = self.projection(concat_x[:,0,:])  
+        if "clinical" in self.modalities:
+            print("concat_x[:,0,:]: ", concat_x[:,0,:].shape)
+            print("clinical_data[:,0,:]: ", clinical_data[:,0,:].shape)
+            print("concat_x[:,0,:],mean(): ", concat_x[:,0,:].mean())
+            print("clinical_data[:,0,:]:,mean(): ", clinical_data[:,0,:].mean())
+            concat_with_clinical =torch.cat([concat_x[:,0,:], clinical_data[:,0,:]], axis =-1)
+            print("concat_with_clinical.shape ", concat_with_clinical.shape)
+            logits = self.projection(concat_with_clinical) 
+        else:    
+            logits = self.projection(concat_x[:,0,:])  
         return logits
