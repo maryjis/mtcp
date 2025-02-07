@@ -1,5 +1,7 @@
-experiment_name: "wsi base"
-n_epochs: 50
+experiment_name: "wsi mae"
+splits: 1
+n_epochs: 2
+
 n_intervals: 20
 random_seed: 1380
 
@@ -18,16 +20,21 @@ scheduler:
 type: "unimodal"
 strategy: "survival" # mae, survival
 modalities: ["wsi"] #rna, mri
-architecture: "CNN"
-splits: 5
+architecture: "MAE"
 data_path: "/home/a.beliaeva/mtcp/updated_utf8.csv"
 root_path: "../"
 save_path : "/home/a.beliaeva/mtcp/src/outputs/models/main_base/"
 device: "cuda:2"
-remove_nan_column: 'WSI'
+remove_nan_column: 'WSI_initial'
 batch_size: 24
+num_workers: 2
 
 log:
     logging: True
     wandb_project: "cancer_mtcp"
     wandb_run_name: ${base.experiment_name}
+
+profiling:
+    sort_by_keyword: self_cuda_time_total #by which parameter profiler output should be sorted
+    row_limit: 10 #how many rows should be in profiler output
+    is_print: True
