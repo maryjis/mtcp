@@ -1,5 +1,5 @@
 rna:
-    is_cluster_genes: True
+    is_cluster_genes: False
     clustering_threshold: 0.7
     scaling_method: UpperQuartileNormalizer
     scaling_params: {"quantile" : 50}
@@ -14,7 +14,11 @@ mri:
     root_path: "/data/BraTS_2023/MRI"
 
 dnam:
-    is_cluster_genes: True
+    is_cluster_genes: False
     clustering_threshold: 0.7
     var_threshold: 0.0
     dnam_dataset_path: "src/data/dna_dataset.csv"
+
+clinical:
+    dataset_path: "src/data/dataset.csv"
+    selected_columns: ["treatments_radiation_binary", "treatments_binary", "age_at_diagnosis"]

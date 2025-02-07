@@ -27,6 +27,11 @@ from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.unimodal.rna.mae import RnaMAEForPreTraining
 from src.unimodal.mri.mae import MriMAEForPreTraining, MriMaeSurvivalModel
 from src.utils import check_dir_exists, count_parameters, print_vit_sizes
+
+from src.unimodal.clinical.datasets import ClinicalDataset, ClinicalSurvivalDataset
+from src.unimodal.clinical.preprocessor import ClinicalPreprocessor
+from src.unimodal.clinical.transforms import base_scaling
+
 from tqdm.auto import tqdm
 from sklearn.preprocessing import QuantileTransformer, StandardScaler, MinMaxScaler
 from src.unimodal.rna.transforms import UpperQuartileNormalizer
@@ -68,6 +73,15 @@ class Trainer(object):
             preproc = DNAmPreprocessor(splits["train"], self.cfg.data.dnam.dnam_dataset_path,self.cfg.base.n_intervals, 
                                            self.cfg.data.dnam.var_threshold,
                                           self.cfg.data.dnam.is_cluster_genes , self.cfg.data.dnam.clustering_threshold)
+            preproc.fit()
+            return preproc
+        elif modality == "clinical":
+            preproc = ClinicalPreprocessor(splits["train"], 
+                                          self.cfg.data.clinical.dataset_path,
+                                          self.cfg.data.clinical.selected_columns, 
+                                          self.cfg.base.n_intervals,
+                                          StandardScaler, 
+                                          {})
             preproc.fit()
             return preproc
         else:
@@ -178,7 +192,9 @@ class UnimodalSurvivalTrainer(Trainer):
             elif self.cfg.base.architecture=="CNN":    
                 transforms = base_transforms(self.preproc.get_scaling())
         elif self.cfg.base.modalities[0]=="dnam":
-            transforms = padded_transforms_simple(cfg.model.get("size", None))        
+            transforms = padded_transforms_simple(cfg.model.get("size", None))
+        elif self.cfg.base.modalities[0]=="clinical":
+             transforms = base_scaling(self.preproc.get_scaling())       
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
 
         self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False,
@@ -227,6 +243,12 @@ class UnimodalSurvivalTrainer(Trainer):
                 splits[split_name] = preproc.transform_labels(dataset)
                 datasets[split_name] = DNAmSurvivalDataset(splits[split_name], self.cfg.data.dnam.dnam_dataset_path, 
                                                  transform = transforms, is_hazard_logits = True, column_order=preproc.get_column_order())
+        elif modality == "clinical":
+            for split_name, dataset in splits.items():
+                splits[split_name] = preproc.transform_labels(dataset)
+                datasets[split_name] = ClinicalSurvivalDataset(splits[split_name], self.cfg.data.clinical.dataset_path, self.cfg.data.clinical.selected_columns,
+                                                    transform = transforms, is_hazard_logits = True)
+                    
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
         
