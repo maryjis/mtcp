@@ -18,7 +18,7 @@ scheduler:
 
 
 type: "unimodal"
-strategy: "survival" # mae, survival
+strategy: "mae" # mae, survival
 modalities: ["wsi"] #rna, mri
 architecture: "MAE"
 data_path: "/home/a.beliaeva/mtcp/updated_utf8.csv"
@@ -26,7 +26,7 @@ root_path: "../"
 save_path : "/home/a.beliaeva/mtcp/src/outputs/models/main_mae/"
 device: "cuda:2"
 remove_nan_column: 'WSI_initial'
-batch_size: 8
+batch_size: 2
 num_workers: 2
 
 log:
