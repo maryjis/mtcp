@@ -21,12 +21,13 @@ class WsiMAEPatchEmbeddings(nn.Module):
         self.patch_size = cfg.patch_size  # Ожидаем одно число, например 16
         self.hidden_size = cfg.hidden_size
         self.num_channels = cfg.num_channels
+        max_patches_per_sample = cfg.max_patches_per_sample 
 
         # Количество подпатчей в одном 256x256 патче
         self.num_sub_patches = (self.image_size // self.patch_size) ** 2  # 16 * 16 = 256
 
         # Общее число патчей после разбиения всех max_patches_per_sample
-        self.total_patches = cfg.max_patches_per_sample * self.num_sub_patches
+        self.total_patches = max_patches_per_sample* self.num_sub_patches
 
         # Свёрточный слой для получения эмбеддингов
         self.projection = nn.Conv2d(
@@ -40,7 +41,9 @@ class WsiMAEPatchEmbeddings(nn.Module):
         Ожидаемый вход: [batch_size, max_patches_per_sample, 3, 256, 256]
         """
         b, n, c, h, w = wsi_tensor.shape  # b=batch_size, n=max_patches_per_sample
+        #print(b, n, c, h, w)
         p = self.patch_size  # (16)
+        #print(self.total_patches)
 
         # Проверяем, что размеры делятся без остатка
         if h % p != 0 or w % p != 0:
@@ -63,12 +66,18 @@ class WsiMAEPatchEmbeddings(nn.Module):
 
         # Преобразуем в (batch_size * num_patches, num_channels, patch_size, patch_size)
         b, n, c, h, w = patches.shape
+
         patches = rearrange(patches, 'b n c h w -> (b n) c h w')
+
         # Применяем свёрточный слой
         x = self.projection(patches)  # (b*n, hidden_size, 1, 1)
+
         x = x.squeeze(-1).squeeze(-1)  # Убираем последние размерности -> (b*n, hidden_size)
+
         # Преобразуем обратно в (batch_size, num_patches, hidden_size)
         x = rearrange(x, '(b n) c -> b n c', b=b, n=self.total_patches)
+        #print(f"WSI device: {wsi_tensor.device}, Projection device: {self.projection.weight.device}")
+        #assert wsi_tensor.device == self.projection.weight.device, "Ошибка: тензоры на разных устройствах!"
 
         return x  # (batch_size, total_patches, hidden_size)
 

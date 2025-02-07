@@ -1,9 +1,9 @@
 import hydra
-import torch
-import torch.multiprocessing as mp
 from omegaconf import DictConfig, OmegaConf, open_dict
-from src.utils import seed_everything, load_splits, agg_fold_metrics, init_wandb_logging
-from src.unimodal.trainer import UnimodalSurvivalTrainer, UnimodalMAETrainer
+from src.utils import  * 
+from src.unimodal.trainer import UnimodalSurvivalTrainer,  UnimodalMAETrainer
+from pathlib import Path
+from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.multimodal.trainer import MultiModalMAETrainer, MultiModalSurvivalTrainer
 
 @hydra.main(version_base=None, config_path="src/configs", config_name="unimodal_config_wsi_base")
@@ -77,5 +77,4 @@ def run(cfg : DictConfig) -> None:
     return final_test_metrics
 
 if __name__ == "__main__":
-    mp.set_start_method("spawn", force=True)  # ✅ Исправляем баг с дочерними процессами
     run()
