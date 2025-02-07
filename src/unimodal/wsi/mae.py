@@ -39,7 +39,7 @@ class WsiMAEPatchEmbeddings(nn.Module):
         Разбивает входные патчи на подпатчи.
         Ожидаемый вход: [batch_size, max_patches_per_sample, 3, 256, 256]
         """
-        b, n, c, h, w = wsi_tensor.shape  # n = max_patches_per_sample
+        b, n, c, h, w = wsi_tensor.shape  # b=batch_size, n=max_patches_per_sample
         p = self.patch_size  # (16)
 
         # Проверяем, что размеры делятся без остатка
@@ -48,9 +48,14 @@ class WsiMAEPatchEmbeddings(nn.Module):
 
         # Разбиваем каждый 256×256 патч на 16×16 подпатчи
         patches = wsi_tensor.unfold(3, p, p).unfold(4, p, p)  # [b, n, c, h//p, p, w//p, p]
-        patches = patches.permute(0, 1, 3, 5, 2, 4, 6).reshape(b, n * self.num_sub_patches, c, p, p)
 
-        return patches 
+        # Перестановка размерностей
+        patches = patches.permute(0, 1, 3, 5, 2, 4, 6).contiguous()
+
+        # Преобразуем обратно в [batch_size, total_patches, c, p, p]
+        patches = patches.view(b, n * self.num_sub_patches, c, p, p)
+
+        return patches
 
     def forward(self, wsi_tensor):
         """Разбивает входные патчи и пропускает их через эмбеддинги."""
@@ -59,11 +64,9 @@ class WsiMAEPatchEmbeddings(nn.Module):
         # Преобразуем в (batch_size * num_patches, num_channels, patch_size, patch_size)
         b, n, c, h, w = patches.shape
         patches = rearrange(patches, 'b n c h w -> (b n) c h w')
-
         # Применяем свёрточный слой
         x = self.projection(patches)  # (b*n, hidden_size, 1, 1)
         x = x.squeeze(-1).squeeze(-1)  # Убираем последние размерности -> (b*n, hidden_size)
-
         # Преобразуем обратно в (batch_size, num_patches, hidden_size)
         x = rearrange(x, '(b n) c -> b n c', b=b, n=self.total_patches)
 

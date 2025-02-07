@@ -233,12 +233,16 @@ class UnimodalSurvivalTrainer(Trainer):
             for split_name, split in splits.items():
                     # Определяем значение параметра num в зависимости от типа раздела
                     is_train = True if split_name == "train" else False
-                    
-                    # Создаем датасет с нужными параметрами
-                    dataset = WSIDataset(
-                        split, self.cfg.data.wsi.k, is_train=is_train, return_mask=True)
-                    # Создаем SurvivalMRIDataset с нужными параметрами
-                    datasets[split_name] = SurvivalWSIDataset(split, dataset, is_hazard_logits=True)
+                    if self.cfg.base.architecture=="CNN":
+                        # Создаем датасет с нужными параметрами
+                        dataset = WSIDataset(split, self.cfg.data.wsi.k, is_train=is_train, return_mask=True)
+                        # Создаем SurvivalMRIDataset с нужными параметрами
+                        datasets[split_name] = SurvivalWSIDataset(split, dataset, is_hazard_logits=True)
+                    elif self.cfg.base.architecture=="MAE":
+                        dataset = WSIDataset_patches(split, return_mask=True)
+                        # Создаем SurvivalMRIDataset с нужными параметрами
+                        datasets[split_name] = SurvivalWSIDataset(split, dataset, is_hazard_logits=True)
+
 
         elif modality == "dnam":
             for split_name, dataset in splits.items():
