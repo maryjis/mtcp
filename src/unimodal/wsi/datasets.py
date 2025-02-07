@@ -66,15 +66,21 @@ class WSIDataset(BaseDataset):
 
 
 
+import os
+import torch
+import pandas as pd
+from torchvision.transforms import functional as F
+from PIL import Image
+
 class WSIDataset_patches(BaseDataset):
     def __init__(
         self,
         data: pd.DataFrame,
         transform: "torchvision.transforms" = None,
         return_mask: bool = False,
-        is_hazard_logits = False,
+        is_hazard_logits=False,
         resize_to: tuple = (256, 256),
-        max_patches_per_sample: int = 10,
+        max_patches_per_sample: int = 100,
     ) -> None:
         super().__init__(data=data, transform=transform, return_mask=return_mask, is_hazard_logits=is_hazard_logits)
         self.resize_to = resize_to
@@ -98,25 +104,27 @@ class WSIDataset_patches(BaseDataset):
             patch = F.pil_to_tensor(patch).float() / 255.0
             patches.append(patch)
 
+        # Дополняем до max_patches_per_sample нулевыми патчами
+        while len(patches) < self.max_patches_per_sample:
+            patches.append(torch.zeros((3, *self.resize_to)))
+
         return patches
 
     def __getitem__(self, idx: int):
-        """Возвращает патчи для одного WSI"""
         sample = self.data.iloc[idx]
-        
+
         if not pd.isna(sample.WSI_initial):
             svs_path = sample.WSI_initial
             image_dir = os.path.dirname(svs_path)
             patches = self._load_patches(image_dir)
-
-            if len(patches) == 0:
-                patches = [torch.zeros((3, *self.resize_to))] * self.max_patches_per_sample  # Заполняем пустыми патчами
             mask = True
         else:
             patches = [torch.zeros((3, *self.resize_to))] * self.max_patches_per_sample
             mask = False
 
         patches = torch.stack(patches)  # [max_patches_per_sample, 3, 256, 256]
+
+        #print(f"Dataset index {idx}: patches shape {patches.shape}")
 
         if self.return_mask:
             return patches, mask
