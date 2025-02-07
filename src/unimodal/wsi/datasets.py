@@ -7,6 +7,8 @@ import os
 import numpy as np
 from torchvision import transforms
 from torchvision.transforms import functional as F
+from torch.utils.data import Dataset
+
 
 class PatchDataset(torch.utils.data.Dataset):
     def __init__(self, filepaths: Tuple[str, ...], transform: "torchvision.transforms" = None) -> None:
@@ -29,14 +31,14 @@ class PatchDataset(torch.utils.data.Dataset):
 class WSIDataset(BaseDataset):
     def __init__(
         self,
-        dataframe: pd.DataFrame,
+        data: pd.DataFrame,
         k: int,
         is_train: bool = True,
         return_mask: bool = False,
         transform: "torchvision.transforms" = None,
         is_hazard_logits = False # Добавлен параметр
     ) -> None:
-        super().__init__(data=dataframe, transform=transform, return_mask=return_mask, is_hazard_logits=is_hazard_logits)
+        super().__init__(data=data, transform=transform, return_mask=return_mask, is_hazard_logits=is_hazard_logits)
         self.k = k
         self.is_train = is_train
 
@@ -46,10 +48,7 @@ class WSIDataset(BaseDataset):
         if not pd.isna(sample.WSI):
             data = pd.read_csv(sample.WSI)
             # get k random embeddings
-            if self.is_train:
-                data = data.sample(self.k)
-            else:
-                data = data.iloc[:self.k]
+            data = data.sample(len(data))  
 
             data = torch.from_numpy(data.values).float()
             mask = True
@@ -65,80 +64,78 @@ class WSIDataset(BaseDataset):
         else:
             return data
 
-from torchvision.transforms import functional as F
 
-class WSIDataset_patches(torch.utils.data.Dataset):
+
+class WSIDataset_patches(BaseDataset):
     def __init__(
         self,
-        dataframe: pd.DataFrame,
-        return_mask: bool = False,
+        data: pd.DataFrame,
         transform: "torchvision.transforms" = None,
-        is_hazard_logits: bool = False,
-        batch_size: int = 16,
+        return_mask: bool = False,
+        is_hazard_logits = False,
         resize_to: tuple = (256, 256),
-        patch_size: tuple = (64, 64),  # Новый параметр для размера подпатча
+        max_patches_per_sample: int = 10,
     ) -> None:
-        self.data = dataframe
-        self.transform = transform
-        self.is_hazard_logits = is_hazard_logits
-        self.batch_size = batch_size
+        super().__init__(data=data, transform=transform, return_mask=return_mask, is_hazard_logits=is_hazard_logits)
         self.resize_to = resize_to
-        self.patch_size = patch_size  # Сохраняем размер подпатча
+        self.max_patches_per_sample = max_patches_per_sample
 
-    def _load_and_split_patches(self, image_dir: str):
-        """Загружает патчи и делит их на подпатчи."""
+    def _load_patches(self, image_dir: str):
+        """Загружает патчи, масштабирует и конвертирует в тензоры"""
         patch_dir = os.path.join(image_dir, "patches")
-        patch_files = sorted(os.listdir(patch_dir))
-        
-        sub_patches = []
-        for patch_file in patch_files:
-            if patch_file.endswith(".png"):
-                patch_path = os.path.join(patch_dir, patch_file)
-                patch = Image.open(patch_path).convert("RGB")
-                patch = F.resize(patch, self.resize_to)  # Изменяем размер основного патча
-                
-                # Разбиваем патч на подпатчи 64x64
-                for i in range(0, patch.size[1], self.patch_size[1]):
-                    for j in range(0, patch.size[0], self.patch_size[0]):
-                        sub_patch = F.crop(patch, i, j, self.patch_size[1], self.patch_size[0])
-                        sub_patches.append(sub_patch)
-        
-        return sub_patches
+        if not os.path.exists(patch_dir):
+            return []
+
+        patch_files = sorted([f for f in os.listdir(patch_dir) if f.endswith(".png")])
+        patches = []
+
+        for patch_file in patch_files[:self.max_patches_per_sample]:  # Ограничиваем число патчей
+            patch_path = os.path.join(patch_dir, patch_file)
+            patch = Image.open(patch_path).convert("RGB")
+            patch = F.resize(patch, self.resize_to)
+
+            # Преобразуем в тензор
+            patch = F.pil_to_tensor(patch).float() / 255.0
+            patches.append(patch)
+
+        return patches
 
     def __getitem__(self, idx: int):
+        """Возвращает патчи для одного WSI"""
         sample = self.data.iloc[idx]
         
         if not pd.isna(sample.WSI_initial):
             svs_path = sample.WSI_initial
             image_dir = os.path.dirname(svs_path)
-            sub_patches = self._load_and_split_patches(image_dir)
-            
-            if self.transform:
-                sub_patches = [F.pil_to_tensor(self.transform(patch)) for patch in sub_patches]
-            else:
-                sub_patches = [F.pil_to_tensor(patch) for patch in sub_patches]
-            
-            sub_patches = [patch.float() for patch in sub_patches]
-            sub_patches = torch.stack(sub_patches)  # Преобразуем в тензор
-            
-            # Отбрасываем лишние патчи
-            num_full_batches = len(sub_patches) // self.batch_size
-            sub_patches = sub_patches[:num_full_batches * self.batch_size]
-            
-            return sub_patches, True
+            patches = self._load_patches(image_dir)
+
+            if len(patches) == 0:
+                patches = [torch.zeros((3, *self.resize_to))] * self.max_patches_per_sample  # Заполняем пустыми патчами
+            mask = True
         else:
-            return torch.zeros((1, 3, *self.patch_size)), False
+            patches = [torch.zeros((3, *self.resize_to))] * self.max_patches_per_sample
+            mask = False
+
+        patches = torch.stack(patches)  # [max_patches_per_sample, 3, 256, 256]
+
+        if self.return_mask:
+            return patches, mask
+        else:
+            return patches
+
+    def __len__(self):
+        return len(self.data)  # Теперь длина = числу WSI, а не батчей!
+
         
 
 class SurvivalWSIDataset(torch.utils.data.Dataset):
     def __init__(
         self, 
-        split: pd.DataFrame,  # DataFrame с временными и событийными данными
-        dataset: torch.utils.data.Dataset,  
+        split: pd.DataFrame,
+        dataset: torch.utils.data.Dataset,
         is_hazard_logits: bool = False,
     ) -> None:
-        self.dataset = dataset 
-        # В зависимости от того, логиты ли это, или другие данные, мы подбираем колонки для времени и события
+        self.dataset = dataset
         if is_hazard_logits:
             self.time = torch.from_numpy(split["new_time"].values)
             self.event = torch.from_numpy(split["new_event"].values)
@@ -149,7 +146,8 @@ class SurvivalWSIDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx: int) -> Tuple[Any, torch.Tensor, torch.Tensor]:
         data, mask = self.dataset[idx]  # Разбиваем tuple
         #print(f"Index {idx} -> Data shape: {data.shape},  Time: {self.time[idx]}, Event: {self.event[idx]}")
+
         return data, mask, self.time[idx], self.event[idx]
 
     def __len__(self) -> int:
-        return len(self.dataset)  # Размер датасета (количество патчей)
+        return len(self.dataset)
