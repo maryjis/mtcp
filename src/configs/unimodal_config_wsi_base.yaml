@@ -1,7 +1,7 @@
 defaults: 
     - model: wsi_base
     - base: unimodal_wsi
-    - dataset: wsi_base
+    - data: wsi_base
 base:
     experiment_name: "wsi base from article"
     n_epochs: 50
@@ -24,9 +24,9 @@ base:
     strategy: "survival" # mae, survival
     modalities: ["wsi"] #rna, mri
     splits: 5
-    data_path: "src/data/dataset.csv"
+    data_path: "/home/a.beliaeva/mtcp/updated_utf8.csv"
     root_path: "../"
-    save_path : "outputs/models/"
+    save_path : "/home/a.beliaeva/mtcp/src/outputs/models/main_base/"
     device: "cuda:0"
     remove_nan_column: 'WSI'
     batch_size: 24
