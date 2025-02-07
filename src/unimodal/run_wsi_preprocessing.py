@@ -434,7 +434,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_patches", "-n", type=int, default=100, help="Number of patches to extracе")
     parser.add_argument("--patch_size", "-s", type=int, default=256, help="Size of the patches (256x256)")
     parser.add_argument("--iterations", "-i", type=int, default=1000, help="Number of iterations for patch extraction")
-    parser.add_argument("--wsi_file_path", "-w", default="/home/a.beliaeva/mtcp/src/data/dataset.csv", help="Path to the WSI files metadata")
+    parser.add_argument("--wsi_file_path", "-w", default="/home/a.beliaeva/mtcp/updated_utf8.csv", help="Path to the WSI files metadata")
     parser.add_argument("--downscale_factor", "-d", type=int, default=6, help="Downscale factor for thumbnail generation")
 
     args = parser.parse_args()
