@@ -27,10 +27,10 @@ base:
     data_path: "/home/a.beliaeva/mtcp/updated_utf8.csv"
     root_path: "../"
     save_path : "/home/a.beliaeva/mtcp/src/outputs/models/main_mae/"
-    device: "cuda:0"  # Указываем, что основное устройство - GPU 2
-    available_gpus: [0, 1, 2, 3]  # Указываем, какие GPU можно использовать
+    device: "cuda:2"  # Указываем, что основное устройство - GPU 2
+    available_gpus:  [0,1,2,3]  # Указываем, какие GPU можно использовать
     remove_nan_column: 'WSI_initial'
-    batch_size: 8
+    batch_size: 2
 
     log:
         logging: True
