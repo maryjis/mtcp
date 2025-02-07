@@ -12,32 +12,62 @@ import numpy as np
 import os 
 
 
+
 class WsiMAEPatchEmbeddings(nn.Module):
     def __init__(self, cfg):
         super().__init__()
-        self.patch_size = cfg.patch_size
+        super().__init__()
+        self.image_size = cfg.image_size  # Ожидаем одно число, например 256
+        self.patch_size = cfg.patch_size  # Ожидаем одно число, например 16
         self.hidden_size = cfg.hidden_size
         self.num_channels = cfg.num_channels
-        
-        # 2D convolution to extract features from patches
 
-        self.projection = nn.Conv2d(self.num_channels, self.hidden_size, kernel_size=self.patch_size, stride=self.patch_size)
+        # Количество подпатчей в одном 256x256 патче
+        self.num_sub_patches = (self.image_size // self.patch_size) ** 2  # 16 * 16 = 256
 
-    def forward(self, patches):
-        # Шаг 1: Преобразуем размерность патчей
-        # Объединяем батчи и патчи в одну размерность (b * n, c, h, w)
-        # 1. Преобразуем данные в формат (batch_size * num_patches, num_channels, patch_size, patch_size)
-        b=patches.shape[0]
+        # Общее число патчей после разбиения всех max_patches_per_sample
+        self.total_patches = cfg.max_patches_per_sample * self.num_sub_patches
+
+        # Свёрточный слой для получения эмбеддингов
+        self.projection = nn.Conv2d(
+            self.num_channels, self.hidden_size,
+            kernel_size=self.patch_size, stride=self.patch_size
+        )
+
+    def _split_patches(self, wsi_tensor):
+        """
+        Разбивает входные патчи на подпатчи.
+        Ожидаемый вход: [batch_size, max_patches_per_sample, 3, 256, 256]
+        """
+        b, n, c, h, w = wsi_tensor.shape  # n = max_patches_per_sample
+        p = self.patch_size  # (16)
+
+        # Проверяем, что размеры делятся без остатка
+        if h % p != 0 or w % p != 0:
+            raise ValueError(f"Размер изображения ({h}, {w}) не делится на ({p}, {p}) без остатка.")
+
+        # Разбиваем каждый 256×256 патч на 16×16 подпатчи
+        patches = wsi_tensor.unfold(3, p, p).unfold(4, p, p)  # [b, n, c, h//p, p, w//p, p]
+        patches = patches.permute(0, 1, 3, 5, 2, 4, 6).reshape(b, n * self.num_sub_patches, c, p, p)
+
+        return patches 
+
+    def forward(self, wsi_tensor):
+        """Разбивает входные патчи и пропускает их через эмбеддинги."""
+        patches = self._split_patches(wsi_tensor)  # Разбиение на подпатчи
+
+        # Преобразуем в (batch_size * num_patches, num_channels, patch_size, patch_size)
+        b, n, c, h, w = patches.shape
         patches = rearrange(patches, 'b n c h w -> (b n) c h w')
-        
-        # Шаг 2: Применяем свертку
-        x = self.projection(patches)
-        
-        
-        # Шаг 3: Преобразуем обратно в (batch_size, num_patches, hidden_size)
-        x = rearrange(x, '(b n) c 1 1 -> b n c', b=b)
-    
-        return x
+
+        # Применяем свёрточный слой
+        x = self.projection(patches)  # (b*n, hidden_size, 1, 1)
+        x = x.squeeze(-1).squeeze(-1)  # Убираем последние размерности -> (b*n, hidden_size)
+
+        # Преобразуем обратно в (batch_size, num_patches, hidden_size)
+        x = rearrange(x, '(b n) c -> b n c', b=b, n=self.total_patches)
+
+        return x  # (batch_size, total_patches, hidden_size)
 
 
 class WsiMAEEmbeddings(nn.Module):
@@ -50,7 +80,7 @@ class WsiMAEEmbeddings(nn.Module):
 
         self.cls_token = nn.Parameter(torch.zeros(1, 1, cfg.hidden_size))  # CLS token
         self.patch_embeddings = WsiMAEPatchEmbeddings(cfg)  # A class for embedding 2D patches
-        self.num_patches = cfg.num_patches  # Number of patches
+        self.num_patches = self.patch_embeddings.total_patches # Number of patches
         # Fixed sin-cos embedding for position information
         self.position_embeddings = nn.Parameter(
             torch.zeros(1, self.num_patches + 1, cfg.hidden_size), requires_grad=False
@@ -102,6 +132,7 @@ class WsiMAEEmbeddings(nn.Module):
         return sequence_unmasked, mask, ids_restore
 
     def forward(self, image_values, noise=None, interpolate_pos_encoding: bool = False):
+        #print(image_values.shape)
         batch_size, num_patches, num_channels, img_height, img_width = image_values.shape
         embeddings = self.patch_embeddings(image_values)  # Embedding patches into higher dimension
 
@@ -124,44 +155,61 @@ class WsiMAEModel(ViTMAEModel):
         self.embeddings = WsiMAEEmbeddings(config)
         self.post_init()
 
-    def patchify(self, imgs):
-        return imgs
+    def patchify(self, imgs, interpolate_pos_encoding: bool = False):
+        """
+        Разбивает входные изображения на патчи.
+        Ожидаемый вход: [batch_size, max_patches_per_sample, 3, image_size, image_size].
+        Возвращает: [batch_size, total_patches, num_channels * patch_size * patch_size].
+        """
+        p = self.config.patch_size  # Размер подпатча, например, 16
+        b, n, c, h, w = imgs.shape  # [batch_size, max_patches_per_sample, 3, 256, 256]
 
+        assert h == w == self.config.image_size, "Размер изображения не совпадает с config.image_size"
+        assert h % p == 0 and w % p == 0, "Размер изображения должен делиться на patch_size"
 
+        # Разбиение изображения на патчи с помощью rearrange
+        patches = rearrange(imgs, 'b n c (h p1) (w p2) -> b (n h w) c p1 p2', p1=p, p2=p)
+
+        # Объединяем каналы и размерности патча в один вектор признаков
+        patches = patches.flatten(2)  # [batch_size, total_patches, num_channels * patch_size^2]
+
+        return patches
 
 class WsiMAEDecoderPred(nn.Module):
     def __init__(self, config):
         super().__init__()
 
-        assert config.mri_size % config.patch_size == 0, "MRI size must be divisible by patch size"
-        
-        # Количество патчей по осям
-        self.num_patches_along_axis = config.mri_size // config.patch_size
+        assert config.image_size % config.patch_size == 0, \
+            f"image_size ({config.image_size}) должно делиться на patch_size ({config.patch_size}) без остатка."
+
+        # Количество патчей по высоте и ширине
+        self.num_patches_per_dim = config.image_size // config.patch_size
 
         # Декодер: 2D транспонированная свертка
         self.projector = nn.ConvTranspose2d(
-            config.decoder_hidden_size, 
-            config.num_channels, 
-            config.patch_size, 
+            config.decoder_hidden_size,
+            config.num_channels,
+            config.patch_size,
             stride=config.patch_size
         )
 
     def forward(self, x):
         batch_size = x.shape[0]
 
-        # Добавление размерности для свертки (необходимо для использования ConvTranspose2d)
+        # Добавление размерности для ConvTranspose2d
         x = x.unsqueeze(dim=-1).unsqueeze(dim=-1)  # [B, S, E] -> [B, S, E, 1, 1]
         
         # Перестановка: объединяем batch_size и seq_len, чтобы обработать их одновременно
         x = rearrange(x, 'b s e x y -> (b s) e x y')
 
         # Проход через транспонированную свертку для восстановления изображения
-        x = self.projector(x)  # [B*S, E, 1, 1] -> [B*S, C, 16, 16]
+        x = self.projector(x)  # [B*S, E, 1, 1] -> [B*S, C, patch_size, patch_size]
 
-        # Возврат к исходной форме: (b, s, c, h, w)
+        # Возврат к исходной форме: (B, num_patches, C, patch_size, patch_size)
         x = rearrange(x, '(b s) c h w -> b s (c h w)', b=batch_size)
 
         return x
+
     
 class WsiMAEDecoder(ViTMAEDecoder):
     def __init__(self, config, num_patches):
@@ -193,8 +241,26 @@ class WsiMAEForPreTraining(ViTMAEForPreTraining):
         self.decoder = WsiMAEDecoder(config, num_patches=self.vit.embeddings.num_patches)
         self.post_init()
 
-    def patchify(self, imgs):
-        return imgs
+    def patchify(self, imgs, interpolate_pos_encoding: bool = False):
+        """
+        Разбивает входные изображения на патчи.
+        Ожидаемый вход: [batch_size, max_patches_per_sample, 3, image_size, image_size].
+        Возвращает: [batch_size, total_patches, num_channels * patch_size * patch_size].
+        """
+        p = self.config.patch_size  # Размер подпатча, например, 16
+        b, n, c, h, w = imgs.shape  # [batch_size, max_patches_per_sample, 3, 256, 256]
+
+        assert h == w == self.config.image_size, "Размер изображения не совпадает с config.image_size"
+        assert h % p == 0 and w % p == 0, "Размер изображения должен делиться на patch_size"
+
+        # Разбиение изображения на патчи с помощью rearrange
+        patches = rearrange(imgs, 'b n c (h p1) (w p2) -> b (n h w) c p1 p2', p1=p, p2=p)
+
+        # Объединяем каналы и размерности патча в один вектор признаков
+        patches = patches.flatten(2)  # [batch_size, total_patches, num_channels * patch_size^2]
+
+        return patches
+
     
 
 class WsiMaeSurvivalModel(nn.Module):

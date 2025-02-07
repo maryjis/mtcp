@@ -70,7 +70,7 @@ class WSIEncoder(nn.Module):
         # Добавляем линейный слой для выходных признаков
         self.output_layer = nn.Linear(embedding_dim, n_outputs)  # Новый слой для выхода
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, masks=None) -> torch.Tensor:
         x = self.layer_norm(x)
         b, n, _ = x.shape
 
