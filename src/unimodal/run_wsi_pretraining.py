@@ -23,10 +23,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data_path",
         nargs="+",
-        default=["/home/belyaeva.a/TCGA-GBM_WSI", "/home/belyaeva.a/wsi"],
+        default=["/mnt/public-datasets/drim/TCGA-GBM_WSI", "/mnt/public-datasets/drim/wsi"],
     )
-    parser.add_argument("--batch_size", type=int, default=200)
-    parser.add_argument("--epochs", type=int, default=2)
+    parser.add_argument("--batch_size", type=int, default=256)
+    parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--temperature", type=float, default=0.07)
     parser.add_argument("--weight_decay", type=float, default=1e-6)
@@ -36,8 +36,8 @@ if __name__ == "__main__":
     parser.add_argument("--n_gpus", type=int, default=4)
     parser.add_argument("--k", type=int, default=10)
     parser.add_argument("--seed", type=int, default=1999)
-    parser.add_argument("--model_path", type=str, default="outputs/models/wsi_encoder.pth")
-    parser.add_argument("--wandb_entity", type=str, default=None)  # Добавляем entity для wandb
+    parser.add_argument("--model_path", type=str, default="/home/a.beliaeva/mtcp/src/outputs/models/wsi_encoder.pth")
+    parser.add_argument("--entity", type=str, default=None)  # Добавляем entity для wandb
     parser.add_argument("--wandb_project", type=str, default="cancer_mtcp")  # Добавляем проект для wandb
     args = parser.parse_args()
 
@@ -110,10 +110,10 @@ if __name__ == "__main__":
     )
 
     # Initialize wandb for logging
-    if args.wandb_entity:
+    if args.entity:
         wandb.init(
             project=args.wandb_project,
-            entity=args.wandb_entity,
+            entity=args.entity,
             config=vars(args),
         )
         logger.info("Wandb logging initialized!")
@@ -133,7 +133,7 @@ if __name__ == "__main__":
         k=args.k,
     )
 
-    if args.wandb_entity:
+    if args.entity:
         wandb.finish()  # End the wandb run
 
     logger.info("Training finished!")

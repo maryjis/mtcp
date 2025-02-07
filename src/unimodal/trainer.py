@@ -4,15 +4,10 @@ from typing import Dict, List, Tuple, Union
 from omegaconf import DictConfig, OmegaConf
 import pandas as pd
 from src.unimodal.rna.dataset import RNADataset, RNASurvivalDataset
-<<<<<<< HEAD
-
 from src.unimodal.dna.datasets import DNAmDataset, DNAmSurvivalDataset
 from src.unimodal.dna.models import initialise_dnam_mae_model,  initialise_dnam_model, DNAmMAEForPreTraining
 from src.unimodal.dna.preprocessor import DNAmPreprocessor
 from src.unimodal.wsi.datasets import WSIDataset, WSIDataset_patches, SurvivalWSIDataset
-=======
-from src.unimodal.wsi.datasets import WSIDataset, WSIDataset_patches, SurvivalWSIDataset
->>>>>>> f1b274f (Update trainer.py)
 from src.unimodal.mri.datasets import SurvivalMRIDataset, MRIEmbeddingDataset, MRIDataset, MRISurvivalDataset
 
 from src.unimodal.rna.preprocessor import RNAPreprocessor
@@ -38,12 +33,7 @@ from tqdm.auto import tqdm
 from sklearn.preprocessing import QuantileTransformer, StandardScaler, MinMaxScaler
 from src.unimodal.rna.transforms import UpperQuartileNormalizer
 from src.unimodal.mri.transforms import get_basic_tumor_transforms
-<<<<<<< HEAD
-from src.unimodal.dna.transforms import padded_transforms_simple
-from src.early_stopper import EarlyStopper
 from src.unimodal.wsi.transforms import NviewsAugment, contrastive_base
-=======
->>>>>>> f1b274f (Update trainer.py)
 from torch.profiler import profile, record_function, ProfilerActivity, schedule
 from src.utils import trace_handler
 from functools import partial
@@ -277,7 +267,6 @@ class UnimodalSurvivalTrainer(Trainer):
                     return MRIEmbeddingEncoder(self.cfg.model.input_embedding_dim, self.cfg.model.dropout, self.cfg.base.n_intervals)
                 else:
                     raise NotImplementedError("Exist only MAE and CNN architectures for mri modality")
-<<<<<<< HEAD
         elif self.cfg.base.modalities[0]=="dnam":
                 if self.cfg.base.architecture=="MAE":
                     return initialise_dnam_mae_model(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
@@ -295,9 +284,6 @@ class UnimodalSurvivalTrainer(Trainer):
                                       emb_dropout=self.cfg.model.emb_dropout, n_outputs=self.cfg.base.n_intervals)
                 else:
                     raise NotImplementedError("Exist only MAE and CNN architectures for mri modality")
-=======
-
->>>>>>> f1b274f (Update trainer.py)
         else:
                 raise NotImplementedError("Exist only for rna and mri. Initialising models for other modalities aren't declared")   
 
@@ -379,14 +365,10 @@ class UnimodalMAETrainer(Trainer):
             return  RnaMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
         elif self.cfg.base.modalities[0]=="mri":
             return MriMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
-<<<<<<< HEAD
         elif self.cfg.base.modalities[0]=="dnam":
             return DNAmMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
         elif self.cfg.base.modalities[0]=="wsi":
             return WsiMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
-=======
-
->>>>>>> f1b274f (Update trainer.py)
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising models for other modalities aren't declared") 
         
@@ -411,8 +393,6 @@ class UnimodalMAETrainer(Trainer):
                     return_mask=True,
                     tensor_name=self.cfg.data.mri.get("tensor_name", None)  
                 )
-
-<<<<<<< HEAD
         elif modality == "dnam":
             for split_name, dataset in splits.items():
                 splits[split_name] = preproc.transform_labels(dataset)
@@ -427,9 +407,6 @@ class UnimodalMAETrainer(Trainer):
                     # Создаем датасет с нужными параметрами
                     dataset = WSIDataset_patches(
                         split, transform=NviewsAugment(contrastive_base, n_views=self.cfg.data.wsi.n_views), is_train=is_train, return_mask=False)
-=======
-
->>>>>>> f1b274f (Update trainer.py)
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
         
