@@ -80,7 +80,7 @@ class WSIDataset_patches(BaseDataset):
         return_mask: bool = False,
         is_hazard_logits=False,
         resize_to: tuple = (256, 256),
-        max_patches_per_sample: int = 100,
+        max_patches_per_sample: int = 300,
     ) -> None:
         super().__init__(data=data, transform=transform, return_mask=return_mask, is_hazard_logits=is_hazard_logits)
         self.resize_to = resize_to
@@ -135,6 +135,7 @@ class WSIDataset_patches(BaseDataset):
         return len(self.data)  # Теперь длина = числу WSI, а не батчей!
 
         
+
 
 class SurvivalWSIDataset(torch.utils.data.Dataset):
     def __init__(
