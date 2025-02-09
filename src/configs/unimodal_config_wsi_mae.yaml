@@ -28,7 +28,7 @@ base:
     root_path: "../"
     save_path : "/home/a.beliaeva/mtcp/src/outputs/models/main_mae/"
     device: "cuda:1"  # Указываем, что основное устройство - GPU 2
-    available_gpus:  [0, 1, 3, 4]  # Указываем, какие GPU можно использовать
+    available_gpus:  [0, 1, 2, 3, 4]  # Указываем, какие GPU можно использовать
     remove_nan_column: 'WSI_initial'
     batch_size: 8
 

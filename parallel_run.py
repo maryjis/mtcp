@@ -2,92 +2,89 @@ import hydra
 import torch
 import torch.multiprocessing as mp
 from omegaconf import DictConfig, OmegaConf, open_dict
-from src.utils import seed_everything, load_splits, agg_fold_metrics
+from src.utils import seed_everything, load_splits, agg_fold_metrics, init_wandb_logging
 from src.unimodal.trainer import UnimodalSurvivalTrainer, UnimodalMAETrainer
 from src.multimodal.trainer import MultiModalMAETrainer, MultiModalSurvivalTrainer
 from pathlib import Path
 import wandb
 import queue
-import time
-from collections import defaultdict
-
-MAX_FOLDS_PER_GPU = 2  # ✅ Не более 2 фолдов на 1 GPU
 
 
-def train_fold(fold_ind, cfg, device, log_queue, gpu_usage):
+
+def train_fold(fold_ind, cfg, device, log_queue):
     """
     Обучение одного фолда в отдельном процессе.
     """
-    try:
-        torch.cuda.set_device(device)
-        print(f"Fold #{fold_ind} running on GPU {device}")
+    torch.cuda.set_device(device)
+    print(f"Fold #{fold_ind} running on GPU {device}")
 
-        seed_everything(cfg.base.random_seed + fold_ind)
+    seed_everything(cfg.base.random_seed + fold_ind)
 
+    with open_dict(cfg):
+        cfg.base.device = f"cuda:{device}"
+        cfg.base.save_path = f"outputs/models/{cfg.base.experiment_name}_split_{fold_ind}.pth"
+
+    if cfg.model.get("is_load_pretrained", False):
         with open_dict(cfg):
-            cfg.base.device = f"cuda:{device}"
-            cfg.base.save_path = f"outputs/models/{cfg.base.experiment_name}_split_{fold_ind}.pth"
+            cfg.model.pretrained_model_path = f"outputs/models/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth"
 
-        if cfg.model.get("is_load_pretrained", False):
-            with open_dict(cfg):
-                cfg.model.pretrained_model_path = f"outputs/models/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth"
+    splits = load_splits(
+        Path(cfg.base.data_path), 
+        fold_ind, 
+        cfg.base.remove_nan_column, 
+        max_samples_per_split=cfg.base.get("max_samples_per_split", None)
+    )
 
-        splits = load_splits(
-            Path(cfg.base.data_path), 
-            fold_ind, 
-            cfg.base.remove_nan_column, 
-            max_samples_per_split=cfg.base.get("max_samples_per_split", None)
+    # Выбор тренера
+    if cfg.base.type == 'unimodal':
+        trainer_cls = UnimodalSurvivalTrainer if cfg.base.strategy == "survival" else UnimodalMAETrainer
+    elif cfg.base.type == 'multimodal':
+        trainer_cls = MultiModalSurvivalTrainer if cfg.base.strategy == "survival" else MultiModalMAETrainer
+    else:
+        raise NotImplementedError(f"Unknown base type: {cfg.base.type}")
+
+    trainer = trainer_cls(splits, cfg)
+
+    # ✅ **Инициализация W&B в каждом процессе**
+    if cfg.base.log.logging:
+        wandb.init(
+            project=cfg.base.log.wandb_project,
+            name=f"{cfg.base.log.wandb_run_name}_fold_{fold_ind}",
+            config=OmegaConf.to_container(cfg, resolve=True),
+            reinit=True
         )
 
-        # Выбор тренера
-        if cfg.base.type == 'unimodal':
-            trainer_cls = UnimodalSurvivalTrainer if cfg.base.strategy == "survival" else UnimodalMAETrainer
-        elif cfg.base.type == 'multimodal':
-            trainer_cls = MultiModalSurvivalTrainer if cfg.base.strategy == "survival" else MultiModalMAETrainer
-        else:
-            raise NotImplementedError(f"Unknown base type: {cfg.base.type}")
+    valid_metrics = trainer.train(fold_ind)
+    test_metrics = trainer.evaluate(fold_ind)
 
-        trainer = trainer_cls(splits, cfg)
+    # 🔥 **Отправляем метрики в главную очередь**
+    log_queue.put(("valid", fold_ind, valid_metrics))
+    log_queue.put(("test", fold_ind, test_metrics))
+    log_queue.put(("done", fold_ind, None))  # Сигнал завершения процесса
 
-        # ✅ **Инициализация W&B в каждом процессе**
-        if cfg.base.log.logging:
-            wandb.init(
-                project=cfg.base.log.wandb_project,
-                name=f"{cfg.base.log.wandb_run_name}_fold_{fold_ind}",
-                config=OmegaConf.to_container(cfg, resolve=True),
-                reinit=True
-            )
-
-        valid_metrics = trainer.train(fold_ind)
-        test_metrics = trainer.evaluate(fold_ind)
-
-        # 🔥 **Отправляем метрики в главную очередь**
-        log_queue.put(("valid", fold_ind, valid_metrics))
-        log_queue.put(("test", fold_ind, test_metrics))
-        log_queue.put(("done", fold_ind, None))  # Сигнал завершения процесса
-
-        wandb.finish()  # Завершаем сеанс W&B в процессе
-
-    finally:
-        gpu_usage[device] -= 1  # ✅ Освобождаем GPU после завершения
-
+    wandb.finish()  # Завершаем сеанс W&B в процессе
 
 @hydra.main(version_base=None, config_path="src/configs", config_name="unimodal_config_wsi_mae")
 def run(cfg: DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))
 
     num_folds = cfg.base.splits
-    available_gpus = cfg.base.get("available_gpus", [0, 1, 3, 4])  # Доступные GPU
+    available_gpus = cfg.base.get("available_gpus", [0, 1, 2, 3, 4])  # Список доступных GPU
 
-    print(f"Available GPUs: {available_gpus}, running {num_folds} folds dynamically.")
+    print(f"Available GPUs: {available_gpus}, running {num_folds} folds in parallel.")
 
     log_queue = mp.Queue()  # Очередь для сбора метрик
-    gpu_usage = {gpu: 0 for gpu in available_gpus}  # ✅ Отслеживаем загрузку GPU (0 - свободен)
+    processes = []
+
+    for fold_ind in range(num_folds):
+        device = available_gpus[fold_ind % len(available_gpus)]
+        p = mp.Process(target=train_fold, args=(fold_ind, cfg, device, log_queue))
+        p.start()
+        processes.append(p)
 
     all_valid_metrics = []
     all_test_metrics = []
-    finished_folds = 0  # Количество завершённых фолдов
-    processes = {}
+    finished_folds = 0  # Счетчик завершенных процессов
 
     # ✅ **Логирование W&B в главном процессе**
     if cfg.base.log.logging:
@@ -97,14 +94,6 @@ def run(cfg: DictConfig) -> None:
             config=OmegaConf.to_container(cfg, resolve=True),
             reinit=True
         )
-
-    # 🟢 **Запускаем первые фолды**
-    for fold_ind in range(min(num_folds, len(available_gpus))):
-        best_gpu = min(gpu_usage, key=gpu_usage.get)  # Выбираем самый свободный GPU
-        gpu_usage[best_gpu] += 1
-        p = mp.Process(target=train_fold, args=(fold_ind, cfg, best_gpu, log_queue, gpu_usage))
-        p.start()
-        processes[fold_ind] = p
 
     while finished_folds < num_folds:
         try:
@@ -116,34 +105,22 @@ def run(cfg: DictConfig) -> None:
                 all_test_metrics.append(metrics)
                 wandb.log({f"test/fold_{fold_ind}/{key}": value for key, value in metrics.items()})
             elif metric_type == "done":
-                finished_folds += 1
-                processes[fold_ind].join()
-                del processes[fold_ind]  # Удаляем завершенный процесс из списка
-
-                # 🆕 **Запускаем следующий фолд на самом свободном GPU**
-                if finished_folds + len(processes) < num_folds:
-                    next_fold = finished_folds + len(processes)
-                    best_gpu = min(gpu_usage, key=gpu_usage.get)  # Выбираем самый свободный GPU
-                    if gpu_usage[best_gpu] < MAX_FOLDS_PER_GPU:  # ✅ Не больше 2 фолдов на GPU
-                        gpu_usage[best_gpu] += 1
-                        p = mp.Process(target=train_fold, args=(next_fold, cfg, best_gpu, log_queue, gpu_usage))
-                        p.start()
-                        processes[next_fold] = p
-
+                finished_folds += 1  # Увеличиваем счётчик завершенных процессов
         except queue.Empty:
             pass  # Просто ждем
 
-    for p in processes.values():
+    for p in processes:
         p.join()
 
+    # **Финальные метрики**
     final_valid_metrics = agg_fold_metrics(all_valid_metrics)
     final_test_metrics = agg_fold_metrics(all_test_metrics)
 
+    # **Финальное логирование**
     if cfg.base.log.logging:
         wandb.summary["final"] = {"valid": final_valid_metrics, "test": final_test_metrics}
         wandb.finish()
 
-
 if __name__ == "__main__":
-    mp.set_start_method("spawn", force=True)
-    run()
+    mp.set_start_method("spawn", force=True)  # ✅ Исправляем баг с дочерними процессами
+    run() 
