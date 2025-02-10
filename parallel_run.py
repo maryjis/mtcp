@@ -9,8 +9,6 @@ from pathlib import Path
 import wandb
 import queue
 
-
-
 def train_fold(fold_ind, cfg, device, log_queue):
     """
     Обучение одного фолда в отдельном процессе.
@@ -57,10 +55,19 @@ def train_fold(fold_ind, cfg, device, log_queue):
     valid_metrics = trainer.train(fold_ind)
     test_metrics = trainer.evaluate(fold_ind)
 
-    # 🔥 **Отправляем метрики в главную очередь**
-    log_queue.put(("valid", fold_ind, valid_metrics))
-    log_queue.put(("test", fold_ind, test_metrics))
-    log_queue.put(("done", fold_ind, None))  # Сигнал завершения процесса
+    # Добавляем проверку типов перед отправкой в очередь
+    def process_metrics(metrics):
+        """ Обрабатывает метрики перед записью в очередь """
+        if isinstance(metrics, tuple):
+            if len(metrics) == 2 and isinstance(metrics[0], dict) and metrics[1] is None:
+                return metrics[0]  # Берем только первый элемент (словарь)
+            else:
+                raise ValueError(f"Unexpected format of metrics: {metrics}")
+        return metrics  # Если это не кортеж, возвращаем как есть
+
+    log_queue.put(("valid", fold_ind, process_metrics(valid_metrics)))
+    log_queue.put(("test", fold_ind, process_metrics(test_metrics)))
+    log_queue.put(("done", fold_ind, None))
 
     wandb.finish()  # Завершаем сеанс W&B в процессе
 
@@ -98,6 +105,8 @@ def run(cfg: DictConfig) -> None:
     while finished_folds < num_folds:
         try:
             metric_type, fold_ind, metrics = log_queue.get(timeout=10)  # Ждём данные
+            if metrics is not None and isinstance(metrics, tuple):
+                metrics = dict(metrics)  # Преобразуем tuple в dict при необходимости
             if metric_type == "valid":
                 all_valid_metrics.append(metrics)
                 wandb.log({f"valid/fold_{fold_ind}/{key}": value for key, value in metrics.items()})
@@ -123,4 +132,4 @@ def run(cfg: DictConfig) -> None:
 
 if __name__ == "__main__":
     mp.set_start_method("spawn", force=True)  # ✅ Исправляем баг с дочерними процессами
-    run() 
+    run()
