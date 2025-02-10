@@ -1,4 +1,4 @@
 defaults: 
-    - model: multimodal_survival_with_clinica
+    - model: multimodal_survival
     - base: multimodal_config_survival
     - data: multimodal_data
