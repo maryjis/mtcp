@@ -1,0 +1,33 @@
+experiment_name: "wsi base"
+n_epochs: 50
+n_intervals: 20
+random_seed: 1380
+
+optimizer:
+    name: "AdamW"
+    params:
+        lr: 2e-5
+        weight_decay: 1e-2
+
+scheduler: 
+    name: "CosineAnnealingLR"
+    params:
+        eta_min: 5e-6
+
+
+type: "unimodal"
+strategy: "survival" # mae, survival
+modalities: ["wsi"] #rna, mri
+architecture: "CNN"
+splits: 5
+data_path: "/home/a.beliaeva/mtcp/updated_utf8.csv"
+root_path: "../"
+save_path : "/home/a.beliaeva/mtcp/src/outputs/models/main_base/"
+device: "cuda:2"
+remove_nan_column: 'WSI'
+batch_size: 24
+
+log:
+    logging: True
+    wandb_project: "cancer_mtcp"
+    wandb_run_name: ${base.experiment_name}
