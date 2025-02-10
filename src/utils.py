@@ -12,6 +12,30 @@ from torch import nn
 
 MODALITY_TO_COLUMN_MAP ={"rna" : "RNA", "mri" : "MRI", "dnam" : "DNAm"}
 
+def get_config_mode(config_path, base_path=None):
+    if base_path is not None:
+        config_path = os.path.join(base_path, config_path)
+    mode = config_path.split(".")[-2]
+    if mode not in ["done", "in_progress"]: 
+        return None
+    return mode
+
+def append_config_mode(config_path, mode, base_path=None):
+    if base_path is not None:
+        config_path = os.path.join(base_path, config_path)
+
+    if get_config_mode(config_path) != mode:
+        config_extension = config_path.split(".")[-1]
+        config_path_without_extension = ".".join(config_path.split(".")[:-1]) if get_config_mode(config_path) is None else ".".join(config_path.split(".")[:-2])
+        new_config_path = config_path_without_extension + "." + mode + "." + config_extension
+        os.rename(
+            config_path, 
+            new_config_path
+        )
+        return new_config_path
+    else:
+        return config_path
+
 def trace_handler(p, sort_by_keyword="self_cpu_time_total", row_limit=10, phase="train", is_print=True):
     if is_print: print(p.key_averages().table(sort_by=sort_by_keyword, row_limit=row_limit))
     base_path = "outputs/traces"

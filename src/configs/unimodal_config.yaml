@@ -1,6 +1,4 @@
 defaults: 
-    - model: rna_mae
-    - base: rna_base
-    - data: rna_base
-
-
+    - model: mri_mae_model
+    - base: mri_mae_model
+    - data: mri_mae
