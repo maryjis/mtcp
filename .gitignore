@@ -1,3 +1,4 @@
+drim/
 outputs/
 *.ipynb_checkpoints
 src/data/
@@ -8,3 +9,6 @@ scaler_data.json
 .venv/*
 multirun/
 src/configs/optuna_unimodal_config.yaml
+src/configs/multistage_optuna_unimodal_config.yaml
+src/configs/schedule
+

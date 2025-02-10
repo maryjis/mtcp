@@ -1,5 +1,5 @@
-experiment_name: "mri_mae_pretrain_test"
-n_epochs: 50
+experiment_name: "mri_mae_pretrain_t1c_epochs"
+n_epochs: 100
 splits: 5
 random_seed: 1380
 
@@ -29,9 +29,18 @@ num_workers: 8
 log:
     logging: True
     wandb_project: "cancer_mtcp"
-    wandb_run_name: ${base.experiment_name}
+    wandb_run_name: ${..experiment_name}
 
 profiling:
     sort_by_keyword: self_cuda_time_total #by which parameter profiler output should be sorted
     row_limit: 10 #how many rows should be in profiler output
     is_print: True
+
+early_stopping:
+    early_stopper:
+        patience: 20
+        eps: 0
+        smoothing: "running_average"
+        smoothing_period: 10
+        direction: "min"
+    value_to_track: "mse_loss"
