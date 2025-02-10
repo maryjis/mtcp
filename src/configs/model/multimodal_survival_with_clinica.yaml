@@ -10,7 +10,7 @@ defaults:
 hidden_size: 256
 is_projection: False
 attention_probs_dropout_prob: 0.0
-decoder_hidden_size: 128
+decoder_hidden_size: 256
 decoder_intermediate_size: 512
 decoder_num_attention_heads: 4
 decoder_num_hidden_layers: 3
@@ -28,10 +28,10 @@ num_hidden_layers: 4
 qkv_bias: true
 patch_size: 512
 
-is_load_pretrained: True
-pretrained_model_name: "multimodal_pretrained_rna_dnam_survival_3_mod_freeze_mri"
+is_load_pretrained: False
+pretrained_model_name: "multimodal_rna_mae_pretrained_model_freeze_mri_05_feb"
 pretrained_model_path: ""
-freezing_strategy: True
+freezing_strategy: False
 
 missing_modalities_strategy: "decoder"
 mm_pretrained_model_name: "multimodal_rna_mae_pretrained_model_freeze_mri_05_feb"
@@ -62,7 +62,7 @@ fusion_depth: 1
 fusion_dim: 256
 fusion_nhead: 4
 fusion_dim_feedforward: 0
-fusion_dropout: 0.4
+fusion_dropout: 0.3
 fusion_logits: "mean"
 fusion_masking: false
-fusion_strategy_is_pretrained: true
+fusion_strategy_is_pretrained: false

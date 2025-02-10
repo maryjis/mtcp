@@ -45,7 +45,7 @@ embeddings_layers:
 decoder_pred_layers:
   - name: "ConvTranspose3d"
     args:
-      - 256
+      - 128
       - 16
       - 4
     kwargs:

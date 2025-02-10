@@ -111,6 +111,7 @@ class Trainer(object):
                 is_print=self.cfg.base.profiling.is_print if self.cfg.base.get("profiling", None) is not None else None
             )
         ) as prof:
+            min_val = 1000000
             for epoch in tqdm(range(self.cfg.base.n_epochs)):
                 print("Train...")
                 
@@ -131,13 +132,19 @@ class Trainer(object):
                     wandb.log({f"val/fold_{fold_ind}/{key}" : value for key, value in val_metrics.items()})
 
                 prof.step()
-
+  
                 if self.cfg.base.get("early_stopping", None) is not None:
+                    print("Early stopping: ")
                     if self.early_stopper.early_stop(val_metrics[self.cfg.base.early_stopping.value_to_track]):
                         break
-
-        check_dir_exists(self.cfg.base.save_path)
-        torch.save(self.model.state_dict(), self.cfg.base.save_path)
+                    if val_metrics[self.cfg.base.early_stopping.value_to_track]<= min_val:
+                        print(f"Archive min error on validation  {val_metrics[self.cfg.base.early_stopping.value_to_track]} , saving model...")
+                        min_val = val_metrics[self.cfg.base.early_stopping.value_to_track]
+                        check_dir_exists(self.cfg.base.save_path)
+                        torch.save(self.model.state_dict(), self.cfg.base.save_path)
+                else:
+                    check_dir_exists(self.cfg.base.save_path)
+                    torch.save(self.model.state_dict(), self.cfg.base.save_path)
 
         return val_metrics
     

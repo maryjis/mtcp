@@ -666,11 +666,18 @@ class MultiMaeForSurvival(nn.Module):
                 self.fusion_strategy.load_state_dict(model_state_dict)
                 for param in self.fusion_strategy.parameters():
                     param.requires_grad = False
+        # if "clinical" in self.modalities:
+        #     #TODO add special param for it -> cfg.fusion_dim+3
+        #     self.projection = nn.Linear(cfg.fusion_dim+3, cfg.output_dim)
+        # else:           
+        
         if "clinical" in self.modalities:
             #TODO add special param for it -> cfg.fusion_dim+3
+            self.clinical_projection = nn.Linear(3, 3)
             self.projection = nn.Linear(cfg.fusion_dim+3, cfg.output_dim)
-        else:           
-            self.projection = nn.Linear(cfg.fusion_dim, cfg.output_dim)
+        else:
+            self.projection = nn.Linear(cfg.fusion_dim, cfg.output_dim)    
+        
         
     def get_primary_order(self, x,ids_restore):
         mask_tokens = self.model.mask_token.repeat(x.shape[0], ids_restore.shape[1] + 1 - x.shape[1], 1)
@@ -751,13 +758,16 @@ class MultiMaeForSurvival(nn.Module):
             concat_x = self.fusion_strategy(concat_x.last_hidden_state)
         
         if "clinical" in self.modalities:
-            print("concat_x[:,0,:]: ", concat_x[:,0,:].shape)
-            print("clinical_data[:,0,:]: ", clinical_data[:,0,:].shape)
-            print("concat_x[:,0,:],mean(): ", concat_x[:,0,:].mean())
-            print("clinical_data[:,0,:]:,mean(): ", clinical_data[:,0,:].mean())
-            concat_with_clinical =torch.cat([concat_x[:,0,:], clinical_data[:,0,:]], axis =-1)
+            clinical_logits = self.clinical_projection(clinical_data[:,0,:])    
+            concat_with_clinical =torch.cat([concat_x[:,0,:], clinical_logits], axis =-1)
             print("concat_with_clinical.shape ", concat_with_clinical.shape)
             logits = self.projection(concat_with_clinical) 
         else:    
-            logits = self.projection(concat_x[:,0,:])  
+            logits = self.projection(concat_x[:,0,:])
+        # if "clinical" in self.modalities:
+        #     clinical_logits = self.clinical_projection(clinical_data[:,0,:])
+        #     concat_logits = torch.stack([logits,clinical_logits], dim =2)
+        #     print("concat_logits.shape", concat_logits.shape)
+        #     logits = self.final_projection(concat_logits)
+        #     logits =torch.squeeze(logits,2)
         return logits
