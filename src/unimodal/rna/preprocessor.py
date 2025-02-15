@@ -11,7 +11,7 @@ import numpy as np
 from sklearn.preprocessing import FunctionTransformer
 from sklearn.pipeline import Pipeline
 from src.unimodal.rna.transforms import log_transform
-from scipy.cluster.hierarchy import linkage, dendrogram, fcluster
+from scipy.cluster.hierarchy import linkage, dendrogram, fcluster,leaves_list
 from scipy.spatial.distance import squareform
 import matplotlib.pyplot as plt
 from sklearn.base import TransformerMixin
@@ -21,7 +21,7 @@ class RNAPreprocessor(BaseUnimodalPreprocessor):
     
     def __init__(self, data_train :pd.DataFrame, dataset_dir : Path,
                  n_intervals: int, scaling_method: TransformerMixin, scaling_prams: dict = {},
-                 var_threshold = 0.0, is_cluster_genes: bool = False , threshold: float =0):
+                 var_threshold = 0.0, is_cluster_genes: bool = False , threshold: float =0, is_hierarchical_cluster: bool =False):
         super().__init__(data_train, n_intervals)
         self.data_train = data_train
         self.train_dataset = RNADataset(data_train, dataset_dir)
@@ -31,6 +31,7 @@ class RNAPreprocessor(BaseUnimodalPreprocessor):
         self.is_cluster_genes =is_cluster_genes
         self.column_order = None
         self.threshold =threshold
+        self.is_hierarchical_cluster =is_hierarchical_cluster
     
         
     def fit(self):
@@ -53,10 +54,16 @@ class RNAPreprocessor(BaseUnimodalPreprocessor):
             dissimilarity = 1 - abs(correlations)
             Z = linkage(squareform(dissimilarity), 'complete')
             # Clusterize the data
-            labels = fcluster(Z, self.threshold, criterion='distance')
-
             
-            labels_order = np.argsort(labels)
+            if self.is_hierarchical_cluster:
+                print("self.is_hierarchical_cluster: ", self.is_hierarchical_cluster)
+                labels_order = leaves_list(Z)
+            else:
+                labels = fcluster(Z, self.threshold, criterion='distance')
+
+                
+                labels_order = np.argsort(labels)
+            
         
             self.column_order = self.train_dataset.get_column_names()[labels_order]
             print("--------------------------------------------------------")

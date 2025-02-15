@@ -1,4 +1,4 @@
 defaults: 
-    - model: multimodal_survival
-    - base: multimodal_config_survival
+    - model: multimodal_mae
+    - base: multimodal_config_mae
     - data: multimodal_data

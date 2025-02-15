@@ -10,7 +10,7 @@ from omegaconf import DictConfig, OmegaConf, open_dict
 from torch import nn
 
 
-MODALITY_TO_COLUMN_MAP ={"rna" : "RNA", "mri" : "MRI", "dnam" : "DNAm"}
+MODALITY_TO_COLUMN_MAP ={"rna" : "RNA", "mri" : "MRI", "dnam" : "DNAm", "wsi": "WSI"}
 
 def get_config_mode(config_path, base_path=None):
     if base_path is not None:
@@ -116,9 +116,10 @@ def load_splits(data_path: Path, fold_ind : int, remove_nan_column : str,
     if data_path.exists():
         
         dataset = pd.read_csv(data_path)
+        print("Dataset shape before: ", dataset.shape)
         if remove_nan_column:
             dataset =dataset.loc[dataset[remove_nan_column].notnull()]
-        
+        print("Dataset shape after: ", dataset.shape)
         dataset_test = dataset.loc[dataset.group =='test']
         
        
