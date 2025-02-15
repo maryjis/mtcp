@@ -61,7 +61,7 @@ class Trainer(object):
             print("Scaling method: ", scaling_method)
             preproc = RNAPreprocessor(splits["train"], self.cfg.data.rna.rna_dataset_path, self.cfg.base.n_intervals, scaling_method, 
                                           self.cfg.data.rna.scaling_params, self.cfg.data.rna.var_threshold,
-                                          self.cfg.data.rna.is_cluster_genes , self.cfg.data.rna.clustering_threshold)
+                                          self.cfg.data.rna.is_cluster_genes , self.cfg.data.rna.clustering_threshold, self.cfg.data.rna.get("is_hierarchical_clusters", False))
             preproc.fit()
             return preproc
 
@@ -70,6 +70,12 @@ class Trainer(object):
             if self.cfg.base.strategy != "mae": #labels are not used for pre-training
                 preproc = BaseUnimodalPreprocessor(splits["train"], self.cfg.base.n_intervals)
                 preproc.fit()
+            return preproc
+        elif modality == "dnam":
+            preproc = DNAmPreprocessor(splits["train"], self.cfg.data.dnam.dnam_dataset_path,self.cfg.base.n_intervals, 
+                                           self.cfg.data.dnam.var_threshold,
+                                          self.cfg.data.dnam.is_cluster_genes , self.cfg.data.dnam.clustering_threshold, self.cfg.data.dnam.get("is_hierarchical_clusters", False))
+            preproc.fit()
             return preproc
         
         elif modality == "wsi":
@@ -265,7 +271,7 @@ class UnimodalSurvivalTrainer(Trainer):
             for split_name, split in splits.items():
                     # Определяем значение параметра num в зависимости от типа раздела
                     is_train = True if split_name == "train" else False
-                    if self.cfg.base.architecture=="CNN":
+                    if self.cfg.base.architecture=="CNN" or len(self.cfg.base.modalities)>1:
                         # Создаем датасет с нужными параметрами
                         dataset = WSIDataset(split, self.cfg.data.wsi.k, is_train=is_train, return_mask=True)
                         # Создаем SurvivalMRIDataset с нужными параметрами
@@ -309,7 +315,7 @@ class UnimodalSurvivalTrainer(Trainer):
                      return WSIEncoder(embedding_dim=self.cfg.model.input_embedding_dim, depth=self.cfg.model.depth,
                                       heads=self.cfg.model.heads, dim=self.cfg.model.dim, pool=self.cfg.model.pool,
                                       dim_head=self.cfg.model.dim_head, mlp_dim=self.cfg.model.mlp_dim, dropout=self.cfg.model.dropout,
-                                      emb_dropout=self.cfg.model.emb_dropout, n_outputs=self.cfg.base.n_intervals)
+                                      emb_dropout=self.cfg.model.emb_dropout, n_outputs=self.cfg.model.n_outputs)
                 else:
                     raise NotImplementedError("Exist only MAE and CNN architectures for mri modality")    
         else:
@@ -431,7 +437,11 @@ class UnimodalMAETrainer(Trainer):
             for split_name, split in splits.items():
                     # Определяем значение параметра num в зависимости от типа раздела                  
                     # Создаем датасет с нужными параметрами
-                    datasets[split_name] = WSIDataset_patches(split,return_mask=False)
+                    if len(self.cfg.base.modalities)>1:
+                        is_train = True if split_name == "train" else False
+                        datasets[split_name] = WSIDataset(split,self.cfg.data.wsi.k, is_train=is_train,return_mask=True)
+                    else:
+                        datasets[split_name] = WSIDataset_patches(split,return_mask=False)
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
         

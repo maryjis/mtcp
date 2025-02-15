@@ -289,3 +289,100 @@ class WsiMaeSurvivalModel(nn.Module):
         x = self.vit(wsi_values)
         x = self.projection(x.last_hidden_state[:, 0, :])
         return x.squeeze(-1)
+
+
+
+
+class WSIEmbeddings(nn.Module):
+    """
+    Construct the CLS token, position, and patch embeddings for 2D data (e.g., images).
+    """
+
+    def __init__(self, cfg):
+        super().__init__()
+
+        self.config = cfg
+        
+        self.projector = nn.Linear(cfg.input_embedding_dim, cfg.hidden_size)
+    
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, cfg.hidden_size))  # CLS token
+        
+        self.num_patches = cfg.num_patches # Number of patches
+        # Fixed sin-cos embedding for position information
+        self.position_embeddings = nn.Parameter(
+            torch.zeros(1, self.num_patches + 1, cfg.hidden_size), requires_grad=False
+        )
+        self.patch_size = cfg.patch_size
+        
+        self.initialize_weights()
+
+    def initialize_weights(self):
+        # Initialize (and freeze) position embeddings by sin-cos embedding
+        pos_embed = get_1d_sincos_pos_embed_from_grid(
+            self.position_embeddings.shape[-1], 
+            np.arange(int(self.num_patches), dtype=np.float32)
+        )
+        pos_embed = np.concatenate([
+            np.zeros([1, self.position_embeddings.shape[-1]]), # for CLS token
+            pos_embed
+        ], axis=0)
+        self.position_embeddings.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
+
+        # Initialize CLS token with normal distribution
+        torch.nn.init.normal_(self.cls_token, std=self.config.initializer_range)
+
+    def random_masking(self, sequence, noise=None):
+        """
+        Perform per-sample random masking by per-sample shuffling.
+        """
+        batch_size, seq_length, dim = sequence.shape
+        len_keep = int(seq_length * (1 - self.config.mask_ratio))
+
+        if noise is None:
+            noise = torch.rand(batch_size, seq_length, device=sequence.device)
+
+        ids_shuffle = torch.argsort(noise, dim=1).to(sequence.device)
+        ids_restore = torch.argsort(ids_shuffle, dim=1).to(sequence.device)
+
+        # Keep the first subset
+        ids_keep = ids_shuffle[:, :len_keep]
+        sequence_unmasked = torch.gather(sequence, dim=1, index=ids_keep.unsqueeze(-1).repeat(1, 1, dim))
+
+        # Generate the binary mask: 0 is keep, 1 is remove
+        mask = torch.ones([batch_size, seq_length], device=sequence.device)
+        mask[:, :len_keep] = 0
+        mask = torch.gather(mask, dim=1, index=ids_restore)
+
+        return sequence_unmasked, mask, ids_restore
+
+    def forward(self, embeddings, noise=None, interpolate_pos_encoding: bool = False):
+        #print(image_values.shape)
+        batch_size, num_patches, hidden_size = embeddings.shape
+    
+        # Add position embeddings without CLS token
+        embeddings = self.projector(embeddings) + self.position_embeddings[:, 1:, :]
+
+        # Apply random masking to the sequence
+        embeddings, mask, ids_restore = self.random_masking(embeddings, noise)
+
+        # Append CLS token at the beginning of the sequence
+        cls_token = self.cls_token + self.position_embeddings[:, :1, :]
+        cls_tokens = cls_token.expand(embeddings.shape[0], -1, -1)
+        embeddings = torch.cat((cls_tokens, embeddings), dim=1)
+
+        return embeddings, mask, ids_restore
+    
+
+
+class WSIEmbeddingMAEModel(ViTMAEModel):
+    def __init__(self, config):
+        super().__init__(config)
+        self.embeddings = WSIEmbeddings(config)
+        self.mask_token = nn.Parameter(torch.zeros(1, 1, config.hidden_size))
+        self.post_init()
+        
+    def patchify(self, values, interpolate_pos_encoding: bool = False):
+        return values
+
+    def unpatchify(self, values, original_rna_size: int=None):
+        return values

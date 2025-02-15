@@ -1,16 +1,17 @@
 
-modalities: ["rna","dnam", "mri"]
+modalities: ["rna","dnam", "mri","wsi"]
 defaults: 
   - rna_model: survival
   - mri_model: survival
   - dnam_model: survival
+  - wsi_model: survival
   - mm_decoder_config: multimodal_mae
 
 
 hidden_size: 256
 is_projection: False
 attention_probs_dropout_prob: 0.0
-decoder_hidden_size: 128
+decoder_hidden_size: 256
 decoder_intermediate_size: 512
 decoder_num_attention_heads: 4
 decoder_num_hidden_layers: 3
@@ -28,13 +29,13 @@ num_hidden_layers: 4
 qkv_bias: true
 patch_size: 512
 
-is_load_pretrained: False
-pretrained_model_name: "multimodal_rna_mae_pretrained_model_freeze_mri_freeze_128_07_feb"
+is_load_pretrained: True
+pretrained_model_name: "multimodal_rna_mae_pretrained_model_freeze_mri_freeze_wsi_256_2l_10_feb"
 pretrained_model_path: ""
 freezing_strategy: False
 
-missing_modalities_strategy: "zeros"
-mm_pretrained_model_name: "multimodal_rna_mae_pretrained_model_freeze_mri_freeze_128_07_feb"
+missing_modalities_strategy: "decoder"
+mm_pretrained_model_name: "multimodal_rna_mae_pretrained_model_freeze_mri_freeze_wsi_256_2l_10_feb"
 mm_pretrained_model_path: ""
 
 

@@ -6,6 +6,8 @@ from typing import Dict
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.unimodal.mri.mae import MriMAEModel
 from src.unimodal.dna.models import DNAmSurvivalModel, DNAmMAEModel
+from src.unimodal.wsi.mae import WSIEmbeddingMAEModel
+
 from omegaconf import DictConfig, OmegaConf
 from transformers import PreTrainedModel
 from src.unimodal.mri.mae import MriMAEDecoderPred
@@ -117,6 +119,22 @@ class MultiMAEModel(PreTrainedModel):
                 self.encoders[modality] = UnimodalEncoder(
                     encoder,
                     cfg_dnam_model.hidden_size, 
+                    self.cfg.hidden_size,
+                    self.cfg.is_projection
+                )
+            elif modality == "wsi":
+                cfg_wsi_model = ViTMAEConfig(**self.cfg.wsi_model)
+                encoder = None
+                if cfg_wsi_model.is_load_pretrained:
+                    encoder = WSIEmbeddingMAEModel.from_pretrained(cfg_wsi_model.pretrained_model_path, config=cfg_wsi_model)
+                    for param in encoder.parameters():
+                        param.requires_grad = False
+                else:
+                    encoder = WSIEmbeddingMAEModel(config =cfg_wsi_model)
+                    
+                self.encoders[modality] = UnimodalEncoder(
+                    encoder,
+                    cfg_wsi_model.hidden_size, 
                     self.cfg.hidden_size,
                     self.cfg.is_projection
                 )
@@ -292,7 +310,7 @@ class MultiMAEModel(PreTrainedModel):
                 multimodal_lenths=multimodal_length
                 
             )
-            
+
             multimodal_length += seq_length
             
             embedded_sample = ViTMAEModelOutput(
@@ -352,13 +370,13 @@ class MultiMaeForPretraining(nn.Module):
     def get_postprocessor(self, modality):
         if modality =="mri":
             return MriMAEDecoderPred(ViTMAEConfig(**self.cfg.mri_model))
-        elif modality =="rna" or modality =="dnam":
+        elif modality =="rna" or modality =="dnam" or modality =="wsi":
             return nn.Linear(
                 self.cfg.decoder_hidden_size, self.get_patch_size(modality), bias=True
             )
         
     def get_patch_size(self,  modality: str)-> int:
-        if modality =="rna" or modality=="dnam":
+        if modality =="rna" or modality=="dnam" or modality =="wsi":
             return self.cfg.to_dict()[f"{modality}_model"]["patch_size"]
         elif  modality =="mri":
             return self.cfg.to_dict()[f"{modality}_model"]["patch_size"] ** 3
@@ -412,14 +430,20 @@ class MultiMaeForPretraining(nn.Module):
             torch.FloatTensor: Mean reconstruction loss on masked patches.
         """
         # Convert input to patches
+
         target = encoder.encoder.patchify(values, interpolate_pos_encoding=interpolate_pos_encoding)
+        
 
         # Masked loss for all zero subjects (missing ones)
         modality_mask = modality_mask.unsqueeze(1).to(mask.device)
+
         mask =  mask * modality_mask
+
+        
         
         # Normalize target values if configured
         if self.cfg.norm_pix_loss:
+            print("self.cfg.norm_pix_loss")
             mean = target.mean(dim=-1, keepdim=True)
             var = target.var(dim=-1, keepdim=True)
             target = (target - mean) / (var + 1.0e-6).sqrt()
@@ -432,7 +456,6 @@ class MultiMaeForPretraining(nn.Module):
 
         # Calculate mean loss on masked patches only
         loss = (loss * mask).sum() / (mask.sum() + 1e-6)
-        
         return loss
     
     def split_modalities(self, pred: torch.FloatTensor):
@@ -489,6 +512,7 @@ class MultiMaeForPretraining(nn.Module):
             if self.cfg.postprocessing:
                 pred_modality = self.postprocessors[f"postprocessor_{modality}"](pred_modality)
 
+
             # Calculate loss for current modality
             modality_loss = self.__forward_loss(
                 x[modality],
@@ -498,7 +522,7 @@ class MultiMaeForPretraining(nn.Module):
                 mask_modality,
                 interpolate_pos_encoding
             )
-
+            
             modality_losses[modality] += modality_loss
             total_loss += modality_loss
             start_idx = end_idx
@@ -698,6 +722,7 @@ class MultiMaeForSurvival(nn.Module):
             del masks["clinical"]
             
         if self.cfg.missing_modalities_strategy =="decoder":
+            self.decoder_mm.eval()
             decoded_x = self.decoder_mm(x, masks, interpolate_pos_encoding)
             decoded_x = self.decoder_mm.split_modalities(decoded_x.logits)
             for modality in self.modalities:
@@ -757,6 +782,7 @@ class MultiMaeForSurvival(nn.Module):
         else:
             concat_x = self.fusion_strategy(concat_x.last_hidden_state)
         
+        print(self.modalities)
         if "clinical" in self.modalities:
             clinical_logits = self.clinical_projection(clinical_data[:,0,:])    
             concat_with_clinical =torch.cat([concat_x[:,0,:], clinical_logits], axis =-1)

@@ -1,4 +1,4 @@
-experiment_name: "multimodal_pretrained_rna_dnam_survival_3_mod_freeze_mri_256_dec_lr_1-e3"
+experiment_name: "multimodal_pretrained_rna_dnam_survival_3_mod_freeze_mri_128_dec_lr_1-e3_pretrained3"
 n_epochs: 50
 n_intervals: 20
 random_seed: 1380
