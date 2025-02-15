@@ -21,9 +21,9 @@ from sklearn.preprocessing import StandardScaler,Normalizer
 class DNAmPreprocessor(RNAPreprocessor):
     
     def __init__(self, data_train :pd.DataFrame, dataset_dir : Path,
-                 n_intervals: int, var_threshold = 0.0, is_cluster_genes: bool = False , threshold: float =0):
+                 n_intervals: int, var_threshold = 0.0, is_cluster_genes: bool = False , threshold: float =0,  is_hierarchical_cluster: bool =False):
         super().__init__(data_train, dataset_dir, n_intervals, StandardScaler,
-                        {}, var_threshold, is_cluster_genes,threshold )
+                        {}, var_threshold, is_cluster_genes,threshold,is_hierarchical_cluster )
         
         self.train_dataset = DNAmDataset(data_train, dataset_dir)
         self.train_loaders = DataLoader(self.train_dataset)
