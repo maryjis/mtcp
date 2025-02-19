@@ -12,7 +12,7 @@ from src.unimodal.mri.datasets import SurvivalMRIDataset, MRIEmbeddingDataset, M
 
 from src.unimodal.rna.preprocessor import RNAPreprocessor
 from src.preprocessor import BaseUnimodalPreprocessor
-from src.unimodal.rna.transforms import base_transforms, padded_transforms
+from src.unimodal.rna.transforms import base_transforms, padded_transforms_with_scaling
 from torch.utils.data import Dataset, DataLoader
 from pycox.models.loss import NLLLogistiHazardLoss
 from torch.optim import AdamW
@@ -58,6 +58,8 @@ class Trainer(object):
                 scaling_method = getattr(__import__('sklearn.preprocessing', fromlist=[self.cfg.data.rna.scaling_method]), self.cfg.data.rna.scaling_method)
             elif self.cfg.data.rna.scaling_method=="UpperQuartileNormalizer":
                  scaling_method = UpperQuartileNormalizer 
+            else:
+                 scaling_method = None
             print("Scaling method: ", scaling_method)
             preproc = RNAPreprocessor(splits["train"], self.cfg.data.rna.rna_dataset_path, self.cfg.base.n_intervals, scaling_method, 
                                           self.cfg.data.rna.scaling_params, self.cfg.data.rna.var_threshold,
@@ -72,9 +74,13 @@ class Trainer(object):
                 preproc.fit()
             return preproc
         elif modality == "dnam":
+            scaling_method = None
+            if self.cfg.data.dnam.scaling_method in ["QuantileTransformer", "StandardScaler", "MinMaxScaler"]:
+                scaling_method = getattr(__import__('sklearn.preprocessing', fromlist=[self.cfg.data.dnam.scaling_method]), self.cfg.data.dnam.scaling_method)
             preproc = DNAmPreprocessor(splits["train"], self.cfg.data.dnam.dnam_dataset_path,self.cfg.base.n_intervals, 
                                            self.cfg.data.dnam.var_threshold,
-                                          self.cfg.data.dnam.is_cluster_genes , self.cfg.data.dnam.clustering_threshold, self.cfg.data.dnam.get("is_hierarchical_clusters", False))
+                                          self.cfg.data.dnam.is_cluster_genes , self.cfg.data.dnam.clustering_threshold,
+                                          self.cfg.data.dnam.get("is_hierarchical_clusters", False),  scaling_method, self.cfg.data.dnam.scaling_params)
             preproc.fit()
             return preproc
         
@@ -206,11 +212,11 @@ class UnimodalSurvivalTrainer(Trainer):
         transforms = None
         if cfg.base.modalities[0]=="rna":
             if self.cfg.base.architecture=="MAE":
-                transforms = padded_transforms(self.preproc.get_scaling(), cfg.model.size)
+                transforms = padded_transforms_with_scaling(self.preproc.get_scaling(), cfg.model.size)
             elif self.cfg.base.architecture=="CNN":    
                 transforms = base_transforms(self.preproc.get_scaling())
         elif self.cfg.base.modalities[0]=="dnam":
-            transforms = padded_transforms_simple(cfg.model.get("size", None))
+            transforms = padded_transforms_scaling(self.preproc.get_scaling(), cfg.model.get("size", None))
         elif self.cfg.base.modalities[0]=="clinical":
              transforms = base_scaling(self.preproc.get_scaling())       
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
@@ -368,9 +374,9 @@ class UnimodalMAETrainer(Trainer):
         super().__init__(splits, cfg)
         transforms = None
         if self.cfg.base.modalities[0]=="rna":
-            transforms = padded_transforms(self.preproc.get_scaling(), cfg.model.size)
+            transforms = padded_transforms_with_scaling(self.preproc.get_scaling(), cfg.model.size)
         elif self.cfg.base.modalities[0]=="dnam":
-            transforms = padded_transforms_simple(cfg.model.get("size", None))
+            transforms = padded_transforms_scaling(self.preproc.get_scaling(), cfg.model.get("size", None))
         elif self.cfg.base.modalities[0]=="mri":
             transforms = None
         elif self.cfg.base.modalities[0]=="wsi":

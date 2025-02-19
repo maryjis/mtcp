@@ -1,4 +1,4 @@
-experiment_name: "multimodal_rna_dnam_50_mae_pretrained_cluster_rna_with_mm_2_800_14_02"
+experiment_name: "multimodal_rna_dna_800_scaled_mae"
 n_epochs: 800
 n_intervals: 20
 random_seed: 1380
@@ -23,7 +23,7 @@ splits: 5
 data_path: "src/data/dataset.csv"
 save_path : "outputs/models/"
 rna_dataset_path: "src/data/rna_dataset.csv"
-device: "cuda:3"
+device: "cuda:2"
 remove_nan_column: 'RNA'
 batch_size: 24
 
@@ -31,3 +31,8 @@ log:
     logging: True
     wandb_project: "cancer_mtcp"
     wandb_run_name: "test_multimodal_mae"
+
+profiling:
+    sort_by_keyword: self_cuda_time_total #by which parameter profiler output should be sorted
+    row_limit: 10 #how many rows should be in profiler output
+    is_print: True
