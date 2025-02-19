@@ -1,4 +1,4 @@
-experiment_name: "multimodal_pretrained_rna_dnam_survival_3_mod_freeze_cluster_mri"
+experiment_name: "multimodal_pretrained_rna_dnam_256_decoder_missing_survival"
 n_epochs: 50
 n_intervals: 20
 random_seed: 1380
@@ -16,7 +16,7 @@ scheduler:
 
 type: "multimodal"
 strategy: "survival" # mae, survival
-modalities: ["rna", "dnam", "mri"]
+modalities: ["rna", "dnam"]
 multimodal_intersection_test: true
 architecture: "MAE"
 splits: 5
@@ -31,3 +31,4 @@ log:
     logging: True
     wandb_project: "cancer_mtcp"
     wandb_run_name: "test_multimodal_mae"
+

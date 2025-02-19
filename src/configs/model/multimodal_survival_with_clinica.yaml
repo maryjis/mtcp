@@ -1,0 +1,68 @@
+
+modalities: ["rna","dnam", "mri", "clinical"]
+defaults: 
+  - rna_model: survival
+  - mri_model: survival
+  - dnam_model: survival
+  - mm_decoder_config: multimodal_mae
+
+
+hidden_size: 256
+is_projection: False
+attention_probs_dropout_prob: 0.0
+decoder_hidden_size: 256
+decoder_intermediate_size: 512
+decoder_num_attention_heads: 4
+decoder_num_hidden_layers: 3
+hidden_act: "gelu"
+hidden_dropout_prob: 0.0
+initializer_range: 0.02
+intermediate_size: 1024
+layer_norm_eps: 1e-12
+mask_ratio: 0.0
+model_type: "vit_mae"
+norm_pix_loss: false
+num_attention_heads: 4
+num_channels: 1
+num_hidden_layers: 4
+qkv_bias: true
+patch_size: 512
+
+is_load_pretrained: False
+pretrained_model_name: "multimodal_rna_mae_pretrained_model_freeze_mri_05_feb"
+pretrained_model_path: ""
+freezing_strategy: False
+
+missing_modalities_strategy: "decoder"
+mm_pretrained_model_name: "multimodal_rna_mae_pretrained_model_freeze_mri_05_feb"
+mm_pretrained_model_path: ""
+
+
+output_dim: 20
+return_order: true
+
+
+
+encoder_fusion_strategy: "identity"
+encoder_fusion_depth: 1
+encoder_fusion_dim: 256
+encoder_fusion_nhead: 4
+encoder_fusion_dim_feedforward: 1024
+encoder_fusion_dropout: 0.1
+
+fusion_strategy: "mask_attention"
+
+perceiver_fusion_depth: 1 
+perceiver_fusion_dim: 256 
+perceiver_modalities_dim: {"rna" : 32, "dnam" : 8} 
+perceiver_lattent_dim: 32
+perceiver_fusion_nhead: 2
+
+fusion_depth: 1
+fusion_dim: 256
+fusion_nhead: 4
+fusion_dim_feedforward: 0
+fusion_dropout: 0.3
+fusion_logits: "mean"
+fusion_masking: false
+fusion_strategy_is_pretrained: false
