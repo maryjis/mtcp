@@ -21,14 +21,13 @@ from sklearn.preprocessing import StandardScaler,Normalizer
 class DNAmPreprocessor(RNAPreprocessor):
     
     def __init__(self, data_train :pd.DataFrame, dataset_dir : Path,
-                 n_intervals: int, var_threshold = 0.0, is_cluster_genes: bool = False , threshold: float =0):
-        super().__init__(data_train, dataset_dir, n_intervals, StandardScaler,
-                        {}, var_threshold, is_cluster_genes,threshold )
+                 n_intervals: int, var_threshold = 0.0, is_cluster_genes: bool = False , threshold: float =0,  is_hierarchical_cluster: bool =False, scaling_method= None, scaling_params = {}):
+        super().__init__(data_train, dataset_dir, n_intervals, scaling_method,
+                        scaling_params, var_threshold, is_cluster_genes,threshold,is_hierarchical_cluster )
         
         self.train_dataset = DNAmDataset(data_train, dataset_dir)
         self.train_loaders = DataLoader(self.train_dataset)
         self.pipe =Pipeline(steps= [('var' , VarianceThreshold(var_threshold))])
        
-    def get_scaling(self):
-        raise NotImplementedError("DNAmPreprocessor doesn't support scaling")
+
     
