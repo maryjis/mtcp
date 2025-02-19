@@ -12,7 +12,7 @@ from src.unimodal.mri.datasets import SurvivalMRIDataset, MRIEmbeddingDataset, M
 
 from src.unimodal.rna.preprocessor import RNAPreprocessor
 from src.preprocessor import BaseUnimodalPreprocessor
-from src.unimodal.rna.transforms import base_transforms, padded_transforms
+from src.unimodal.rna.transforms import base_transforms, padded_transforms_with_scaling
 from torch.utils.data import Dataset, DataLoader
 from pycox.models.loss import NLLLogistiHazardLoss
 from torch.optim import AdamW
@@ -29,6 +29,11 @@ from src.unimodal.rna.mae import RnaMAEForPreTraining
 from src.unimodal.mri.mae import MriMAEForPreTraining, MriMaeSurvivalModel
 from src.unimodal.wsi.mae import WsiMAEForPreTraining, WsiMaeSurvivalModel
 from src.utils import check_dir_exists, count_parameters, print_vit_sizes
+
+from src.unimodal.clinical.datasets import ClinicalDataset, ClinicalSurvivalDataset
+from src.unimodal.clinical.preprocessor import ClinicalPreprocessor
+from src.unimodal.clinical.transforms import base_scaling
+
 from tqdm.auto import tqdm
 from sklearn.preprocessing import QuantileTransformer, StandardScaler, MinMaxScaler
 from src.unimodal.rna.transforms import UpperQuartileNormalizer
@@ -37,7 +42,8 @@ from src.unimodal.wsi.transforms import contrastive_wsi_transforms
 from torch.profiler import profile, record_function, ProfilerActivity, schedule
 from src.utils import trace_handler
 from functools import partial
-
+from src.unimodal.dna.transforms import padded_transforms_simple
+from src.early_stopper import EarlyStopper
 
 class Trainer(object):
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
@@ -52,10 +58,12 @@ class Trainer(object):
                 scaling_method = getattr(__import__('sklearn.preprocessing', fromlist=[self.cfg.data.rna.scaling_method]), self.cfg.data.rna.scaling_method)
             elif self.cfg.data.rna.scaling_method=="UpperQuartileNormalizer":
                  scaling_method = UpperQuartileNormalizer 
+            else:
+                 scaling_method = None
             print("Scaling method: ", scaling_method)
             preproc = RNAPreprocessor(splits["train"], self.cfg.data.rna.rna_dataset_path, self.cfg.base.n_intervals, scaling_method, 
                                           self.cfg.data.rna.scaling_params, self.cfg.data.rna.var_threshold,
-                                          self.cfg.data.rna.is_cluster_genes , self.cfg.data.rna.clustering_threshold)
+                                          self.cfg.data.rna.is_cluster_genes , self.cfg.data.rna.clustering_threshold, self.cfg.data.rna.get("is_hierarchical_clusters", False))
             preproc.fit()
             return preproc
 
@@ -65,12 +73,32 @@ class Trainer(object):
                 preproc = BaseUnimodalPreprocessor(splits["train"], self.cfg.base.n_intervals)
                 preproc.fit()
             return preproc
+        elif modality == "dnam":
+            scaling_method = None
+            if self.cfg.data.dnam.scaling_method in ["QuantileTransformer", "StandardScaler", "MinMaxScaler"]:
+                scaling_method = getattr(__import__('sklearn.preprocessing', fromlist=[self.cfg.data.dnam.scaling_method]), self.cfg.data.dnam.scaling_method)
+            preproc = DNAmPreprocessor(splits["train"], self.cfg.data.dnam.dnam_dataset_path,self.cfg.base.n_intervals, 
+                                           self.cfg.data.dnam.var_threshold,
+                                          self.cfg.data.dnam.is_cluster_genes , self.cfg.data.dnam.clustering_threshold,
+                                          self.cfg.data.dnam.get("is_hierarchical_clusters", False),  scaling_method, self.cfg.data.dnam.scaling_params)
+            preproc.fit()
+            return preproc
         
         elif modality == "wsi":
             preproc = None
             if self.cfg.base.strategy != "mae": #labels are not used for pre-training
                 preproc = BaseUnimodalPreprocessor(splits["train"], self.cfg.base.n_intervals)
                 preproc.fit()
+            return preproc
+        
+        elif modality == "clinical":
+            preproc = ClinicalPreprocessor(splits["train"], 
+                                          self.cfg.data.clinical.dataset_path,
+                                          self.cfg.data.clinical.selected_columns, 
+                                          self.cfg.base.n_intervals,
+                                          StandardScaler, 
+                                          {})
+            preproc.fit()
             return preproc
 
         else:
@@ -100,6 +128,7 @@ class Trainer(object):
                 is_print=self.cfg.base.profiling.is_print if self.cfg.base.get("profiling", None) is not None else None
             )
         ) as prof:
+            min_val = 1000000
             for epoch in tqdm(range(self.cfg.base.n_epochs)):
                 print("Train...")
                 
@@ -120,13 +149,19 @@ class Trainer(object):
                     wandb.log({f"val/fold_{fold_ind}/{key}" : value for key, value in val_metrics.items()})
 
                 prof.step()
-
+  
                 if self.cfg.base.get("early_stopping", None) is not None:
+                    print("Early stopping: ")
                     if self.early_stopper.early_stop(val_metrics[self.cfg.base.early_stopping.value_to_track]):
                         break
-
-        check_dir_exists(self.cfg.base.save_path)
-        torch.save(self.model.state_dict(), self.cfg.base.save_path)
+                    if val_metrics[self.cfg.base.early_stopping.value_to_track]<= min_val:
+                        print(f"Archive min error on validation  {val_metrics[self.cfg.base.early_stopping.value_to_track]} , saving model...")
+                        min_val = val_metrics[self.cfg.base.early_stopping.value_to_track]
+                        check_dir_exists(self.cfg.base.save_path)
+                        torch.save(self.model.state_dict(), self.cfg.base.save_path)
+                else:
+                    check_dir_exists(self.cfg.base.save_path)
+                    torch.save(self.model.state_dict(), self.cfg.base.save_path)
 
         return val_metrics
     
@@ -177,11 +212,13 @@ class UnimodalSurvivalTrainer(Trainer):
         transforms = None
         if cfg.base.modalities[0]=="rna":
             if self.cfg.base.architecture=="MAE":
-                transforms = padded_transforms(self.preproc.get_scaling(), cfg.model.size)
+                transforms = padded_transforms_with_scaling(self.preproc.get_scaling(), cfg.model.size)
             elif self.cfg.base.architecture=="CNN":    
                 transforms = base_transforms(self.preproc.get_scaling())
         elif self.cfg.base.modalities[0]=="dnam":
-            transforms = padded_transforms_simple(cfg.model.get("size", None))        
+            transforms = padded_transforms_scaling(self.preproc.get_scaling(), cfg.model.get("size", None))
+        elif self.cfg.base.modalities[0]=="clinical":
+             transforms = base_scaling(self.preproc.get_scaling())       
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
 
         self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False,
@@ -205,7 +242,7 @@ class UnimodalSurvivalTrainer(Trainer):
             for split_name, dataset in splits.items():
                 splits[split_name] = preproc.transform_labels(dataset)
                 datasets[split_name] = RNASurvivalDataset(splits[split_name], self.cfg.data.rna.rna_dataset_path, 
-                                                 transform = transforms, is_hazard_logits = True, column_order=preproc.get_column_order())
+                                                 transform = transforms, is_hazard_logits = True, column_order=preproc.get_column_order(), debug_mode = self.cfg.data.rna.get("debug_mode", False))
 
         elif modality == "mri":
                 splits = {split_name: preproc.transform_labels(split) for split_name, split in splits.items()}
@@ -224,12 +261,23 @@ class UnimodalSurvivalTrainer(Trainer):
                             is_hazard_logits=True,
                             tensor_name=self.cfg.data.mri.get("tensor_name", None)
                         )
+        elif modality == "dnam":
+            for split_name, dataset in splits.items():
+                splits[split_name] = preproc.transform_labels(dataset)
+                datasets[split_name] = DNAmSurvivalDataset(splits[split_name], self.cfg.data.dnam.dnam_dataset_path, 
+                                                 transform = transforms, is_hazard_logits = True, column_order=preproc.get_column_order())
+        elif modality == "clinical":
+            for split_name, dataset in splits.items():
+                splits[split_name] = preproc.transform_labels(dataset)
+                datasets[split_name] = ClinicalSurvivalDataset(splits[split_name], self.cfg.data.clinical.dataset_path, self.cfg.data.clinical.selected_columns,
+                                                    transform = transforms, is_hazard_logits = True)
+                    
         elif modality == "wsi":
             splits = {split_name: preproc.transform_labels(split) for split_name, split in splits.items()}
             for split_name, split in splits.items():
                     # Определяем значение параметра num в зависимости от типа раздела
                     is_train = True if split_name == "train" else False
-                    if self.cfg.base.architecture=="CNN":
+                    if self.cfg.base.architecture=="CNN" or len(self.cfg.base.modalities)>1:
                         # Создаем датасет с нужными параметрами
                         dataset = WSIDataset(split, self.cfg.data.wsi.k, is_train=is_train, return_mask=True)
                         # Создаем SurvivalMRIDataset с нужными параметрами
@@ -273,7 +321,7 @@ class UnimodalSurvivalTrainer(Trainer):
                      return WSIEncoder(embedding_dim=self.cfg.model.input_embedding_dim, depth=self.cfg.model.depth,
                                       heads=self.cfg.model.heads, dim=self.cfg.model.dim, pool=self.cfg.model.pool,
                                       dim_head=self.cfg.model.dim_head, mlp_dim=self.cfg.model.mlp_dim, dropout=self.cfg.model.dropout,
-                                      emb_dropout=self.cfg.model.emb_dropout, n_outputs=self.cfg.base.n_intervals)
+                                      emb_dropout=self.cfg.model.emb_dropout, n_outputs=self.cfg.model.n_outputs)
                 else:
                     raise NotImplementedError("Exist only MAE and CNN architectures for mri modality")    
         else:
@@ -326,9 +374,9 @@ class UnimodalMAETrainer(Trainer):
         super().__init__(splits, cfg)
         transforms = None
         if self.cfg.base.modalities[0]=="rna":
-            transforms = padded_transforms(self.preproc.get_scaling(), cfg.model.size)
+            transforms = padded_transforms_with_scaling(self.preproc.get_scaling(), cfg.model.size)
         elif self.cfg.base.modalities[0]=="dnam":
-            transforms = padded_transforms_simple(cfg.model.get("size", None))
+            transforms = padded_transforms_scaling(self.preproc.get_scaling(), cfg.model.get("size", None))
         elif self.cfg.base.modalities[0]=="mri":
             transforms = None
         elif self.cfg.base.modalities[0]=="wsi":
@@ -395,7 +443,11 @@ class UnimodalMAETrainer(Trainer):
             for split_name, split in splits.items():
                     # Определяем значение параметра num в зависимости от типа раздела                  
                     # Создаем датасет с нужными параметрами
-                    datasets[split_name] = WSIDataset_patches(split,return_mask=False)
+                    if len(self.cfg.base.modalities)>1:
+                        is_train = True if split_name == "train" else False
+                        datasets[split_name] = WSIDataset(split,self.cfg.data.wsi.k, is_train=is_train,return_mask=True)
+                    else:
+                        datasets[split_name] = WSIDataset_patches(split,return_mask=False)
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
         

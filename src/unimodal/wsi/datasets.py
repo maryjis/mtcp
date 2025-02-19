@@ -48,7 +48,7 @@ class WSIDataset(BaseDataset):
         if not pd.isna(sample.WSI):
             data = pd.read_csv(sample.WSI)
             # get k random embeddings
-            data = data.sample(len(data))  
+            data = data.sample(self.k)  
 
             data = torch.from_numpy(data.values).float()
             mask = True
