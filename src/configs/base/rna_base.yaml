@@ -16,7 +16,7 @@ scheduler:
 
 
 type: "unimodal"
-strategy: "survival" # mae, survival
+strategy: "mae" # mae, survival
 modalities: ["rna"]
 architecture: "MAE"
 splits: 5
@@ -24,7 +24,7 @@ data_path: "src/data/dataset.csv"
 root_path: "../"
 save_path : "outputs/models/"
 rna_dataset_path: "src/data/rna_dataset.csv"
-device: "cuda:0"
+device: "cuda:2"
 remove_nan_column: 'RNA'
 batch_size: 24
 
