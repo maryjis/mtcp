@@ -239,6 +239,37 @@ class RnaMAEForPreTraining(ViTMAEForPreTraining):
         # Initialize weights and apply final processing
         self.post_init()
         
+    def forward_loss(self, pixel_values, pred, mask, interpolate_pos_encoding: bool = False):
+        """
+        Args:
+            pixel_values (`torch.FloatTensor` of shape `(batch_size, num_channels, height, width)`):
+                Pixel values.
+            pred (`torch.FloatTensor` of shape `(batch_size, num_patches, patch_size**2 * num_channels)`:
+                Predicted pixel values.
+            mask (`torch.FloatTensor` of shape `(batch_size, sequence_length)`):
+                Tensor indicating which patches are masked (1) and which are not (0).
+            interpolate_pos_encoding (`bool`, *optional*, default `False`):
+                interpolation flag passed during the forward pass.
+
+        Returns:
+            `torch.FloatTensor`: Pixel reconstruction loss.
+        """
+        
+        target = self.patchify(pixel_values, interpolate_pos_encoding=interpolate_pos_encoding)
+        print("mask.mean", mask.mean())
+
+        if self.config.norm_pix_loss:
+            mean = target.mean(dim=-1, keepdim=True)
+            var = target.var(dim=-1, keepdim=True)
+            target = (target - mean) / (var + 1.0e-6) ** 0.5
+
+        print("target.mean", target.mean())
+        print("pred.mean", pred.mean())
+        loss = (pred - target) ** 2
+        loss = loss.mean(dim=-1)  # [N, L], mean loss per patch
+        loss = (loss * mask).sum() / mask.sum()  # mean loss on removed patches
+        return loss
+        
     def patchify(self, rna_values, interpolate_pos_encoding: bool = False):
         """
         Args:

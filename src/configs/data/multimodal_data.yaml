@@ -1,9 +1,9 @@
 rna:
-    is_cluster_genes: True
+    is_cluster_genes: False
     is_hierarchical_clusters: True
     clustering_threshold: 0.7
-    scaling_method: UpperQuartileNormalizer
-    scaling_params: {"quantile" : 50}
+    scaling_method: ""
+    scaling_params: {}
     var_threshold: 0.0
     root_path: "../"
     rna_dataset_path: "src/data/rna_dataset.csv"
@@ -15,8 +15,10 @@ mri:
     root_path: "/data/BraTS_2023/MRI"
 
 dnam:
-    is_cluster_genes: True
+    is_cluster_genes: False
     is_hierarchical_clusters: True
+    scaling_method: ""
+    scaling_params: {}
     clustering_threshold: 0.7
     var_threshold: 0.0
     dnam_dataset_path: "src/data/dna_dataset.csv"

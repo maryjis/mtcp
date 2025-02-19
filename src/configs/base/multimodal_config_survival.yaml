@@ -1,4 +1,4 @@
-experiment_name: "multimodal_pretrained_rna_dnam_survival_3_mod_freeze_mri_128_dec_lr_1-e3_pretrained3"
+experiment_name: "multimodal_pretrained_rna_dnam_256_decoder_missing_survival"
 n_epochs: 50
 n_intervals: 20
 random_seed: 1380
@@ -16,14 +16,14 @@ scheduler:
 
 type: "multimodal"
 strategy: "survival" # mae, survival
-modalities: ["rna", "dnam", "mri"]
+modalities: ["rna", "dnam"]
 multimodal_intersection_test: true
 architecture: "MAE"
 splits: 5
 data_path: "src/data/dataset.csv"
 save_path : "outputs/models/"
 rna_dataset_path: "src/data/rna_dataset.csv"
-device: "cuda:3"
+device: "cuda:4"
 remove_nan_column: 'RNA'
 batch_size: 24
 
