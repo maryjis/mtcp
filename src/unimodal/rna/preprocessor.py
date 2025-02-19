@@ -11,26 +11,37 @@ import numpy as np
 from sklearn.preprocessing import FunctionTransformer
 from sklearn.pipeline import Pipeline
 from src.unimodal.rna.transforms import log_transform
-from scipy.cluster.hierarchy import linkage, dendrogram, fcluster
+from scipy.cluster.hierarchy import linkage, dendrogram, fcluster,leaves_list
 from scipy.spatial.distance import squareform
 import matplotlib.pyplot as plt
 from sklearn.base import TransformerMixin
 from sklearn.feature_selection import VarianceThreshold
+from src.unimodal.rna.transforms import UpperQuartileNormalizer
 
 class RNAPreprocessor(BaseUnimodalPreprocessor):
     
     def __init__(self, data_train :pd.DataFrame, dataset_dir : Path,
                  n_intervals: int, scaling_method: TransformerMixin, scaling_prams: dict = {},
-                 var_threshold = 0.0, is_cluster_genes: bool = False , threshold: float =0):
+                 var_threshold = 0.0, is_cluster_genes: bool = False , threshold: float =0, is_hierarchical_cluster: bool =False):
         super().__init__(data_train, n_intervals)
         self.data_train = data_train
         self.train_dataset = RNADataset(data_train, dataset_dir)
         self.train_loaders = DataLoader(self.train_dataset)
         
-        self.pipe = Pipeline(steps=[('log', FunctionTransformer(log_transform)) , ('scaler', scaling_method(**scaling_prams)), ('var' , VarianceThreshold(var_threshold))])
+        self.pipe = Pipeline(steps=[('log', FunctionTransformer(log_transform)) ,
+                                    ('scaler1',UpperQuartileNormalizer(quantile=50)), 
+                                    ('var' , VarianceThreshold(var_threshold))])
+        
+        self.scaling_method = None
+        if scaling_method is not None:
+            self.scaling_method = scaling_method(**scaling_prams)
+        # if isinstance(scaling_method, StandardScaler):
+        #     print("!!!!!scaler: ")
+        #self.scaling_method.set_output(transform='pandas')
         self.is_cluster_genes =is_cluster_genes
         self.column_order = None
         self.threshold =threshold
+        self.is_hierarchical_cluster =is_hierarchical_cluster
     
         
     def fit(self):
@@ -42,21 +53,28 @@ class RNAPreprocessor(BaseUnimodalPreprocessor):
         print(data)
         self.pipe.fit(data)
         print( "Number of features: ", self.pipe['var'].get_feature_names_out().shape)
+        data = self.pipe.transform(data)
+        if self.scaling_method is not None:
+            data = self.scaling_method.fit_transform(data)
+
+        dataset = pd.DataFrame(data = data, columns = self.pipe['var'].get_feature_names_out())
         
-        
+        print("Dataset after scaling", dataset)
         if self.is_cluster_genes:
-            print("Clustering genes:")
-            data = self.pipe.transform(data)
-            dataset = pd.DataFrame(data = data, columns = self.pipe['var'].get_feature_names_out())
-            
             correlations = dataset.corr()
             dissimilarity = 1 - abs(correlations)
             Z = linkage(squareform(dissimilarity), 'complete')
             # Clusterize the data
-            labels = fcluster(Z, self.threshold, criterion='distance')
-
             
-            labels_order = np.argsort(labels)
+            if self.is_hierarchical_cluster:
+                print("self.is_hierarchical_cluster: ", self.is_hierarchical_cluster)
+                labels_order = leaves_list(Z)
+            else:
+                labels = fcluster(Z, self.threshold, criterion='distance')
+
+                
+                labels_order = np.argsort(labels)
+            
         
             self.column_order = self.train_dataset.get_column_names()[labels_order]
             print("--------------------------------------------------------")
@@ -73,7 +91,7 @@ class RNAPreprocessor(BaseUnimodalPreprocessor):
         
         
     def get_scaling(self):
-        return self.pipe['scaler']
+        return self.scaling_method
     
     def get_column_order(self):
         if self.column_order is None:

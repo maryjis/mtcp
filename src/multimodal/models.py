@@ -6,10 +6,13 @@ from typing import Dict
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.unimodal.mri.mae import MriMAEModel
 from src.unimodal.dna.models import DNAmSurvivalModel, DNAmMAEModel
+from src.unimodal.wsi.mae import WSIEmbeddingMAEModel
+
 from omegaconf import DictConfig, OmegaConf
 from transformers import PreTrainedModel
 from src.unimodal.mri.mae import MriMAEDecoderPred
 from flamingo_pytorch import PerceiverResampler
+from src.multimodal.losses import CLIPAlignmentLoss
 
 class UnimodalEncoder(nn.Module):
     def __init__(self, encoder, unimodal_hidden_size, multimodal_hidden_size = None, is_projection = False):
@@ -65,7 +68,6 @@ class MultiMAEModel(PreTrainedModel):
             self.encoder_fusion_strategy = MaskAttentionFusion(cfg.encoder_fusion_depth, cfg.encoder_fusion_dim,
                                                                 cfg.encoder_fusion_nhead,
                                                         cfg.encoder_fusion_dim_feedforward, cfg.encoder_fusion_dropout)
-            
         self.initialize_weights()
 
     def __init_encoders__(self):
@@ -120,6 +122,24 @@ class MultiMAEModel(PreTrainedModel):
                     self.cfg.hidden_size,
                     self.cfg.is_projection
                 )
+            elif modality == "wsi":
+                cfg_wsi_model = ViTMAEConfig(**self.cfg.wsi_model)
+                encoder = None
+                if cfg_wsi_model.is_load_pretrained:
+                    encoder = WSIEmbeddingMAEModel.from_pretrained(cfg_wsi_model.pretrained_model_path, config=cfg_wsi_model)
+                    for param in encoder.parameters():
+                        param.requires_grad = False
+                else:
+                    encoder = WSIEmbeddingMAEModel(config =cfg_wsi_model)
+                    
+                self.encoders[modality] = UnimodalEncoder(
+                    encoder,
+                    cfg_wsi_model.hidden_size, 
+                    self.cfg.hidden_size,
+                    self.cfg.is_projection
+                )
+            elif modality == "clinical":
+                pass  
             else:
                 # Add support for other modalities
                 raise NotImplementedError(f"Encoder for modality {modality} not implemented")
@@ -253,7 +273,7 @@ class MultiMAEModel(PreTrainedModel):
             
     def initialize_weights(self):
         torch.nn.init.normal_(self.cls_token, std=self.cfg.initializer_range)
-        #torch.nn.init.normal_(self.mask_token, std=self.config.initializer_range)
+        # torch.nn.init.normal_(self.mask_token, std=self.config.initializer_range)
         
     def forward(
         self,
@@ -274,6 +294,8 @@ class MultiMAEModel(PreTrainedModel):
         is_first = True
 
         for modality in self.modalities:
+            if modality =="clinical":
+                continue
             seq_length = self.get_patches_number(modality)
             sample = x[modality]
             
@@ -288,7 +310,7 @@ class MultiMAEModel(PreTrainedModel):
                 multimodal_lenths=multimodal_length
                 
             )
-            
+
             multimodal_length += seq_length
             
             embedded_sample = ViTMAEModelOutput(
@@ -343,18 +365,22 @@ class MultiMaeForPretraining(nn.Module):
         self.decoder = MultiMAEDecoder(self.cfg, self.get_all_patches_number())
         if cfg.postprocessing:
             self.postprocessors = nn.ModuleDict({f"postprocessor_{modality}" : self.get_postprocessor(modality) for modality in self.modalities})
-        
+        self.contrastive_loss = None
+        if self.cfg.contrastive_loss:
+            print("CLIP loss: ")
+            self.contrastive_loss =  CLIPAlignmentLoss()  
 
     def get_postprocessor(self, modality):
+        patch_size = self.get_patch_size(modality)
         if modality =="mri":
             return MriMAEDecoderPred(ViTMAEConfig(**self.cfg.mri_model))
-        elif modality =="rna" or modality =="dnam":
-            return nn.Linear(
-                self.cfg.decoder_hidden_size, self.get_patch_size(modality), bias=True
-            )
+        elif modality =="rna" or modality =="dnam" or modality =="wsi":
+                return nn.Linear(
+                    self.cfg.decoder_hidden_size, patch_size, bias=True
+                )
         
     def get_patch_size(self,  modality: str)-> int:
-        if modality =="rna" or modality=="dnam":
+        if modality =="rna" or modality=="dnam" or modality =="wsi":
             return self.cfg.to_dict()[f"{modality}_model"]["patch_size"]
         elif  modality =="mri":
             return self.cfg.to_dict()[f"{modality}_model"]["patch_size"] ** 3
@@ -408,27 +434,36 @@ class MultiMaeForPretraining(nn.Module):
             torch.FloatTensor: Mean reconstruction loss on masked patches.
         """
         # Convert input to patches
+
         target = encoder.encoder.patchify(values, interpolate_pos_encoding=interpolate_pos_encoding)
+        
 
         # Masked loss for all zero subjects (missing ones)
         modality_mask = modality_mask.unsqueeze(1).to(mask.device)
         mask =  mask * modality_mask
+        print("mask.mean", mask.mean())
+        print("target.mean", target.mean())
+        print("pred.mean", pred.mean())
         
         # Normalize target values if configured
         if self.cfg.norm_pix_loss:
+            print("self.cfg.norm_pix_loss")
             mean = target.mean(dim=-1, keepdim=True)
             var = target.var(dim=-1, keepdim=True)
             target = (target - mean) / (var + 1.0e-6).sqrt()
-
-            
+    
         # Calculate mean squared error
         loss = (pred - target).pow(2)
 
         loss = loss.mean(dim=-1)  # Mean loss per patch [batch_size, num_patches]
 
         # Calculate mean loss on masked patches only
-        loss = (loss * mask).sum() / (mask.sum() + 1e-6)
-        
+  
+        if (loss * mask).sum() >0:
+            loss = (loss * mask).sum() / (mask.sum())
+        else:
+            print("Loss is zero!")
+            loss = (loss * mask).sum() 
         return loss
     
     def split_modalities(self, pred: torch.FloatTensor):
@@ -468,8 +503,12 @@ class MultiMaeForPretraining(nn.Module):
         start_idx = 0
         total_loss = 0
         modality_losses = {}
-        
         for modality in self.modalities:
+            if modality =="clinical":
+                continue
+            if modality =="mri":
+                modality_losses[modality] = torch.zeros(0).to(x[modality].device)
+                continue
             if modality not in modality_losses:
                 modality_losses[modality] = 0
             # Get number of patches for current modality
@@ -479,9 +518,10 @@ class MultiMaeForPretraining(nn.Module):
             # Extract predictions and mask for current modality
             pred_modality = pred[:, start_idx:end_idx]
             mask_modality = mask[:, start_idx:end_idx]
-
+ 
             if self.cfg.postprocessing:
                 pred_modality = self.postprocessors[f"postprocessor_{modality}"](pred_modality)
+
 
             # Calculate loss for current modality
             modality_loss = self.__forward_loss(
@@ -492,15 +532,51 @@ class MultiMaeForPretraining(nn.Module):
                 mask_modality,
                 interpolate_pos_encoding
             )
-
+            print(f"modality {modality}, loss {modality_loss}")
             modality_losses[modality] += modality_loss
             total_loss += modality_loss
             start_idx = end_idx
-            
+
         return modality_losses, total_loss
     
    
-                             
+    def contrastive_losses(self, latent: dict[str, torch.FloatTensor], modality_masks: Dict[str, torch.FloatTensor],):
+        modalities_embeddings ={}   
+        for modality in self.modalities:
+            if modality =="clinical":
+                continue
+        for modality in self.modalities:
+            if modality =="clinical":
+                continue
+            if modality not in modality_losses:
+                modality_losses[modality] = 0
+            # Get number of patches for current modality
+            num_patches = self.get_patches_number(modality)
+            end_idx = start_idx + num_patches
+            
+            # Extract predictions and mask for current modality
+            latent_modality = latent[:, start_idx:end_idx]
+            mask_modality = mask[:, start_idx:end_idx]
+            
+            modalities_embeddings[modality] = latent_modality
+
+            total_loss += modality_loss
+            start_idx = end_idx
+        
+        contrastive_coeff =0.2    
+        contrastive_losses = {}     
+        
+        for modality in self.modalities:
+            mask_modality = modality_masks[modality]
+            print(mask_modality)
+            if modality!="rna" and (torch.any(modality_masks[modality]) or torch.any(modality_masks[modality])):
+                modalities_ids = torch.nonzero(mask_modality, as_tuple=True)[0].to(mask_modality.device)
+                print(modalities_ids)
+                contrastive_loss =self.contrastive_loss.forward(modalities_embeddings["rna"][modalities_ids], modalities_embeddings[modality][modalities_ids])
+                total_loss +=contrastive_loss
+                contrastive_losses[f"rna-{modality}"]  = contrastive_loss
+        return contrastive_losses        
+                                
         
     def forward(
         self,
@@ -519,7 +595,11 @@ class MultiMaeForPretraining(nn.Module):
         latent = concat_embedding.last_hidden_state
         ids_restore = concat_embedding.ids_restore
         mask = concat_embedding.mask
-
+        #Contrastive loss
+        contrastive_losses ={}
+        if self.contrastive_loss is not None:
+            print("Contrastive loss: ")
+            contrastive_losses = self.contrastive_losses(latent, modality_masks)
         # Decode the latent representations
         decoder_outputs = self.decoder(latent, ids_restore)
         logits = decoder_outputs.logits
@@ -534,7 +614,7 @@ class MultiMaeForPretraining(nn.Module):
         )
             
         return ViTMAEForPreTrainingOutput(
-            loss = (total_loss,modality_losses),
+            loss = (total_loss,modality_losses,contrastive_losses),
             logits=logits,
             mask=mask,
             ids_restore=ids_restore,
@@ -615,7 +695,6 @@ class MultiMaeForSurvival(nn.Module):
             
         if cfg.missing_modalities_strategy =="decoder":
             model_state_dict = torch.load(cfg.mm_pretrained_model_path)
-            print(model_state_dict.keys())
             self.decoder_mm = MultiMaeForPretraining(ViTMAEConfig(**cfg.mm_decoder_config))
             self.decoder_mm.load_state_dict(model_state_dict)
             
@@ -653,8 +732,26 @@ class MultiMaeForSurvival(nn.Module):
             
         else:
             raise ValueError(f"Invalid fusion strategy: {cfg.fusion_strategy}")
-            
-        self.projection = nn.Linear(cfg.fusion_dim, cfg.output_dim)
+        
+        if cfg.fusion_strategy_is_pretrained:
+                model_state_dict = torch.load(cfg.pretrained_model_path)
+                print(model_state_dict.keys())
+                model_state_dict = {k.replace("fusion_strategy.", "", 1): v for k, v in model_state_dict.items() if k.startswith("fusion_strategy.")}  
+                self.fusion_strategy.load_state_dict(model_state_dict)
+                for param in self.fusion_strategy.parameters():
+                    param.requires_grad = False
+        # if "clinical" in self.modalities:
+        #     #TODO add special param for it -> cfg.fusion_dim+3
+        #     self.projection = nn.Linear(cfg.fusion_dim+3, cfg.output_dim)
+        # else:           
+        
+        if "clinical" in self.modalities:
+            #TODO add special param for it -> cfg.fusion_dim+3
+            self.clinical_projection = nn.Linear(3, 3)
+            self.projection = nn.Linear(cfg.fusion_dim+3, cfg.output_dim)
+        else:
+            self.projection = nn.Linear(cfg.fusion_dim, cfg.output_dim)    
+        
         
     def get_primary_order(self, x,ids_restore):
         mask_tokens = self.model.mask_token.repeat(x.shape[0], ids_restore.shape[1] + 1 - x.shape[1], 1)
@@ -668,11 +765,19 @@ class MultiMaeForSurvival(nn.Module):
             
     def forward(self, x: Dict[str, torch.FloatTensor], masks: Dict[str, torch.FloatTensor], interpolate_pos_encoding: bool = False):
         # print({modality: value.mean() for modality, value  in x.items()})
-        
+        if "clinical" in x.keys():
+
+            clinical_data = x["clinical"].clone()
+            del x["clinical"]
+            del masks["clinical"]
+            
         if self.cfg.missing_modalities_strategy =="decoder":
+            self.decoder_mm.eval()
             decoded_x = self.decoder_mm(x, masks, interpolate_pos_encoding)
             decoded_x = self.decoder_mm.split_modalities(decoded_x.logits)
             for modality in self.modalities:
+                if modality == "clinical":
+                    continue
                 if torch.any(~masks[modality]):
                     missing_modalities_ids = torch.nonzero(~masks[modality], as_tuple=True)[0].to(masks[modality].device)
                     ##  patchify todo
@@ -680,7 +785,7 @@ class MultiMaeForSurvival(nn.Module):
                     masks[modality].fill_(1)
 
             
-            
+                
         concat_x = self.model(x, masks, interpolate_pos_encoding)
         
       
@@ -727,6 +832,18 @@ class MultiMaeForSurvival(nn.Module):
         else:
             concat_x = self.fusion_strategy(concat_x.last_hidden_state)
         
-
-        logits = self.projection(concat_x[:,0,:])  
+        print(self.modalities)
+        if "clinical" in self.modalities:
+            clinical_logits = self.clinical_projection(clinical_data[:,0,:])    
+            concat_with_clinical =torch.cat([concat_x[:,0,:], clinical_logits], axis =-1)
+            print("concat_with_clinical.shape ", concat_with_clinical.shape)
+            logits = self.projection(concat_with_clinical) 
+        else:    
+            logits = self.projection(concat_x[:,0,:])
+        # if "clinical" in self.modalities:
+        #     clinical_logits = self.clinical_projection(clinical_data[:,0,:])
+        #     concat_logits = torch.stack([logits,clinical_logits], dim =2)
+        #     print("concat_logits.shape", concat_logits.shape)
+        #     logits = self.final_projection(concat_logits)
+        #     logits =torch.squeeze(logits,2)
         return logits

@@ -1,8 +1,8 @@
 attention_probs_dropout_prob: 0.0
-decoder_hidden_size: 128
+decoder_hidden_size: 256
 decoder_intermediate_size: 512
 decoder_num_attention_heads: 4
-decoder_num_hidden_layers: 2
+decoder_num_hidden_layers: 3
 hidden_act: "gelu"
 hidden_dropout_prob: 0.0
 hidden_size: 256 # maybe 384?

@@ -7,3 +7,4 @@ pool: "cls"
 dim_head: 64
 mlp_dim: 128
 emb_dropout: 0.2
+n_outputs: 20

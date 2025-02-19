@@ -1,9 +1,10 @@
 
-modalities: ["rna","dnam", "mri"]
+modalities: ["rna","dnam"]
 defaults: 
   - rna_model: rna_mae
   - mri_model: mri_mae_model
   - dnam_model: dna_mae
+  - wsi_model: wsi_mae
 
 hidden_size: 256
 is_projection: False
@@ -11,7 +12,7 @@ attention_probs_dropout_prob: 0.0
 decoder_hidden_size: 256
 decoder_intermediate_size: 512
 decoder_num_attention_heads: 4
-decoder_num_hidden_layers: 3
+decoder_num_hidden_layers: 2
 hidden_act: "gelu"
 hidden_dropout_prob: 0.0
 initializer_range: 0.02
@@ -31,7 +32,7 @@ pretrained_model_path: ""
 postprocessing: True
 output_dim: 20
 encoder_fusion_strategy: "identity"
-
+contrastive_loss: false
 encoder_fusion_depth: 1
 encoder_fusion_dim: 256
 encoder_fusion_nhead: 4
