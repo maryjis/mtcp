@@ -253,9 +253,7 @@ class WsiMaeSurvivalModel(nn.Module):
     def forward(self, wsi_values, masks=None):
         x = self.vit(wsi_values)
         x = self.projection(x.last_hidden_state[:, 0, :])
-<<<<<<< HEAD
-        return x.squeeze(-1)
-
+        return x.squeeze(-1) 
 
 
 
@@ -352,6 +350,3 @@ class WSIEmbeddingMAEModel(ViTMAEModel):
 
     def unpatchify(self, values, original_rna_size: int=None):
         return values
-=======
-        return x.squeeze(-1) 
->>>>>>> main
