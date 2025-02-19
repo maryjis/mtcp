@@ -1,14 +1,15 @@
 
-modalities: ["rna","dnam", "mri"]
+modalities: ["rna", "dnam"]
 defaults: 
   - rna_model: rna_mae
-  - mri_model: mri_mae_model
+  # - mri_model: mri_mae_model
   - dnam_model: dna_mae
+  # - wsi_model: wsi_mae
 
 hidden_size: 256
 is_projection: False
 attention_probs_dropout_prob: 0.0
-decoder_hidden_size: 128
+decoder_hidden_size: 256
 decoder_intermediate_size: 512
 decoder_num_attention_heads: 4
 decoder_num_hidden_layers: 3
@@ -22,7 +23,7 @@ model_type: "vit_mae"
 norm_pix_loss: false
 num_attention_heads: 4
 num_channels: 1
-num_hidden_layers: 4
+num_hidden_layers: 6
 qkv_bias: true
 patch_size: 512
 is_load_pretrained: false
@@ -30,6 +31,8 @@ pretrained_model_name: ""
 pretrained_model_path: ""
 postprocessing: True
 output_dim: 20
+contrastive_loss: false
+
 encoder_fusion_strategy: "identity"
 
 encoder_fusion_depth: 1

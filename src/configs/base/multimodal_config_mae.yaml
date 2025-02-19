@@ -1,5 +1,5 @@
-experiment_name: "multimodal_rna_mae_pretrained_model_freeze_mri_clustered_05_feb"
-n_epochs: 50
+experiment_name: "multimodal_rna_dna_800_scaled_mae"
+n_epochs: 800
 n_intervals: 20
 random_seed: 1380
 
@@ -16,7 +16,7 @@ scheduler:
 
 type: "multimodal"
 strategy: "mae" # mae, survival
-modalities: ["rna","dnam", "mri"]
+modalities: ["rna", "dnam"]
 multimodal_intersection_test: false
 architecture: "MAE"
 splits: 5
@@ -31,3 +31,8 @@ log:
     logging: True
     wandb_project: "cancer_mtcp"
     wandb_run_name: "test_multimodal_mae"
+
+profiling:
+    sort_by_keyword: self_cuda_time_total #by which parameter profiler output should be sorted
+    row_limit: 10 #how many rows should be in profiler output
+    is_print: True
