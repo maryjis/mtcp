@@ -20,7 +20,7 @@ num_hidden_layers: 2
 patch_size: 512
 qkv_bias: true
 is_load_pretrained: false
-pretrained_model_name: ""
+pretrained_model_name: "mae 2 conv2d/wsi mae_split_1.pth"
 pretrained_model_path: ""
 output_dim: 20
 num_patches: 10
