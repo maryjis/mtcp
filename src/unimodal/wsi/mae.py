@@ -228,8 +228,22 @@ class WsiMAEForPreTraining(ViTMAEForPreTraining):
         self.decoder = WsiMAEDecoder(config, num_patches=self.vit.embeddings.num_patches)
         self.post_init()
 
+    def forward(self, image_values, **kwargs):
+        """
+        Из входного батча [B, max_patches_per_sample, C, H, W]
+        случайным образом выбирается по одному большому патчу для каждого образца.
+        Далее происходит стандартный MAE-процесс.
+        """
+        B, N, C, H, W = image_values.shape
+        # Случайно выбираем один патч для каждого сэмпла
+        idx = torch.randint(0, N, (B,), device=image_values.device)
+        selected = image_values[torch.arange(B), idx]  # [B, C, H, W]
+        # Добавляем размерность, чтобы получить форму [B, 1, C, H, W]
+        selected = selected.unsqueeze(1)
+        return super().forward(selected, **kwargs)
+
     def patchify(self, imgs, interpolate_pos_encoding: bool = False):
-        # Аналогично, для расчёта целевых патчей переводим каждый большой патч в отдельный элемент батча.
+        # Переопределяем patchify для обработки [B, 1, C, H, W]
         p = self.config.patch_size
         b, n, c, h, w = imgs.shape
         assert h == w == self.config.image_size, "Размер изображения не совпадает с config.image_size"
@@ -271,3 +285,4 @@ class WsiMaeSurvivalModel(nn.Module):
         patient_repr = cls_tokens.mean(dim=1)  # [B, hidden_size]
         x = self.projection(patient_repr)
         return x.squeeze(-1)
+
