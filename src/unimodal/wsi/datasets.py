@@ -80,7 +80,7 @@ class WSIDataset_patches(BaseDataset):
         return_mask: bool = False,
         is_hazard_logits=False,
         resize_to: tuple = (256, 256),
-        max_patches_per_sample: int = 30,
+        max_patches_per_sample: int = 10,
     ) -> None:
         super().__init__(data=data, transform=transform, return_mask=return_mask, is_hazard_logits=is_hazard_logits)
         self.resize_to = resize_to
