@@ -6,7 +6,7 @@ from typing import Dict
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.unimodal.mri.mae import MriMAEModel
 from src.unimodal.dna.models import DNAmSurvivalModel, DNAmMAEModel
-from src.unimodal.wsi.mae import WSIEmbeddingMAEModel
+from src.unimodal.wsi.mae import WSIEmbeddingMAEModel,WsiMAEModel
 
 from omegaconf import DictConfig, OmegaConf
 from transformers import PreTrainedModel
@@ -126,11 +126,13 @@ class MultiMAEModel(PreTrainedModel):
                 cfg_wsi_model = ViTMAEConfig(**self.cfg.wsi_model)
                 encoder = None
                 if cfg_wsi_model.is_load_pretrained:
-                    encoder = WSIEmbeddingMAEModel.from_pretrained(cfg_wsi_model.pretrained_model_path, config=cfg_wsi_model)
+                    # encoder = WSIEmbeddingMAEModel.from_pretrained(cfg_wsi_model.pretrained_model_path, config=cfg_wsi_model)
+                    encoder = WsiMAEModel.from_pretrained(cfg_wsi_model.pretrained_model_path, config=cfg_wsi_model)
                     for param in encoder.parameters():
                         param.requires_grad = False
                 else:
-                    encoder = WSIEmbeddingMAEModel(config =cfg_wsi_model)
+                    #encoder = WSIEmbeddingMAEModel(config =cfg_wsi_model)
+                    encoder = WsiMAEModel(config =cfg_wsi_model)
                     
                 self.encoders[modality] = UnimodalEncoder(
                     encoder,
@@ -436,14 +438,10 @@ class MultiMaeForPretraining(nn.Module):
         # Convert input to patches
 
         target = encoder.encoder.patchify(values, interpolate_pos_encoding=interpolate_pos_encoding)
-        
-
         # Masked loss for all zero subjects (missing ones)
         modality_mask = modality_mask.unsqueeze(1).to(mask.device)
         mask =  mask * modality_mask
-        print("mask.mean", mask.mean())
-        print("target.mean", target.mean())
-        print("pred.mean", pred.mean())
+ 
         
         # Normalize target values if configured
         if self.cfg.norm_pix_loss:
@@ -532,7 +530,7 @@ class MultiMaeForPretraining(nn.Module):
                 mask_modality,
                 interpolate_pos_encoding
             )
-            print(f"modality {modality}, loss {modality_loss}")
+
             modality_losses[modality] += modality_loss
             total_loss += modality_loss
             start_idx = end_idx
@@ -687,8 +685,12 @@ class MultiMaeForSurvival(nn.Module):
             self.model.load_state_dict(model_state_dict)
             if cfg.freezing_strategy:
                 print("Freezing!")
-                for param in self.model.parameters():
-                    param.requires_grad = False
+                for name, param in self.model.named_parameters():
+                    if ("cls_token" in name) or ("layer.5" in name):
+                        print("chozen", name)
+                        param.requires_grad = True
+                    else: 
+                        param.requires_grad = False
                 
         else:
             self.model = MultiMAEModel(cfg)
@@ -700,6 +702,7 @@ class MultiMaeForSurvival(nn.Module):
             
             for param in self.decoder_mm.parameters():
                 param.requires_grad = False
+            # self.decoder_mm.eval()
             
         if cfg.fusion_strategy == "mask_attention":
             self.fusion_strategy = MaskAttentionFusion(cfg.fusion_depth, cfg.fusion_dim, cfg.fusion_nhead,
@@ -772,7 +775,6 @@ class MultiMaeForSurvival(nn.Module):
             del masks["clinical"]
             
         if self.cfg.missing_modalities_strategy =="decoder":
-            self.decoder_mm.eval()
             decoded_x = self.decoder_mm(x, masks, interpolate_pos_encoding)
             decoded_x = self.decoder_mm.split_modalities(decoded_x.logits)
             for modality in self.modalities:
@@ -787,7 +789,6 @@ class MultiMaeForSurvival(nn.Module):
             
                 
         concat_x = self.model(x, masks, interpolate_pos_encoding)
-        
       
         if self.cfg.return_order:
             concat_x.last_hidden_state = self.get_primary_order(concat_x.last_hidden_state, concat_x.ids_restore)
@@ -832,7 +833,7 @@ class MultiMaeForSurvival(nn.Module):
         else:
             concat_x = self.fusion_strategy(concat_x.last_hidden_state)
         
-        print(self.modalities)
+        
         if "clinical" in self.modalities:
             clinical_logits = self.clinical_projection(clinical_data[:,0,:])    
             concat_with_clinical =torch.cat([concat_x[:,0,:], clinical_logits], axis =-1)

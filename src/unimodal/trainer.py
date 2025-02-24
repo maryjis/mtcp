@@ -148,6 +148,12 @@ class Trainer(object):
                 if self.cfg.base.log.logging:
                     wandb.log({f"val/fold_{fold_ind}/{key}" : value for key, value in val_metrics.items()})
 
+                with torch.no_grad():    
+                    test_metrics = self.__loop__("test",fold_ind, self.dataloaders['test'], self.cfg.base.device)
+                test_metrics.update({"epoch": epoch})    
+                if self.cfg.base.log.logging:
+                    wandb.log({f"test/fold_{fold_ind}/{key}" : value for key, value in test_metrics.items()})
+                    
                 prof.step()
   
                 if self.cfg.base.get("early_stopping", None) is not None:
@@ -277,7 +283,7 @@ class UnimodalSurvivalTrainer(Trainer):
             for split_name, split in splits.items():
                     # Определяем значение параметра num в зависимости от типа раздела
                     is_train = True if split_name == "train" else False
-                    if self.cfg.base.architecture=="CNN" or len(self.cfg.base.modalities)>1:
+                    if self.cfg.base.architecture=="CNN":
                         # Создаем датасет с нужными параметрами
                         dataset = WSIDataset(split, self.cfg.data.wsi.k, is_train=is_train, return_mask=True)
                         # Создаем SurvivalMRIDataset с нужными параметрами
@@ -443,11 +449,11 @@ class UnimodalMAETrainer(Trainer):
             for split_name, split in splits.items():
                     # Определяем значение параметра num в зависимости от типа раздела                  
                     # Создаем датасет с нужными параметрами
-                    if len(self.cfg.base.modalities)>1:
-                        is_train = True if split_name == "train" else False
-                        datasets[split_name] = WSIDataset(split,self.cfg.data.wsi.k, is_train=is_train,return_mask=True)
-                    else:
-                        datasets[split_name] = WSIDataset_patches(split,return_mask=False)
+                    # if len(self.cfg.base.modalities)>1:
+                    #     is_train = True if split_name == "train" else False
+                    #     datasets[split_name] = WSIDataset(split,self.cfg.data.wsi.k, is_train=is_train,return_mask=True)
+                    # else:
+                    datasets[split_name] = WSIDataset_patches(split,return_mask=True)
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
         
