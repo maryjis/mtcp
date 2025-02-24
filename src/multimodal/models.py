@@ -6,7 +6,7 @@ from typing import Dict
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.unimodal.mri.mae import MriMAEModel
 from src.unimodal.dna.models import DNAmSurvivalModel, DNAmMAEModel
-from src.unimodal.wsi.mae import WSIEmbeddingMAEModel,WsiMAEModel
+from src.unimodal.wsi.mae import WsiMAEModel
 
 from omegaconf import DictConfig, OmegaConf
 from transformers import PreTrainedModel
@@ -209,6 +209,7 @@ class MultiMAEModel(PreTrainedModel):
             non_empty_samples = torch.index_select(sample, dim=0, index=non_empty_sample_ids)
             # print("Non empty samples shape: ", non_empty_samples.shape)
             embedded_non_empty = self.encoders[modality](non_empty_samples)
+            print("embedded_non_empty.last_hidden_state.shape", embedded_non_empty.last_hidden_state.shape)
             
             empty_sequence = self.mask_token.repeat(len(empty_sample_ids), embedded_non_empty.last_hidden_state.shape[1], 1)
             # print("Empty sample ids: ", empty_sample_ids)
@@ -296,6 +297,7 @@ class MultiMAEModel(PreTrainedModel):
         is_first = True
 
         for modality in self.modalities:
+            print(modality)
             if modality =="clinical":
                 continue
             seq_length = self.get_patches_number(modality)
@@ -382,10 +384,12 @@ class MultiMaeForPretraining(nn.Module):
                 )
         
     def get_patch_size(self,  modality: str)-> int:
-        if modality =="rna" or modality=="dnam" or modality =="wsi":
+        if modality =="rna" or modality=="dnam":
             return self.cfg.to_dict()[f"{modality}_model"]["patch_size"]
         elif  modality =="mri":
             return self.cfg.to_dict()[f"{modality}_model"]["patch_size"] ** 3
+        elif modality =="wsi":
+            return (self.cfg.to_dict()[f"{modality}_model"]["patch_size"] ** 2) *3
         else:
             raise NotImplementedError(f"This modality - {modality} hasn't implemeted yet")
         
@@ -438,6 +442,9 @@ class MultiMaeForPretraining(nn.Module):
         # Convert input to patches
 
         target = encoder.encoder.patchify(values, interpolate_pos_encoding=interpolate_pos_encoding)
+        
+        print("target.shape: ", target.shape)
+        print("pred.shape: ", pred.shape)
         # Masked loss for all zero subjects (missing ones)
         modality_mask = modality_mask.unsqueeze(1).to(mask.device)
         mask =  mask * modality_mask
