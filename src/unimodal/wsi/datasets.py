@@ -96,6 +96,11 @@ class WSIDataset_patches(BaseDataset):
 
         patch_files = sorted([f for f in os.listdir(patch_dir) if f.endswith(".png")])
         patches = []
+        
+        # Если включен случайный выбор патча, выбираем один патч
+        if self.random_patch_selection:
+            idx_patch = torch.randint(0, self.max_patches_per_sample, (1,)).item()  # Получаем скаляр
+            patch_files = [patch_files[idx_patch]]
 
         for patch_file in patch_files[:self.max_patches_per_sample]:  # Ограничиваем число патчей
             patch_path = os.path.join(patch_dir, patch_file)
@@ -107,13 +112,8 @@ class WSIDataset_patches(BaseDataset):
             patches.append(patch)
 
         # Дополняем до max_patches_per_sample нулевыми патчами
-        while len(patches) < self.max_patches_per_sample:
+        while len(patches) < self.max_patches_per_sample and not self.random_patch_selection:
             patches.append(torch.zeros((3, *self.resize_to)))
-
-        # Если включен случайный выбор патча, выбираем один патч
-        if self.random_patch_selection:
-            idx_patch = torch.randint(0, self.max_patches_per_sample, (1,)).item()  # Получаем скаляр
-            patches = [patches[idx_patch]]  # Оборачиваем выбранный патч в список
 
         return patches
 
