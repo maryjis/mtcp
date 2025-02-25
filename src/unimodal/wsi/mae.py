@@ -27,7 +27,7 @@ class WsiMAEPatchEmbeddings(nn.Module):
         # Общее число токенов если бы все большие патчи обрабатывались вместе:
         self.total_patches = max_patches_per_sample * self.num_sub_patches
 
-        # Здесь можно оставить ту же сверточную "голову" для каждого подпатча:
+        # Сверточная "голова" для подпатчей:
         layers = []
         in_ch = self.num_channels
         out_ch = 64  # начальное число каналов
@@ -46,9 +46,9 @@ class WsiMAEPatchEmbeddings(nn.Module):
 
     def _split_patches(self, wsi_tensor):
         """
-        Разбивает один большой патч (вход с формой [B', C, image_size, image_size])
+        Разбивает один большой патч (вход с формой [B, C, image_size, image_size])
         на subpatchи размером patch_size x patch_size.
-        Результат имеет форму [B', num_sub_patches, C, patch_size, patch_size].
+        Результат имеет форму [B, num_sub_patches, C, patch_size, patch_size].
         """
         b, c, h, w = wsi_tensor.shape
         p = self.patch_size
@@ -67,13 +67,13 @@ class WsiMAEPatchEmbeddings(nn.Module):
         Результат: [batch * max_patches_per_sample, num_sub_patches, hidden_size]
         """
         b, m, c, h, w = wsi_tensor.shape
-        # Каждый большой патч отдельно:
+        # Переформатируем так, чтобы каждый большой патч был отдельным элементом:
         wsi_tensor = wsi_tensor.view(b * m, c, h, w)  # [b*m, c, h, w]
         patches = self._split_patches(wsi_tensor)       # [b*m, num_sub_patches, c, patch_size, patch_size]
         patches = rearrange(patches, 'B N c h w -> (B N) c h w')
         x = self.projection(patches)                      # [(b*m * num_sub_patches), hidden_size]
         x = rearrange(x, '(B N) c -> B N c', B=b * m, N=self.num_sub_patches)
-        return x  # форма: [b*m, num_sub_patches, hidden_size]
+        return x
 
 ###############################
 # Класс эмбеддингов с позициональными и CLS-токенами
@@ -82,16 +82,15 @@ class WsiMAEEmbeddings(nn.Module):
     """
     Формирует эмбеддинги для каждого большого патча отдельно.
     Вход: [batch, max_patches_per_sample, channels, image_size, image_size]
-    Выход: [batch * max_patches_per_sample, 1 + num_sub_patches, hidden_size]
+    Выход: [batch * num_selected, 1 + num_sub_patches, hidden_size],
+    где num_selected = 1 при предобучении (если random_patch_selection=True) 
+    и num_selected = max_patches_per_sample при обычном режиме.
     """
     def __init__(self, cfg):
         super().__init__()
         self.cls_token = nn.Parameter(torch.zeros(1, 1, cfg.hidden_size))
-        # Используем наш WsiMAEPatchEmbeddings, который уже переразбивает данные:
         self.patch_embeddings = WsiMAEPatchEmbeddings(cfg)
-        # Число токенов для одного большого патча = число subpatchей:
         self.num_patches = self.patch_embeddings.num_sub_patches  
-        # Позиционные эмбеддинги рассчитываются для (CLS + subpatchи):
         self.position_embeddings = nn.Parameter(
             torch.zeros(1, self.num_patches + 1, cfg.hidden_size), requires_grad=False
         )
@@ -136,34 +135,42 @@ class WsiMAEEmbeddings(nn.Module):
         mask = torch.gather(mask, 1, ids_restore)
         return sequence_unmasked, mask, ids_restore
 
-    def forward(self, image_values, noise=None, interpolate_pos_encoding: bool = False):
-        # Получаем эмбеддинги для каждого большого патча
-        # Вход: [B, N, C, H, W] → выход: [B * N, num_subpatches, hidden_size]
-        embeddings = self.patch_embeddings(image_values)
-        # Добавляем позиционные эмбеддинги (срез для одного большого патча)
-        embeddings = embeddings + self.position_embeddings[:, 1:1+self.num_patches, :]
-        # Маскирование (работает независимо для каждого элемента батча)
+    def forward(self, image_values, noise=None, interpolate_pos_encoding: bool = False, random_patch_selection: bool = False):
+        """
+        image_values имеет форму [B, m, C, H, W].
+        Если random_patch_selection=True, для каждого образца выбирается один случайный патч,
+        и вход преобразуется в форму [B, 1, C, H, W], при этом размерность остаётся 5-мерной.
+        """
+        if random_patch_selection:
+            B, m, C, H, W = image_values.shape
+            # Выбираем случайный индекс для каждого образца и сохраняем размерность m=1:
+            indices = torch.randint(0, m, (B, 1), device=image_values.device)
+            selected = image_values[torch.arange(B).unsqueeze(1), indices]  # [B, 1, C, H, W]
+            embeddings = self.patch_embeddings(selected)  # Внутри ожидается 5D: [B, 1, C, H, W]
+        else:
+            # Передаём данные в исходной форме [B, m, C, H, W]
+            embeddings = self.patch_embeddings(image_values)  # [B*m, num_sub_patches, hidden_size]
+
+        embeddings = embeddings + self.position_embeddings[:, 1:1 + self.num_patches, :]
         embeddings, mask, ids_restore = self.random_masking(embeddings, noise)
-        # Добавляем CLS-токен для каждого большого патча
         cls_token = self.cls_token + self.position_embeddings[:, :1, :]
         cls_tokens = cls_token.expand(embeddings.shape[0], -1, -1)
         embeddings = torch.cat((cls_tokens, embeddings), dim=1)
-        # Выход: [B * N, 1 + num_subpatches, hidden_size]
         return embeddings, mask, ids_restore
 
 ###############################
 # Модель ViTMAE с нашей реализацией embeddings
 ###############################
+from transformers.modeling_outputs import BaseModelOutput
+
 class WsiMAEModel(ViTMAEModel):
     def __init__(self, config):
         super().__init__(config)
         self.embeddings = WsiMAEEmbeddings(config)
         self.post_init()
-
+        
     def patchify(self, imgs, interpolate_pos_encoding: bool = False):
-        # Если требуется использовать patchify для расчёта целевых патчей,
-        # можно передать входной тензор в виде [B, N, C, H, W],
-        # затем перевести каждый большой патч в отдельный элемент батча.
+        # Переводим каждый большой патч в отдельный элемент батча для расчёта целевых патчей.
         p = self.config.patch_size
         b, n, c, h, w = imgs.shape
         assert h == w == self.config.image_size, "Размер изображения не совпадает с config.image_size"
@@ -173,9 +180,45 @@ class WsiMAEModel(ViTMAEModel):
         patches = patches.flatten(2)
         return patches
 
+    def forward(self, image_values, noise=None, interpolate_pos_encoding: bool = False, random_patch_selection: bool = False, **kwargs):
+        """
+        При вызове forward мы получаем эмбеддинги, затем передаём их в энкодер.
+        После этого формируем объект BaseModelOutput, в котором присутствуют
+        last_hidden_state, hidden_states и attentions (даже если они равны None),
+        чтобы downstream-компоненты (например, декодер) могли работать без ошибок.
+        """
+        embeddings, mask, ids_restore = self.embeddings(
+            image_values,
+            noise=noise,
+            interpolate_pos_encoding=interpolate_pos_encoding,
+            random_patch_selection=random_patch_selection
+        )
+        encoder_outputs = self.encoder(embeddings, **kwargs)
+        
+        # Если энкодер возвращает объект с атрибутами last_hidden_state, hidden_states, attentions:
+        if hasattr(encoder_outputs, "last_hidden_state"):
+            last_hidden_state = encoder_outputs.last_hidden_state
+            hidden_states = encoder_outputs.hidden_states if hasattr(encoder_outputs, "hidden_states") else None
+            attentions = encoder_outputs.attentions if hasattr(encoder_outputs, "attentions") else None
+        else:
+            last_hidden_state = encoder_outputs
+            hidden_states = None
+            attentions = None
+
+        # Формируем объект, который содержит все необходимые атрибуты.
+        output = BaseModelOutput(
+            last_hidden_state=last_hidden_state,
+            hidden_states=hidden_states,
+            attentions=attentions,
+        )
+        # Можно добавить дополнительные атрибуты, если они нужны
+        output.mask = mask
+        output.ids_restore = ids_restore
+        return output
+
 ###############################
 # Декодер. Он работает с входом вида [B_new, s, decoder_hidden_size],
-# где B_new = B * N (каждый большой патч – отдельный элемент батча)
+# где B_new = B * num_selected (каждый выбранный большой патч – отдельный элемент батча)
 ###############################
 class WsiMAEDecoderPred(nn.Module):
     def __init__(self, config):
@@ -228,22 +271,8 @@ class WsiMAEForPreTraining(ViTMAEForPreTraining):
         self.decoder = WsiMAEDecoder(config, num_patches=self.vit.embeddings.num_patches)
         self.post_init()
 
-    def forward(self, image_values, **kwargs):
-        """
-        Из входного батча [B, max_patches_per_sample, C, H, W]
-        случайным образом выбирается по одному большому патчу для каждого образца.
-        Далее происходит стандартный MAE-процесс.
-        """
-        B, N, C, H, W = image_values.shape
-        # Случайно выбираем один патч для каждого сэмпла
-        idx = torch.randint(0, N, (B,), device=image_values.device)
-        selected = image_values[torch.arange(B), idx]  # [B, C, H, W]
-        # Добавляем размерность, чтобы получить форму [B, 1, C, H, W]
-        selected = selected.unsqueeze(1)
-        return super().forward(selected, **kwargs)
-
     def patchify(self, imgs, interpolate_pos_encoding: bool = False):
-        # Переопределяем patchify для обработки [B, 1, C, H, W]
+        # Переводим каждый большой патч в отдельный элемент батча для расчёта целевых патчей.
         p = self.config.patch_size
         b, n, c, h, w = imgs.shape
         assert h == w == self.config.image_size, "Размер изображения не совпадает с config.image_size"
@@ -266,23 +295,21 @@ class WsiMaeSurvivalModel(nn.Module):
         else:
             self.vit = WsiMAEModel(config)
         self.projection = nn.Linear(config.hidden_size, config.output_dim)
-        # Сохраняем число больших патчей на сэмпл
         self.max_patches_per_sample = config.max_patches_per_sample
 
     def forward(self, wsi_values, masks=None):
-        # wsi_values имеет форму [B, max_patches_per_sample, C, H, W]
-        vit_out = self.vit(wsi_values)
-        # Предполагаем, что vit_out.last_hidden_state имеет форму:
-        # [B_new, tokens, hidden_size], где B_new = B * max_patches_per_sample
+        # Для survival используем все патчи (random_patch_selection=False)
+        vit_out = self.vit(wsi_values, random_patch_selection=False)
         # CLS-токен находится на позиции 0 для каждого большого патча.
         cls_tokens = vit_out.last_hidden_state[:, 0, :]  # [B_new, hidden_size]
-        # Восстанавливаем исходное распределение:
+        # Восстанавливаем исходное распределение: B_new = B * max_patches_per_sample
         N = self.max_patches_per_sample
         B_new = cls_tokens.shape[0]
         B = B_new // N
         cls_tokens = cls_tokens.view(B, N, -1)  # [B, N, hidden_size]
-        # Агрегируем информацию для каждого пациента (усредняем по N больших патчей)
+        # Усредняем информацию по всем патчам пациента
         patient_repr = cls_tokens.mean(dim=1)  # [B, hidden_size]
         x = self.projection(patient_repr)
         return x.squeeze(-1)
+
 
