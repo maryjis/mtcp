@@ -18,4 +18,5 @@ num_hidden_layers: 4
 qkv_bias: true
 image_size: 256
 patch_size: 16
-max_patches_per_sample: 30
+random_patch_selection: True
+max_patches_per_sample: 10
