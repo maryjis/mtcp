@@ -26,4 +26,5 @@ pretrained_model_name: ""
 output_dim: 20
 max_patches_per_sample: 10
 num_patches: 10
+random_patch_selection: True
 pretrained_model_path: "facebook/vit-mae-base"
