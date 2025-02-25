@@ -81,10 +81,12 @@ class WSIDataset_patches(BaseDataset):
         is_hazard_logits=False,
         resize_to: tuple = (256, 256),
         max_patches_per_sample: int = 10,
+        random_patch_selection: bool = True  # добавленный параметр
     ) -> None:
         super().__init__(data=data, transform=transform, return_mask=return_mask, is_hazard_logits=is_hazard_logits)
         self.resize_to = resize_to
         self.max_patches_per_sample = max_patches_per_sample
+        self.random_patch_selection = random_patch_selection
 
     def _load_patches(self, image_dir: str):
         """Загружает патчи, масштабирует и конвертирует в тензоры"""
@@ -108,7 +110,13 @@ class WSIDataset_patches(BaseDataset):
         while len(patches) < self.max_patches_per_sample:
             patches.append(torch.zeros((3, *self.resize_to)))
 
+        # Если включен случайный выбор патча, выбираем один патч
+        if self.random_patch_selection:
+            idx_patch = torch.randint(0, self.max_patches_per_sample, (1,)).item()  # Получаем скаляр
+            patches = [patches[idx_patch]]  # Оборачиваем выбранный патч в список
+
         return patches
+
 
     def __getitem__(self, idx: int):
         sample = self.data.iloc[idx]
@@ -124,8 +132,6 @@ class WSIDataset_patches(BaseDataset):
 
         patches = torch.stack(patches)  # [max_patches_per_sample, 3, 256, 256]
 
-        #print(f"Dataset index {idx}: patches shape {patches.shape}")
-
         if self.return_mask:
             return patches, mask
         else:
@@ -133,6 +139,7 @@ class WSIDataset_patches(BaseDataset):
 
     def __len__(self):
         return len(self.data)  # Теперь длина = числу WSI, а не батчей!
+
 
         
 
