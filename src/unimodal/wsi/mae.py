@@ -141,15 +141,8 @@ class WsiMAEEmbeddings(nn.Module):
         Если random_patch_selection=True, для каждого образца выбирается один случайный патч,
         и вход преобразуется в форму [B, 1, C, H, W], при этом размерность остаётся 5-мерной.
         """
-        if random_patch_selection:
-            B, m, C, H, W = image_values.shape
-            # Выбираем случайный индекс для каждого образца и сохраняем размерность m=1:
-            indices = torch.randint(0, m, (B, 1), device=image_values.device)
-            selected = image_values[torch.arange(B).unsqueeze(1), indices]  # [B, 1, C, H, W]
-            embeddings = self.patch_embeddings(selected)  # Внутри ожидается 5D: [B, 1, C, H, W]
-        else:
-            # Передаём данные в исходной форме [B, m, C, H, W]
-            embeddings = self.patch_embeddings(image_values)  # [B*m, num_sub_patches, hidden_size]
+        # Передаём данные в исходной форме [B, m, C, H, W]
+        embeddings = self.patch_embeddings(image_values)  # [B*m, num_sub_patches, hidden_size]
 
         embeddings = embeddings + self.position_embeddings[:, 1:1 + self.num_patches, :]
         embeddings, mask, ids_restore = self.random_masking(embeddings, noise)
