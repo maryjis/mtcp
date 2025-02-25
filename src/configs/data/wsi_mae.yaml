@@ -1,3 +1,4 @@
 wsi:
   resize_to: [256, 256]
-  max_patches_per_sample: 30
+  max_patches_per_sample: 10
+  random_patch_selection: True
