@@ -92,30 +92,40 @@ class WSIDataset_patches(BaseDataset):
         """Загружает патчи, масштабирует и конвертирует в тензоры"""
         patch_dir = os.path.join(image_dir, "patches")
         if not os.path.exists(patch_dir):
-            return []
+            return [torch.zeros((3, *self.resize_to))]
 
         patch_files = sorted([f for f in os.listdir(patch_dir) if f.endswith(".png")])
+        
+        # Если список файлов пуст, возвращаем нулевой патч
+        if not patch_files:
+            return [torch.zeros((3, *self.resize_to))]
+
         patches = []
         
-        # Если включен случайный выбор патча, выбираем один патч
         if self.random_patch_selection:
-            idx_patch = torch.randint(0, self.max_patches_per_sample, (1,)).item()  # Получаем скаляр
+            max_idx = min(len(patch_files), self.max_patches_per_sample)
+            if max_idx == 0:  # Хотя эта проверка уже выше, дополнительная защита
+                return [torch.zeros((3, *self.resize_to))]
+            idx_patch = torch.randint(0, max_idx, (1,)).item()  # Выбираем индекс в пределах [0, max_idx)
             patch_files = [patch_files[idx_patch]]
 
-        for patch_file in patch_files[:self.max_patches_per_sample]:  # Ограничиваем число патчей
+        for patch_file in patch_files[:self.max_patches_per_sample]:
             patch_path = os.path.join(patch_dir, patch_file)
             patch = Image.open(patch_path).convert("RGB")
             patch = F.resize(patch, self.resize_to)
-
-            # Преобразуем в тензор
             patch = F.pil_to_tensor(patch).float() / 255.0
             patches.append(patch)
 
-        # Дополняем до max_patches_per_sample нулевыми патчами
+        # Если по каким-то причинам после цикла список пуст, добавляем нулевой патч
+        if not patches:
+            patches.append(torch.zeros((3, *self.resize_to)))
+
+        # Дополняем до max_patches_per_sample нулевыми патчами, только если случайный выбор не активирован
         while len(patches) < self.max_patches_per_sample and not self.random_patch_selection:
             patches.append(torch.zeros((3, *self.resize_to)))
 
         return patches
+
 
 
     def __getitem__(self, idx: int):
