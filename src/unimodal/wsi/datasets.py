@@ -127,7 +127,10 @@ class WSIDataset_patches(BaseDataset):
             patches = self._load_patches(image_dir)
             mask = True
         else:
-            patches = [torch.zeros((3, *self.resize_to))] * self.max_patches_per_sample
+            if self.random_patch_selection:
+                patches = [torch.zeros((3, *self.resize_to))]
+            else:
+                patches = [torch.zeros((3, *self.resize_to))] * self.max_patches_per_sample
             mask = False
 
         patches = torch.stack(patches)  # [max_patches_per_sample, 3, 256, 256]
