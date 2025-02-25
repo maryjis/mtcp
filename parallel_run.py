@@ -8,6 +8,7 @@ from src.multimodal.trainer import MultiModalMAETrainer, MultiModalSurvivalTrain
 from pathlib import Path
 import wandb
 import queue
+from copy import deepcopy
 
 def train_fold(fold_ind, cfg, device, log_queue):
     """
@@ -89,7 +90,7 @@ def run(cfg: DictConfig) -> None:
 
     for fold_ind in range(num_folds):
         device = available_gpus[fold_ind % len(available_gpus)]
-        p = mp.Process(target=train_fold, args=(fold_ind, cfg, device, log_queue))
+        p = mp.Process(target=train_fold, args=(fold_ind, deepcopy(cfg), device, log_queue))
         p.start()
         processes.append(p)
 
