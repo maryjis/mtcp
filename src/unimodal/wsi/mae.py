@@ -91,16 +91,14 @@ class WsiMAEPatchEmbeddings(nn.Module):
         # patches = self._split_patches(wsi_tensor)  
         patches = wsi_tensor
         b, n, c, h, w = patches.shape
-        print("patches.shape: ", patches.shape)
         # Преобразуем в (batch_size * num_patches, c, h, w)
         patches = rearrange(patches, 'b n c h w -> (b n) c h w')
-        print("patches.shape: ", patches.shape)
+
         # Пропускаем через несколько мелких свёрточных слоёв + pooling
         x = self.projection(patches).flatten(2).transpose(1, 2)  # [b*n, hidden_size]
-        print("x.shape: ", x.shape)
         # Возвращаемся к (batch_size, num_patches, hidden_size)
         # x = rearrange(x, '(b n) c -> b n c', b=b, n=self.total_patches)
-        print("x.shape: ", x.shape)
+
         return x
 
 
@@ -180,7 +178,6 @@ class WsiMAEEmbeddings(nn.Module):
     def forward(self, image_values, noise=None, interpolate_pos_encoding: bool = False):
         batch_size, num_patches, num_channels, img_height, img_width = image_values.shape
         embeddings = self.patch_embeddings(image_values)
-        print("embeddings.shape", embeddings.shape)
         embeddings = embeddings + self.position_embeddings[:, 1:, :]
 
         # Мэскируем
@@ -211,10 +208,8 @@ class WsiMAEModel(ViTMAEModel):
 
     
     def forward(self, imgs, is_multimodal: bool = False):
-        print("imgs.shape", imgs.shape)
         out = super().forward(imgs)
-        print("out.last_hidden_state.shape before", out.last_hidden_state.shape)
-        print("out.mask.shape before", out.mask.shape)
+
         # CLS-токен находится на позиции 0 для каждого большого патча.
         if is_multimodal and not self.config.random_patch_selection:
             # cls_tokens = out.last_hidden_state[:, 0, :]  # [B_new, hidden_size]
@@ -226,10 +221,7 @@ class WsiMAEModel(ViTMAEModel):
             out.last_hidden_state = out.last_hidden_state.view(B, N, seq_length, -1).mean(dim=1)
             out.mask = out.mask.view(B, N, -1).mean(dim=1)
             out.ids_restore =torch.arange(seq_length-1, device=out.ids_restore.device).repeat(B, 1)
-            print("out.last_hidden_state.shape after", out.last_hidden_state.shape)
-            print("out.mask.shape after", out.mask.shape)
-            print("out.ids_restore.shape after", out.ids_restore.shape)
-            print("out.mask:", out.mask)
+
             
         return out
 

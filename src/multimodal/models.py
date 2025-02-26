@@ -323,7 +323,7 @@ class MultiMAEModel(PreTrainedModel):
                 multimodal_lenths=multimodal_length
                 
             )
-            print("modality, ", modality, embedded_sample.last_hidden_state.shape)
+
             multimodal_length += seq_length
             
             embedded_sample = ViTMAEModelOutput(
@@ -449,10 +449,8 @@ class MultiMaeForPretraining(nn.Module):
             torch.FloatTensor: Mean reconstruction loss on masked patches.
         """
         # Convert input to patches
-        print("pred.shape: ", pred.shape)
-        print("values.shape: ", values.shape)
         target = encoder.encoder.patchify(values, interpolate_pos_encoding=interpolate_pos_encoding)
-        print("target.shape: ", target.shape)
+
         # print("target.shape: ", target.shape)
         # print("pred.shape: ", pred.shape)
         # Masked loss for all zero subjects (missing ones)
@@ -582,10 +580,8 @@ class MultiMaeForPretraining(nn.Module):
         
         for modality in self.modalities:
             mask_modality = modality_masks[modality]
-            print(mask_modality)
             if modality!="rna" and (torch.any(modality_masks[modality]) or torch.any(modality_masks[modality])):
                 modalities_ids = torch.nonzero(mask_modality, as_tuple=True)[0].to(mask_modality.device)
-                print(modalities_ids)
                 contrastive_loss =self.contrastive_loss.forward(modalities_embeddings["rna"][modalities_ids], modalities_embeddings[modality][modalities_ids])
                 total_loss +=contrastive_loss
                 contrastive_losses[f"rna-{modality}"]  = contrastive_loss
@@ -805,7 +801,7 @@ class MultiMaeForSurvival(nn.Module):
             
                 
         concat_x = self.model(x, masks, interpolate_pos_encoding)
-        print("concat_x.shape", concat_x.last_hidden_state.shape)
+
         if self.cfg.return_order:
             concat_x.last_hidden_state = self.get_primary_order(concat_x.last_hidden_state, concat_x.ids_restore)
 

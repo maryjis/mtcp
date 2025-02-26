@@ -1,12 +1,12 @@
-experiment_name: "multimodal_pretrained_rna_dnam_wsi_256_pretrained_decoder_missing_800_survival"
-n_epochs: 50
+experiment_name: "multimodal_pretrained_rna_dnam_wsi_256_pretrained_decoder_missing_50_survival"
+n_epochs: 20
 n_intervals: 20
 random_seed: 1380
 
 optimizer:
     name: "Adam"
     params:
-        lr: 1e-3 # 1e-3
+        lr: 1e-4 # 1e-3
         weight_decay: 1e-2
     
 scheduler: 
