@@ -209,7 +209,7 @@ class MultiMAEModel(PreTrainedModel):
             non_empty_samples = torch.index_select(sample, dim=0, index=non_empty_sample_ids)
             # print("Non empty samples shape: ", non_empty_samples.shape)
             embedded_non_empty = self.encoders[modality](non_empty_samples)
-            print("embedded_non_empty.last_hidden_state.shape", embedded_non_empty.last_hidden_state.shape)
+            #print("embedded_non_empty.last_hidden_state.shape", embedded_non_empty.last_hidden_state.shape)
             
             empty_sequence = self.mask_token.repeat(len(empty_sample_ids), embedded_non_empty.last_hidden_state.shape[1], 1)
             # print("Empty sample ids: ", empty_sample_ids)
@@ -297,7 +297,7 @@ class MultiMAEModel(PreTrainedModel):
         is_first = True
 
         for modality in self.modalities:
-            print(modality)
+            # print(modality)
             if modality =="clinical":
                 continue
             seq_length = self.get_patches_number(modality)
@@ -443,8 +443,8 @@ class MultiMaeForPretraining(nn.Module):
 
         target = encoder.encoder.patchify(values, interpolate_pos_encoding=interpolate_pos_encoding)
         
-        print("target.shape: ", target.shape)
-        print("pred.shape: ", pred.shape)
+        # print("target.shape: ", target.shape)
+        # print("pred.shape: ", pred.shape)
         # Masked loss for all zero subjects (missing ones)
         modality_mask = modality_mask.unsqueeze(1).to(mask.device)
         mask =  mask * modality_mask
@@ -467,7 +467,6 @@ class MultiMaeForPretraining(nn.Module):
         if (loss * mask).sum() >0:
             loss = (loss * mask).sum() / (mask.sum())
         else:
-            print("Loss is zero!")
             loss = (loss * mask).sum() 
         return loss
     
@@ -511,9 +510,9 @@ class MultiMaeForPretraining(nn.Module):
         for modality in self.modalities:
             if modality =="clinical":
                 continue
-            if modality =="mri":
-                modality_losses[modality] = torch.zeros(0).to(x[modality].device)
-                continue
+            # if modality =="mri":
+            #     modality_losses[modality] = torch.zeros(0).to(x[modality].device)
+            #     continue
             if modality not in modality_losses:
                 modality_losses[modality] = 0
             # Get number of patches for current modality
