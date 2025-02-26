@@ -289,7 +289,7 @@ class UnimodalSurvivalTrainer(Trainer):
                         # Создаем SurvivalMRIDataset с нужными параметрами
                         datasets[split_name] = SurvivalWSIDataset(split, dataset, is_hazard_logits=True)
                     elif self.cfg.base.architecture=="MAE":
-                        dataset = WSIDataset_patches(split, self.cfg.data.wsi.random_patch_selection, return_mask=True)
+                        dataset = WSIDataset_patches(split, random_patch_selection = self.cfg.data.wsi.random_patch_selection, return_mask=True)
                         # Создаем SurvivalMRIDataset с нужными параметрами
                         datasets[split_name] = SurvivalWSIDataset(split, dataset, is_hazard_logits=True)
         else:
@@ -453,7 +453,7 @@ class UnimodalMAETrainer(Trainer):
                     #     is_train = True if split_name == "train" else False
                     #     datasets[split_name] = WSIDataset(split,self.cfg.data.wsi.k, is_train=is_train,return_mask=True)
                     # else:
-                    datasets[split_name] = WSIDataset_patches(split, self.cfg.data.wsi.random_patch_selection, return_mask=True)
+                    datasets[split_name] = WSIDataset_patches(split, random_patch_selection = self.cfg.data.wsi.random_patch_selection, return_mask=True)
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
         

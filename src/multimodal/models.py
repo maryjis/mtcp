@@ -449,9 +449,10 @@ class MultiMaeForPretraining(nn.Module):
             torch.FloatTensor: Mean reconstruction loss on masked patches.
         """
         # Convert input to patches
-
+        print("pred.shape: ", pred.shape)
+        print("values.shape: ", values.shape)
         target = encoder.encoder.patchify(values, interpolate_pos_encoding=interpolate_pos_encoding)
-        
+        print("target.shape: ", target.shape)
         # print("target.shape: ", target.shape)
         # print("pred.shape: ", pred.shape)
         # Masked loss for all zero subjects (missing ones)
