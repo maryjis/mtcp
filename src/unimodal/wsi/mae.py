@@ -247,14 +247,29 @@ class WsiMAEForPreTraining(ViTMAEForPreTraining):
 class WsiMaeSurvivalModel(nn.Module):
     def __init__(self, config):
         super().__init__()
+        # Загрузка предобученной модели или инициализация с нуля
         if config.to_dict().get("is_load_pretrained", False):
             self.vit = WsiMAEModel.from_pretrained(config.pretrained_model_path, config=config)
             print(f"Pretrained model loaded from {config.pretrained_model_path}")
         else:
             self.vit = WsiMAEModel(config)
         self.projection = nn.Linear(config.hidden_size, config.output_dim)
-        
+        # Сохраняем число больших патчей на сэмпл
+        self.max_patches_per_sample = config.max_patches_per_sample
+
     def forward(self, wsi_values, masks=None):
-        x = self.vit(wsi_values)
-        x = self.projection(x.last_hidden_state[:, 0, :])
-        return x.squeeze(-1) 
+        # wsi_values имеет форму [B, max_patches_per_sample, C, H, W]
+        vit_out = self.vit(wsi_values)
+        # Предполагаем, что vit_out.last_hidden_state имеет форму:
+        # [B_new, tokens, hidden_size], где B_new = B * max_patches_per_sample
+        # CLS-токен находится на позиции 0 для каждого большого патча.
+        cls_tokens = vit_out.last_hidden_state[:, 0, :]  # [B_new, hidden_size]
+        # Восстанавливаем исходное распределение:
+        N = self.max_patches_per_sample
+        B_new = cls_tokens.shape[0]
+        B = B_new // N
+        cls_tokens = cls_tokens.view(B, N, -1)  # [B, N, hidden_size]
+        # Агрегируем информацию для каждого пациента (усредняем по N больших патчей)
+        patient_repr = cls_tokens.mean(dim=1)  # [B, hidden_size]
+        x = self.projection(patient_repr)
+        return x.squeeze(-1)
