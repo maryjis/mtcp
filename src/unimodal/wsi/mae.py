@@ -205,9 +205,10 @@ class WsiMAEModel(ViTMAEModel):
         b, n, c, h, w = imgs.shape
         assert h == w == self.config.image_size, "Размер изображения не совпадает с config.image_size"
         assert h % p == 0 and w % p == 0, "Размер изображения должен делиться на patch_size"
-        patches = rearrange(imgs, 'b n c (h p1) (w p2) -> b (n h w) c p1 p2', p1=p, p2=p)
+        patches = rearrange(imgs, 'b n c (h p1) (w p2) -> (b n) (h w) (c p1 p2)', p1=p, p2=p)
         # patches = patches.flatten(2)
         return patches
+
     
     def forward(self, imgs, is_multimodal: bool = False):
         print("imgs.shape", imgs.shape)
@@ -278,15 +279,16 @@ class WsiMAEForPreTraining(ViTMAEForPreTraining):
         self.vit = WsiMAEModel(config)
         self.decoder = WsiMAEDecoder(config, num_patches=self.vit.embeddings.num_patches)
         self.post_init()
-
+        
     def patchify(self, imgs, interpolate_pos_encoding: bool = False):
         p = self.config.patch_size
         b, n, c, h, w = imgs.shape
         assert h == w == self.config.image_size, "Размер изображения не совпадает с config.image_size"
         assert h % p == 0 and w % p == 0, "Размер изображения должен делиться на patch_size"
-        patches = rearrange(imgs, 'b n c (h p1) (w p2) -> b (n h w) c p1 p2', p1=p, p2=p)
+        patches = rearrange(imgs, 'b n c (h p1) (w p2) -> (b n) (h w) (c p1 p2)', p1=p, p2=p)
         # patches = patches.flatten(2)
         return patches
+
 
 
 class WsiMaeSurvivalModel(nn.Module):
