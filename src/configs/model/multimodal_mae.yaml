@@ -1,8 +1,8 @@
 
-modalities: ["rna", "dnam", "wsi"]
+modalities: ["rna", "dnam", "wsi", "mri"]
 defaults: 
   - rna_model: rna_mae
-  # - mri_model: mri_mae_model
+  - mri_model: mri_mae_model
   - dnam_model: dna_mae
   - wsi_model: wsi_mae
 
@@ -12,7 +12,7 @@ attention_probs_dropout_prob: 0.0
 decoder_hidden_size: 256
 decoder_intermediate_size: 512
 decoder_num_attention_heads: 4
-decoder_num_hidden_layers: 2
+decoder_num_hidden_layers: 3
 hidden_act: "gelu"
 hidden_dropout_prob: 0.0
 initializer_range: 0.02

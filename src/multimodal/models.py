@@ -795,7 +795,7 @@ class MultiMaeForSurvival(nn.Module):
             
                 
         concat_x = self.model(x, masks, interpolate_pos_encoding)
-      
+        print("concat_x.shape", concat_x.shape)
         if self.cfg.return_order:
             concat_x.last_hidden_state = self.get_primary_order(concat_x.last_hidden_state, concat_x.ids_restore)
 
