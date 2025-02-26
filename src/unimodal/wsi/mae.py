@@ -24,7 +24,7 @@ class WsiMAEPatchEmbeddings(nn.Module):
         # Количество подпатчей в одном изображении размером image_size x image_size
         self.num_sub_patches = (self.image_size // self.patch_size) ** 2
         
-        if self.random_patch_selection:
+        if self.random_patch_selection is True:
         # Общее число патчей после разбиения всех max_patches_per_sample
             self.total_patches = self.num_sub_patches
         else:

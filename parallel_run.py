@@ -21,12 +21,12 @@ def train_fold(fold_ind, cfg, device, log_queue):
 
     with open_dict(cfg):
         cfg.base.device = f"cuda:{device}"
-        cfg.base.save_path = f"outputs/models/{cfg.base.experiment_name}_split_{fold_ind}.pth"
+        cfg.base.save_path = f"/home/a.beliaeva/mtcp/outputs/models/mae 2 conv2d/{cfg.base.experiment_name}_split_{fold_ind}.pth"
 
     if cfg.model.get("is_load_pretrained", False):
         with open_dict(cfg):
-            print("Model path", f"outputs/models/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth")
-            cfg.model.pretrained_model_path = f"outputs/models/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth"
+            print("Model path", f"/home/a.beliaeva/mtcp/outputs/models/mae 2 conv2d/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth")
+            cfg.model.pretrained_model_path = f"/home/a.beliaeva/mtcp/outputs/models/mae 2 conv2d/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth"
 
     splits = load_splits(
         Path(cfg.base.data_path), 
