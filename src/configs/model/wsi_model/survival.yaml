@@ -6,8 +6,8 @@ decoder_num_hidden_layers: 2
 hidden_act: "gelu"
 hidden_dropout_prob: 0.0
 hidden_size: 256 # maybe 384?
-input_embedding_dim: 512
-size: 512
+# input_embedding_dim: 512
+# size: 512
 initializer_range: 0.02
 intermediate_size: 1024
 layer_norm_eps: 1e-12
@@ -15,12 +15,16 @@ mask_ratio: 0.0
 model_type: "vit_mae"
 norm_pix_loss: false
 num_attention_heads: 4
-num_channels: 1
-num_hidden_layers: 2
-patch_size: 512
+num_channels: 3
+num_hidden_layers: 4 
+image_size: 256
+patch_size: 16
 qkv_bias: true
 is_load_pretrained: false
-pretrained_model_name: ""
-pretrained_model_path: ""
+pretrained_model_name: "mae 2 conv2d/wsi mae_split"
+# pretrained_model_path: ""
 output_dim: 20
+max_patches_per_sample: 10
 num_patches: 10
+random_patch_selection: False
+pretrained_model_path: "facebook/vit-mae-base"

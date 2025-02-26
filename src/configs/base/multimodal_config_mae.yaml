@@ -1,4 +1,4 @@
-experiment_name: "multimodal_rna_dna_wsi_800_mae"
+experiment_name: "multimodal_rna_dna_wsi_mri_800_mae"
 n_epochs: 800
 n_intervals: 20
 random_seed: 1380
@@ -16,14 +16,15 @@ scheduler:
 
 type: "multimodal"
 strategy: "mae" # mae, survival
-modalities: ["rna", "dnam", "wsi"]
+modalities: ["rna", "dnam", "wsi", "mri"]
 multimodal_intersection_test: false
 architecture: "MAE"
 splits: 5
 data_path: "src/data/dataset.csv"
 save_path : "outputs/models/"
 rna_dataset_path: "src/data/rna_dataset.csv"
-device: "cuda:4"
+device: "cuda:1"  # Указываем, что основное устройство - GPU 2
+available_gpus:  [1, 2, 3, 4]  # Указываем, какие GPU можно использовать
 remove_nan_column: 'RNA'
 batch_size: 24
 

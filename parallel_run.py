@@ -9,7 +9,7 @@ from pathlib import Path
 import wandb
 import queue
 from copy import deepcopy
-
+from src.utils import  * 
 def train_fold(fold_ind, cfg, device, log_queue):
     """
     Обучение одного фолда в отдельном процессе.
@@ -76,7 +76,7 @@ def train_fold(fold_ind, cfg, device, log_queue):
 
     wandb.finish()  # Завершаем сеанс W&B в процессе
 
-@hydra.main(version_base=None, config_path="src/configs", config_name="unimodal_config_wsi_mae")
+@hydra.main(version_base=None, config_path="src/configs", config_name="multimodal_config")
 def run(cfg: DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))
 
