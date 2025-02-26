@@ -15,11 +15,12 @@ from flamingo_pytorch import PerceiverResampler
 from src.multimodal.losses import CLIPAlignmentLoss
 
 class UnimodalEncoder(nn.Module):
-    def __init__(self, encoder, unimodal_hidden_size, multimodal_hidden_size = None, is_projection = False):
+    def __init__(self, encoder, unimodal_hidden_size, multimodal_hidden_size = None, is_projection = False, modality =None):
         super().__init__()
         self.encoder = encoder
         self.inner_size = unimodal_hidden_size
         self.is_projection = is_projection
+        self.modality =modality
         if self.is_projection:
             if multimodal_hidden_size is None:
                 raise ValueError("multimodal_hidden_size must be provided when is_projection=True")
@@ -27,7 +28,11 @@ class UnimodalEncoder(nn.Module):
             
     def forward(self, x):
         # Remove debug print statement
-        x = self.encoder(x)
+        if self.modality =="wsi":
+            x = self.encoder(x, True)
+        else:    
+            x = self.encoder(x)
+        
         if self.is_projection:
             # Create new object instead of modifying in place
             x = ViTMAEModelOutput(
@@ -88,7 +93,8 @@ class MultiMAEModel(PreTrainedModel):
                     encoder,
                     cfg_rna_model.hidden_size, 
                     self.cfg.hidden_size,
-                    self.cfg.is_projection
+                    self.cfg.is_projection,
+                    modality
                 )
             elif modality == "mri":
                 cfg_mri_model = ViTMAEConfig(**self.cfg.mri_model)
@@ -104,7 +110,8 @@ class MultiMAEModel(PreTrainedModel):
                     encoder, 
                     cfg_mri_model.hidden_size, 
                     self.cfg.hidden_size,
-                    self.cfg.is_projection
+                    self.cfg.is_projection,
+                    modality
                 )
             elif modality == "dnam":
                 cfg_dnam_model = ViTMAEConfig(**self.cfg.dnam_model)
@@ -120,7 +127,8 @@ class MultiMAEModel(PreTrainedModel):
                     encoder,
                     cfg_dnam_model.hidden_size, 
                     self.cfg.hidden_size,
-                    self.cfg.is_projection
+                    self.cfg.is_projection,
+                    modality
                 )
             elif modality == "wsi":
                 cfg_wsi_model = ViTMAEConfig(**self.cfg.wsi_model)
@@ -138,7 +146,8 @@ class MultiMAEModel(PreTrainedModel):
                     encoder,
                     cfg_wsi_model.hidden_size, 
                     self.cfg.hidden_size,
-                    self.cfg.is_projection
+                    self.cfg.is_projection,
+                    modality
                 )
             elif modality == "clinical":
                 pass  
@@ -314,7 +323,7 @@ class MultiMAEModel(PreTrainedModel):
                 multimodal_lenths=multimodal_length
                 
             )
-
+            print("modality, ", modality, embedded_sample.last_hidden_state.shape)
             multimodal_length += seq_length
             
             embedded_sample = ViTMAEModelOutput(
@@ -795,7 +804,7 @@ class MultiMaeForSurvival(nn.Module):
             
                 
         concat_x = self.model(x, masks, interpolate_pos_encoding)
-        print("concat_x.shape", concat_x.shape)
+        print("concat_x.shape", concat_x.last_hidden_state.shape)
         if self.cfg.return_order:
             concat_x.last_hidden_state = self.get_primary_order(concat_x.last_hidden_state, concat_x.ids_restore)
 

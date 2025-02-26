@@ -131,7 +131,7 @@ class WSIDataset_patches(BaseDataset):
             while len(patches) < self.max_patches_per_sample:
                 patches.append(torch.zeros((3, *self.resize_to), dtype=torch.float32))
 
-            patches = torch.stack(patches)
+        patches = torch.stack(patches)
 
         return patches  # Теперь `torch.Tensor` с гарантированным размером
 
