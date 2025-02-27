@@ -47,53 +47,51 @@ class WSIEncoder(nn.Module):
         mlp_dim: int = 128,
         dropout: float = 0.0,
         emb_dropout: float = 0.0,
-        n_outputs: int = 20  # Параметр для количества выходных признаков
+        n_outputs: int = 20  # Parameter for the number of output features
     ) -> None:
         super().__init__()
         self.layer_norm = nn.LayerNorm(dim)
 
-        # cls токен
+        # CLS token
         self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
         self.dropout = nn.Dropout(emb_dropout)
 
-        # Трансформер
+        # Transformer
         self.transformer = Transformer(dim, depth, heads, dim_head, mlp_dim, dropout)
 
-        # Пуллинг (cls или mean)
+        # Pooling (cls or mean)
         self.pool = pool
 
-        # Преобразование в нужный размер
-       
+        # Transformation to the required size
         self.to_latent = (
             nn.Identity() if embedding_dim == dim else nn.Linear(dim, embedding_dim)
         )
         self.n_outputs = n_outputs
-        # Добавляем линейный слой для выходных признаков
-   
-        self.output_layer = nn.Linear(embedding_dim, self.n_outputs)  # Новый слой для выхода
+
+        # Adding a linear layer for output features
+        self.output_layer = nn.Linear(embedding_dim, self.n_outputs)  # New output layer
 
     def forward(self, x: torch.Tensor, masks=None) -> torch.Tensor:
         x = self.layer_norm(x)
         b, n, _ = x.shape
 
-        # Добавляем CLS токен
+        # Adding CLS token
         cls_tokens = repeat(self.cls_token, "1 1 d -> b 1 d", b=b)
         x = torch.cat((cls_tokens, x), dim=1)
 
-        # Применяем dropout
+        # Applying dropout
         x = self.dropout(x)
 
-        # Пропускаем через трансформер
+        # Passing through the transformer
         x = self.transformer(x)
 
-        # Выполняем пуллинг (выбор CLS токена или усреднение)
+        # Performing pooling (selecting the CLS token or averaging)
         x = x.mean(dim=1) if self.pool == "mean" else x[:, 0]
         
-        # Преобразуем в нужный размер
+        # Transforming to the required size
         x = self.to_latent(x)
 
-        # Проходим через выходной слой
-       
+        # Passing through the output layer
         x = self.output_layer(x)
 
         return x
@@ -126,17 +124,12 @@ class WSIEncoder(nn.Module):
         
 #         self.layer_norm = nn.LayerNorm(dim)
 
-#         # cls токенпризнаков
 #         self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
 #         self.dropout = nn.Dropout(emb_dropout)
 
-#         # Трансформер
 #         self.transformer = Transformer(dim, depth, heads, dim_head, mlp_dim, dropout)
 
-#         # Пуллинг (cls или mean)
 #         self.pool = pool
-
-#         # Преобразование в нужный размер
        
 #         self.to_latent = (
 #             nn.Identity() if embedding_dim == dim else nn.Linear(dim, embedding_dim)
@@ -146,20 +139,15 @@ class WSIEncoder(nn.Module):
 #         x = self.layer_norm(x)
 #         b, n, _ = x.shape
 
-#         # Добавляем CLS токен
 #         cls_tokens = repeat(self.cls_token, "1 1 d -> b 1 d", b=b)
 #         x = torch.cat((cls_tokens, x), dim=1)
 
-#         # Применяем dropout
 #         x = self.dropout(x)
 
-#         # Пропускаем через трансформер
 #         x = self.transformer(x)
 
-#         # Выполняем пуллинг (выбор CLS токена или усреднение)
 #         x = x.mean(dim=1) if self.pool == "mean" else x[:, 0]
         
-#         # Преобразуем в нужный размер
 #         x = self.to_latent(x)
 
 #         return x
