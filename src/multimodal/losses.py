@@ -38,9 +38,9 @@ class CLIPAlignmentLoss(nn.Module):
         labels = torch.arange(batch_size, device=emb_a.device)
 
         # Symmetric cross-entropy loss
-        # total_loss = F.cross_entropy(logits, labels)
+        
         total_loss = F.cross_entropy(logits.T, labels)
-        # total_loss = (loss_a + loss_b) / 2
+       
 
         return total_loss
 
