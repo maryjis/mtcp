@@ -15,7 +15,6 @@ def run(cfg : DictConfig) -> None:
         init_wandb_logging(cfg)
     all_valid_metrics, all_test_metrics , all_test_metrics_in_intersection =[], [], []
     for fold_ind in range(cfg.base.splits):
-
         print(f"Fold #{fold_ind}")
         cfg.base.save_path = f"outputs/models/{cfg.base.experiment_name}_split_{fold_ind}.pth"
         if cfg.model.get("is_load_pretrained", False):
