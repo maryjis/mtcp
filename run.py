@@ -34,7 +34,6 @@ def run(cfg : DictConfig) -> None:
 
         if cfg.base.type == 'unimodal':
 
-            # унимодальные (тут мы должны выбрать модальность) или мультимодальный + способ дообучения
             if cfg.base.strategy == "survival":
                 trainer = UnimodalSurvivalTrainer(splits, cfg)
             elif cfg.base.strategy == "mae": 
