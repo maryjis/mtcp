@@ -166,8 +166,15 @@ class WsiMAEEmbeddings(nn.Module):
 
         if noise is None:
             noise = torch.rand(batch_size, seq_length, device=sequence.device)
-        ids_shuffle = torch.argsort(noise, dim=1).to(sequence.device)
-        ids_restore = torch.argsort(ids_shuffle, dim=1).to(sequence.device)
+            
+        if self.config.mask_ratio>0:
+            ids_shuffle = torch.argsort(noise, dim=1).to(sequence.device)
+            ids_restore = torch.argsort(ids_shuffle, dim=1).to(sequence.device)
+        else:
+            ids_shuffle = torch.arange(seq_length).repeat(batch_size, 1).to(sequence.device)
+            ids_restore = torch.arange(seq_length).repeat(batch_size, 1).to(sequence.device)
+
+            
         ids_keep = ids_shuffle[:, :len_keep]
         sequence_unmasked = torch.gather(sequence, 1, ids_keep.unsqueeze(-1).repeat(1, 1, dim))
         mask = torch.ones([batch_size, seq_length], device=sequence.device)
@@ -205,11 +212,18 @@ class WsiMAEModel(ViTMAEModel):
         patches = rearrange(imgs, 'b n c (h p1) (w p2) -> (b n) (h w) (c p1 p2)', p1=p, p2=p)
         # patches = patches.flatten(2)
         return patches
+    
+    def unpatchify(self, imgs, original_size: int =None):
+        batch_size = imgs.shape[0]
+        return imgs.reshape(batch_size,
+                            -1,
+                            self.config.num_channels,
+                            self.config.image_size,
+                            self.config.image_size)
 
     
     def forward(self, imgs, is_multimodal: bool = False):
         out = super().forward(imgs)
-
         # CLS-токен находится на позиции 0 для каждого большого патча.
         if is_multimodal and not self.config.random_patch_selection:
             # cls_tokens = out.last_hidden_state[:, 0, :]  # [B_new, hidden_size]

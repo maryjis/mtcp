@@ -1,12 +1,12 @@
-experiment_name: "multimodal_pretrained_rna_dnam_wsi_256_pretrained_decoder_missing_50_survival"
-n_epochs: 20
+experiment_name: "multimodal_pretrained_rna_dnam_wsi_mri_256_survival"
+n_epochs: 50
 n_intervals: 20
 random_seed: 1380
 
 optimizer:
     name: "Adam"
     params:
-        lr: 1e-4 # 1e-3
+        lr: 1e-3 # 1e-3
         weight_decay: 1e-2
     
 scheduler: 
@@ -16,14 +16,14 @@ scheduler:
 
 type: "multimodal"
 strategy: "survival" # mae, survival
-modalities: ["rna", "dnam", "wsi"]
+modalities: ["rna", "dnam", "wsi", "mri"]
 multimodal_intersection_test: true
 architecture: "MAE"
 splits: 5
 data_path: "src/data/dataset.csv"
 save_path : "outputs/models/"
 rna_dataset_path: "src/data/rna_dataset.csv"
-device: "cuda:1"
+device: "cuda:3"
 remove_nan_column: 'RNA'
 batch_size: 24
 
