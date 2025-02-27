@@ -10,9 +10,10 @@ import wandb
 import queue
 from copy import deepcopy
 from src.utils import  * 
+
 def train_fold(fold_ind, cfg, device, log_queue):
     """
-    Обучение одного фолда в отдельном процессе.
+    Training a single fold in a separate process.
     """
     torch.cuda.set_device(device)
     print(f"Fold #{fold_ind} running on GPU {device}")
@@ -35,18 +36,18 @@ def train_fold(fold_ind, cfg, device, log_queue):
         max_samples_per_split=cfg.base.get("max_samples_per_split", None)
     )
 
-    # Выбор тренера
+    # Selecting the trainer
     if cfg.base.type == 'unimodal':
         trainer_cls = UnimodalSurvivalTrainer if cfg.base.strategy == "survival" else UnimodalMAETrainer
     elif cfg.base.type == 'multimodal':
-        cfg = add_model_paths_to_config(cfg,fold_ind)
+        cfg = add_model_paths_to_config(cfg, fold_ind)
         trainer_cls = MultiModalSurvivalTrainer if cfg.base.strategy == "survival" else MultiModalMAETrainer
     else:
         raise NotImplementedError(f"Unknown base type: {cfg.base.type}")
 
     trainer = trainer_cls(splits, cfg)
 
-    # ✅ **Инициализация W&B в каждом процессе**
+    # ✅ **Initialize W&B in each process**
     if cfg.base.log.logging:
         wandb.init(
             project=cfg.base.log.wandb_project,
@@ -56,36 +57,36 @@ def train_fold(fold_ind, cfg, device, log_queue):
         )
 
     valid_metrics = trainer.train(fold_ind)
-    test_metrics, test_metrics_intersection =trainer.evaluate(fold_ind)
+    test_metrics, test_metrics_intersection = trainer.evaluate(fold_ind)
 
-    # Добавляем проверку типов перед отправкой в очередь
+    # Adding type checks before sending to the queue
     def process_metrics(metrics):
-        """ Обрабатывает метрики перед записью в очередь """
+        """ Processes metrics before logging to the queue """
         if isinstance(metrics, tuple):
             if len(metrics) == 2 and isinstance(metrics[0], dict) and metrics[1] is None:
-                return metrics[0]  # Берем только первый элемент (словарь)
+                return metrics[0]  # Take only the first element (dictionary)
             else:
                 raise ValueError(f"Unexpected format of metrics: {metrics}")
-        return metrics  # Если это не кортеж, возвращаем как есть
+        return metrics  # If it's not a tuple, return as is
 
     log_queue.put(("valid", fold_ind, process_metrics(valid_metrics)))
     log_queue.put(("test", fold_ind, process_metrics(test_metrics)))
     if cfg.base.get("multimodal_intersection_test", None):
-            log_queue.put(("test_in_intersection", fold_ind, process_metrics(test_metrics_intersection)))
+        log_queue.put(("test_in_intersection", fold_ind, process_metrics(test_metrics_intersection)))
     log_queue.put(("done", fold_ind, None))
 
-    wandb.finish()  # Завершаем сеанс W&B в процессе
+    wandb.finish()  # End W&B session in the process
 
 @hydra.main(version_base=None, config_path="src/configs", config_name="multimodal_config")
 def run(cfg: DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))
 
     num_folds = cfg.base.splits
-    available_gpus = cfg.base.get("available_gpus", [0, 1, 2, 3, 4])  # Список доступных GPU
+    available_gpus = cfg.base.get("available_gpus", [0, 1, 2, 3, 4])  # List of available GPUs
 
     print(f"Available GPUs: {available_gpus}, running {num_folds} folds in parallel.")
 
-    log_queue = mp.Queue()  # Очередь для сбора метрик
+    log_queue = mp.Queue()  # Queue for collecting metrics
     processes = []
 
     for fold_ind in range(num_folds):
@@ -97,9 +98,9 @@ def run(cfg: DictConfig) -> None:
     all_valid_metrics = []
     all_test_metrics = []
     all_test_metrics_in_intersection = []
-    finished_folds = 0  # Счетчик завершенных процессов
+    finished_folds = 0  # Counter for completed processes
 
-    # ✅ **Логирование W&B в главном процессе**
+    # ✅ **Logging W&B in the main process**
     if cfg.base.log.logging:
         wandb.init(
             project=cfg.base.log.wandb_project,
@@ -110,9 +111,9 @@ def run(cfg: DictConfig) -> None:
         
     while finished_folds < num_folds:
         try:
-            metric_type, fold_ind, metrics = log_queue.get(timeout=10)  # Ждём данные
+            metric_type, fold_ind, metrics = log_queue.get(timeout=10)  # Waiting for data
             if metrics is not None and isinstance(metrics, tuple):
-                metrics = dict(metrics)  # Преобразуем tuple в dict при необходимости
+                metrics = dict(metrics)  # Convert tuple to dict if necessary
             if metric_type == "valid":
                 all_valid_metrics.append(metrics)
                 wandb.log({f"valid/fold_{fold_ind}/{key}": value for key, value in metrics.items()})
@@ -123,40 +124,24 @@ def run(cfg: DictConfig) -> None:
                 all_test_metrics_in_intersection.append(metrics)   
                 wandb.log({f"test_in_intersection/fold_{fold_ind}/{key}": value for key, value in metrics.items()})
             elif metric_type == "done":
-                    finished_folds += 1  # Увеличиваем счётчик завершенных процессов
+                finished_folds += 1  # Increase counter of completed processes
         except queue.Empty:
-            pass  # Просто ждем
-        
-    # # aggregate valid and test metrics for all folds
-    # final_valid_metrics = agg_fold_metrics(all_valid_metrics)
-    # final_test_metrics = agg_fold_metrics(all_test_metrics)
-    # if cfg.base.get("multimodal_intersection_test", None):
-    #     final_test_metrics_intersection = agg_fold_metrics(all_test_metrics_in_intersection)
+            pass  # Just wait
     
-    # if cfg.base.log.logging:
-    #     final_metrics = {"valid": final_valid_metrics, "test": final_test_metrics}
-    #     if cfg.base.get("multimodal_intersection_test", None):
-    #         final_metrics.update({"test_in_intersection": final_test_metrics_intersection})
-    #     wandb.summary["final"] =final_metrics
-    #     wandb.finish()
-
-    for p in processes:
-        p.join()
-
-    # **Финальные метрики**
+    # **Final metrics**
     final_valid_metrics = agg_fold_metrics(all_valid_metrics)
     final_test_metrics = agg_fold_metrics(all_test_metrics)
     if cfg.base.get("multimodal_intersection_test", None):
         final_test_metrics_intersection = agg_fold_metrics(all_test_metrics_in_intersection)
 
-    # **Финальное логирование**
+    # **Final logging**
     if cfg.base.log.logging:
         final_metrics = {"valid": final_valid_metrics, "test": final_test_metrics}
         if cfg.base.get("multimodal_intersection_test", None):
             final_metrics.update({"test_in_intersection": final_test_metrics_intersection})
-        wandb.summary["final"] =final_metrics
+        wandb.summary["final"] = final_metrics
         wandb.finish()
 
 if __name__ == "__main__":
-    mp.set_start_method("spawn", force=True)  # ✅ Исправляем баг с дочерними процессами
+    mp.set_start_method("spawn", force=True)  # ✅ Fixing the bug with child processes
     run()
