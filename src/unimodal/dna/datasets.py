@@ -72,10 +72,7 @@ class DNAmSurvivalDataset(DNAmDataset):
             is_hazard_logits = False, column_order = None, return_mask =True):
             super().__init__(data_split, dataset_dir, transform = transform, is_hazard_logits = is_hazard_logits, column_order = column_order, return_mask=return_mask)
             
-            # TODO подумать как тут лучше сделать выгрузку для мультимодальных данных 
-            # TODO добавить return_mask
-            # if not return_nan:
-            #     self.data  = self.data.loc[self.data['RNA'].isin(self.rna_dataset['file_id'].to_list())]
+
 
         def __getitem__(self, idx):
             sample, mask = super().__getitem__(idx)
