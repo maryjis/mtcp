@@ -698,7 +698,7 @@ class MultiMaeForSurvival(nn.Module):
             if cfg.freezing_strategy:
                 print("Freezing!")
                 for name, param in self.model.named_parameters():
-                    if ("cls_token" in name) or ("layer.5" in name):
+                    if ("cls_token" in name) or ("layer.5" in name) or ('encoders.wsi.encoder.encoder.layer.3' in name):
                         print("chozen", name)
                         param.requires_grad = True
                     else: 
