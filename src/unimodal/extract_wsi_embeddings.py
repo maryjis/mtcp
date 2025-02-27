@@ -21,12 +21,12 @@ def clean_state_dict(state_dict):
 def parse_args():
     parser = argparse.ArgumentParser(description="Extract embeddings from WSI patches.")
     
-    parser.add_argument('--model_path', type=str, default="/home/a.beliaeva/mtcp/src/outputs/models/wsi_encoder.pth", help="Path to the pretrained model weights.")
-    parser.add_argument('--mapping_path', type=str, default="/home/belyaeva.a/mtcp/src/data/wsi_mapping.json", help="Path to the JSON mapping file for WSI images.")
-    parser.add_argument('--output_dir', type=str, default="/home/a.beliaeva/mtcp/src/outputs/embeddings_wsi", help="Directory to save extracted embeddings.")
+    parser.add_argument('--model_path', type=str, default="/mtcp/src/outputs/models/wsi_encoder.pth", help="Path to the pretrained model weights.")
+    parser.add_argument('--mapping_path', type=str, default="/mtcp/src/data/wsi_mapping.json", help="Path to the JSON mapping file for WSI images.")
+    parser.add_argument('--output_dir', type=str, default="/mtcp/src/outputs/embeddings_wsi", help="Directory to save extracted embeddings.")
     parser.add_argument('--dataset1_path', type=str, default="/mnt/public-datasets/drim/TCGA-GBM_WSI", help="Path to the first dataset directory.")
     parser.add_argument('--dataset2_path', type=str, default="/mnt/public-datasets/drim/wsi", help="Path to the second dataset directory.")
-    parser.add_argument("--data_path", type=str, default="/home/belyaeva.a/mtcp/src/data/dataset.csv", help="Path to the input dataframe.")
+    parser.add_argument("--data_path", type=str, default="/mtcp/src/data/dataset.csv", help="Path to the input dataframe.")
     parser.add_argument('--cuda', action='store_true', help="Use CUDA if available.")
 
     return parser.parse_args()
