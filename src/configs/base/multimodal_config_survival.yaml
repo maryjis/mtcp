@@ -1,12 +1,12 @@
-experiment_name: "multimodal_pretrained_rna_dnam_wsi_mri_256_survival"
-n_epochs: 50
+experiment_name: "multimodal_pretrained_rna_dnam_wsi_256_pretrained400_freeze_decoder_survival"
+n_epochs: 10
 n_intervals: 20
 random_seed: 1380
 
 optimizer:
     name: "Adam"
     params:
-        lr: 1e-3 # 1e-3
+        lr: 1e-4 # 1e-3
         weight_decay: 1e-2
     
 scheduler: 
@@ -16,7 +16,7 @@ scheduler:
 
 type: "multimodal"
 strategy: "survival" # mae, survival
-modalities: ["rna", "dnam", "wsi", "mri"]
+modalities: ["rna", "dnam", "wsi"]
 multimodal_intersection_test: true
 architecture: "MAE"
 splits: 5
