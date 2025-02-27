@@ -5,7 +5,7 @@ class MultimodalDataset(BaseDataset):
     
     def __init__(self, data_split, dataset_dir, datasets, transform = None, 
                  is_hazard_logits = False, return_mask = True):
-        # Todo убрать transform, добавить return_mask в  RNA
+        
         super().__init__(data_split, dataset_dir, transform, is_hazard_logits, return_mask)
         self.datasets = datasets
         
@@ -22,7 +22,7 @@ class MultimodalSurvivalDataset(MultimodalDataset):
     
     def __init__(self, data_split, dataset_dir, datasets, transform = None, 
                  is_hazard_logits = True, return_mask = True):
-        # Todo убрать transform, добавить return_mask в  RNA
+        
         super().__init__(data_split, dataset_dir, datasets, transform, 
                  is_hazard_logits, return_mask)
         
