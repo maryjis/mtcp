@@ -16,10 +16,9 @@ import io
 import matplotlib.pyplot as plt
 from IPython import display
 
-# Вспомогательные функции для обработки WSI и извлечения патчей
 
 def request_file_info(data_type, base_path):
-    """Запрос информации о файлах WSI из GDC"""
+    """Request information about WSI files from GDC"""
     fields = [
         'file_name',
         'cases.submitter_id',
@@ -59,7 +58,7 @@ def request_file_info(data_type, base_path):
 
 
 def make_patient_file_map(df, base_dir):
-    """Создание маппинга файлов для пациентов"""
+
     d = {}
     for _, row in df.iterrows():
         patient = row['cases.0.submitter_id']
@@ -76,13 +75,13 @@ def make_patient_file_map(df, base_dir):
 
 
 def get_masked_hsv(patch: np.ndarray):
-    """Функция для маскировки с использованием HSV"""
+
     patch = cv2.cvtColor(patch, cv2.COLOR_RGB2HSV)
     mask = np.tile(patch[:, :, 1] > 150, (3, 1, 1)).transpose(1, 2, 0) * np.tile(patch[:, :, 2] < 150, (3, 1, 1)).transpose(1, 2, 0)
     return patch * mask
 
 
-# Класс для извлечения патчей
+
 
 class PatchExtractor:
     def __init__(self, num_patches, patch_size, iterations, s_min: int = 150, v_max: int = 150):
@@ -133,7 +132,7 @@ class PatchExtractor:
         return cv2.cvtColor(patch, cv2.COLOR_RGBA2RGB), idx
 
 
-# Функция для создания миниатюр и масок
+
 
 def segment(
     img_rgba: np.ndarray,
@@ -162,65 +161,65 @@ import numpy as np
 from PIL import Image
 
 def create_thumbnail_and_mask(data_path, downscale_factor=6):
-    """Создание миниатюр и масок"""
+    
     subdirectories = os.listdir(data_path)
     for subdirectory in tqdm.tqdm(subdirectories):
         subdirectory_path = os.path.join(data_path, subdirectory)
 
-        if os.path.isdir(subdirectory_path):  # Если это директория
+        if os.path.isdir(subdirectory_path):  
             filenames = os.listdir(subdirectory_path)
         else:
-            print(f"Пропущено, не директория: {subdirectory_path}")
-            continue  # Пропускаем эту итерацию, если это не директория
+            print(f"Skipped, not a directory: {subdirectory_path}")
+            continue  
         
-        # Фильтрация файлов по расширениям .svs и .tif
+        # Select files with .svs or .tif extensions
         wsi_files = [f for f in filenames if f.endswith("svs") or f.endswith("tif")]
 
         if not wsi_files:
-            print(f"В папке {subdirectory_path} нет файлов .svs или .tif")
-            continue  # Пропускаем эту папку, если нет нужных файлов
+            print(f"No .svs or .tif files found in {subdirectory_path}")
+            continue  # Skip this folder if there are no relevant files
 
-        # Берем первый файл из списка
+        # Take the first file from the list
         wsi_filename = wsi_files[0]
         wsi_file_path = os.path.join(subdirectory_path, wsi_filename)
 
-        # Проверяем, что это файл, а не директория
+        # Check that it is a file and not a directory
         if not os.path.isfile(wsi_file_path):
-            print(f"Пропущено, {wsi_file_path} не является файлом")
+            print(f"Skipped, {wsi_file_path} is not a file")
             continue
 
         try:
-            # Загружаем изображение с помощью pyvips
+            # Load the image using pyvips
             slide = pyvips.Image.new_from_file(wsi_file_path)
         except Exception as e:
-            print(f"Ошибка при загрузке изображения {wsi_file_path}: {e}")
-            continue  # Пропускаем эту итерацию при ошибке
+            print(f"Error loading image {wsi_file_path}: {e}")
+            continue  # Skip this iteration in case of an error
 
-        # Устанавливаем масштаб для миниатюры
+        # Set scale for thumbnail
         if int(float(slide.get("aperio.AppMag"))) == 40:
             d = downscale_factor + 1
         else:
             d = downscale_factor
 
-        # Создаём миниатюру изображения
+        # Create a thumbnail of the image
         thumbnail = pyvips.Image.thumbnail(
             wsi_file_path,
             slide.width / (2**d),
             height=slide.height / (2**d),
         ).numpy()
 
-        # Преобразуем в цветовое пространство RGB
+        # Convert to RGB color space
         thumbnail = cv2.cvtColor(thumbnail, cv2.COLOR_RGBA2RGB)
         thumbnail_hsv = cv2.cvtColor(thumbnail, cv2.COLOR_RGB2HSV)
 
-        # Создание маски для удаления felt-tip marks
+        # Create a mask to remove felt-tip marks
         mask_hsv = np.tile(thumbnail_hsv[:, :, 1] < 160, (3, 1, 1)).transpose(1, 2, 0)
         thumbnail *= mask_hsv
 
-        # Сегментация изображения
+        # Image segmentation
         masked_image, mask = segment(thumbnail)
 
-        # Сохранение результатов
+        # Save results
         masked_image = Image.fromarray(masked_image).convert("RGB")
         masked_image.save(os.path.join(subdirectory_path, "thumbnail.jpg"))
         np.save(os.path.join(subdirectory_path, "mask.npy"), mask)
@@ -229,57 +228,54 @@ def create_thumbnail_and_mask(data_path, downscale_factor=6):
 
 
 def sanity_check(base_path, num_patches=100):
-    """Проверка на корректность извлеченных патчей"""
+    """Check the correctness of extracted patches"""
     for subdirectory in tqdm.tqdm(os.listdir(base_path)):
         subdirectory_path = os.path.join(base_path, subdirectory)
         
-        # Пропускаем, если это не директория или если это папка с именем 'logs'
+        # Skip if it's not a directory or if it's a 'logs' folder
         if not os.path.isdir(subdirectory_path) or subdirectory == 'logs':
             continue
         
-        # Далее обработка только тех, что являются директориями и не имеют имя 'logs'
+        # Process only directories that are not named 'logs'
         patches_folder = os.path.join(subdirectory_path, 'patches')
         
-        # Проверяем наличие папки с патчами
+        # Check if the patches folder exists
         if os.path.exists(patches_folder):
             if len(os.listdir(patches_folder)) != num_patches:
                 print(f"Warning: Abnormal number of patches for {subdirectory}. Expected {num_patches}, found {len(os.listdir(patches_folder))}.")
             
-            # Перебираем все файлы в папке с патчами
+            # Iterate through all files in the patches folder
             for patch_file in os.listdir(patches_folder):
                 patch_path = os.path.join(patches_folder, patch_file)
                 
-                # Загружаем каждый патч
+                # Load each patch
                 try:
                     patch = np.array(Image.open(patch_path))
-                    # Проверяем размер патча
+                    # Check the patch size
                     if patch.shape != (256, 256, 3):
                         print(f"Abnormal patch size for {patch_file}. Expected (256, 256, 3), got {patch.shape}.")
                 except Exception as e:
-                    print(f"Ошибка при загрузке патча: {patch_path}. Ошибка: {str(e)}")
+                    print(f"Error loading patch: {patch_path}. Error: {str(e)}")
         else:
-            print(f"Папка с патчами не найдена: {patches_folder}")
-
-
-
+            print(f"Patches folder not found: {patches_folder}")
 
 def load_and_filter_wsi_data(mapping_file, dataframe, gbm_data_path, lgg_data_path):
-    """Загрузка и фильтрация данных WSI"""
-    # Загрузим ваш JSON файл
+    """Loading and filtering WSI data"""
+    # Load your JSON file
     with open(mapping_file, 'r') as f:
         wsi_mapping = json.load(f)
 
-    print("Столбцы в dataframe:", dataframe.columns)
-    print("Первые строки данных:", dataframe.head())
+    print("Columns in dataframe:", dataframe.columns)
+    print("First rows of data:", dataframe.head())
 
-    # Если submitter_id существует в dataframe
+    # If submitter_id exists in dataframe
     if 'submitter_id' in dataframe.columns:
         print(f"Unique submitter_ids in dataframe: {dataframe['submitter_id'].nunique()}")
     else:
-        print("Ошибка: столбец 'submitter_id' не найден в dataframe.")
+        print("Error: Column 'submitter_id' not found in dataframe.")
     
-    # Фильтруем файлы из JSON по submitter_id
-    # Используем правильный путь для GBM и LGG
+    # Filter files from JSON by submitter_id
+    # Use the correct path for GBM and LGG
     file_map_gbm = {
         k: v for k, v in wsi_mapping.items() 
         if k in dataframe['submitter_id'].values and os.path.exists(os.path.join(gbm_data_path, v.split('/')[-2], v.split('/')[-1]))
@@ -289,30 +285,30 @@ def load_and_filter_wsi_data(mapping_file, dataframe, gbm_data_path, lgg_data_pa
         if k in dataframe['submitter_id'].values and os.path.exists(os.path.join(lgg_data_path, v.split('/')[-2], v.split('/')[-1]))
     }
 
-    print(f"Количество файлов для GBM: {len(file_map_gbm)}")
-    print(f"Количество файлов для LGG: {len(file_map_lgg)}")
+    print(f"Number of files for GBM: {len(file_map_gbm)}")
+    print(f"Number of files for LGG: {len(file_map_lgg)}")
 
     return {**file_map_gbm, **file_map_lgg}
 
 def main(args):
-    # Загружаем маппинг WSI
+    # Load the WSI mapping
     dataframe = pd.read_csv(args.wsi_file_path, sep=',')
     
-    # Передаем правильные пути для обоих наборов данных (GBM и LGG)
+    # Pass the correct paths for both datasets (GBM and LGG)
     file_map = load_and_filter_wsi_data(
         args.mapping_path, dataframe, args.gbm_data_path, args.lgg_data_path
     )
-    print("Проверка путей:", file_map)
+    print("Checking paths:", file_map)
     
-    # Создаем миниатюры и маски для каждого пациента
-    create_thumbnail_and_mask(args.gbm_data_path, downscale_factor=args.downscale_factor)  # Заменили base_path на gbm_data_path
-    create_thumbnail_and_mask(args.lgg_data_path, downscale_factor=args.downscale_factor)  # Для LGG
+    # Create thumbnails and masks for each patient
+    create_thumbnail_and_mask(args.gbm_data_path, downscale_factor=args.downscale_factor)  # Replaced base_path with gbm_data_path
+    create_thumbnail_and_mask(args.lgg_data_path, downscale_factor=args.downscale_factor)  # For LGG
     
-    # Создаем и сохраняем словарь id2path
+    # Create and save the id2path dictionary
     id2path = {}
     for patient_id, path in file_map.items():
         if isinstance(path, tuple):
-            # Если несколько слайдов, отображаем их с миниатюрами
+            # If multiple slides exist, display them with thumbnails
             n_slides = len(path)
             plt.figure(figsize=(12, 12))
             for i in range(n_slides):
@@ -330,11 +326,11 @@ def main(args):
         else:
             id2path[patient_id] = path
 
-    # Перезаписываем файл wsi_mapping.json
+    # Overwrite the wsi_mapping.json file
     with open(args.mapping_path, 'w') as f:
         json.dump(id2path, f)
 
-    # Считываем данные JSON и объединяем их с dataframe
+    # Read JSON data and merge it with dataframe
     with open(args.mapping_path, 'r') as f:
         wsi_mapping = json.load(f)
 
@@ -343,71 +339,71 @@ def main(args):
     dataframe = dataframe.merge(WSI_mapping, how='left', on='submitter_id')
     dataframe.to_csv(args.wsi_file_path, index=False)
 
-    # Обрабатываем данные GBM и LGG
+    # Process GBM and LGG data
     num_patches = args.num_patches
     patch_size = args.patch_size
     iterations = args.iterations
 
-    # Обрабатываем каждый слайд пациента
+    # Process each patient's slide
     for patient, wsi_path in tqdm.tqdm(file_map.items()):
-        # Проверяем, из какого набора данных файл
+        # Check which dataset the file belongs to
         if 'GBM' in wsi_path:
             base_path = args.gbm_data_path
         else:
             base_path = args.lgg_data_path
         
-        # Путь к файлу .svs
+        # Path to the .svs file
         wsi_full_path = os.path.join(base_path, *wsi_path.split('/')[1:])
         
-        # Проверяем, существует ли файл .svs
+        # Check if the .svs file exists
         if not os.path.exists(wsi_full_path):
-            print(f"Ошибка: Файл {wsi_full_path} не существует.")
+            print(f"Error: File {wsi_full_path} does not exist.")
             continue
         
-        print(f"Проверка пути: {wsi_full_path}")
+        print(f"Checking path: {wsi_full_path}")
         
-        # Открываем слайд
+        # Open the slide
         try:
-            slide = pyvips.Image.new_from_file(wsi_full_path)  # Открываем файл слайд
-            print(f"Изображение загружено успешно: {wsi_full_path}")
+            slide = pyvips.Image.new_from_file(wsi_full_path)  # Open slide file
+            print(f"Image successfully loaded: {wsi_full_path}")
         except Exception as e:
-            print(f"Ошибка при загрузке изображения: {wsi_full_path} \nОшибка: {str(e)}")
+            print(f"Error loading image: {wsi_full_path} \nError: {str(e)}")
             continue
 
-        # Путь к папке для загрузки маски
-        folder_path = os.path.dirname(wsi_full_path)  # Путь к папке с файлом .svs
+        # Path to the folder for loading the mask
+        folder_path = os.path.dirname(wsi_full_path)  # Path to the folder containing the .svs file
         mask_path = os.path.join(folder_path, 'mask.npy')
         
-        # Загружаем маску
+        # Load the mask
         try:
             mask = np.load(mask_path)
-            print(f"Маска загружена: {mask_path}")
+            print(f"Mask loaded: {mask_path}")
         except Exception as e:
-            print(f"Ошибка при загрузке маски: {mask_path} \nОшибка: {str(e)}")
+            print(f"Error loading mask: {mask_path} \nError: {str(e)}")
             continue
         
-        # Применяем правильный extractor в зависимости от magnification
+        # Adjust patch extraction parameters based on magnification
         if int(float(slide.get('aperio.AppMag'))) == 40:
             extractor = PatchExtractor(num_patches=num_patches, patch_size=patch_size*2, iterations=iterations, s_min=130, v_max=170)
         else:
             extractor = PatchExtractor(num_patches=num_patches, patch_size=patch_size, iterations=iterations, s_min=130, v_max=170)
         
-        # Извлекаем патчи
+        # Extract patches
         patches, _ = extractor(slide, mask)
 
-        # Если 'patches' - это кортеж, а не словарь, обработаем его как нужно
+        # Sort patches by score
         if isinstance(patches, dict):
             patches = dict(sorted(patches.items(), key=lambda x: x[0], reverse=True))
         else:
-            print("Warning: patches не является словарем, проверим структуру данных.")
-            print(f"Тип patches: {type(patches)}")
-            # Если patches - это кортеж, то можно сделать что-то с первым элементом:
-            patches = patches[0]  # Если patches - это кортеж, предположим, что патчи в первом элементе
+            print("Warning: patches is not a dictionary, checking data structure.")
+            print(f"Type of patches: {type(patches)}")
+            # If patches is a tuple, assume the patches are in the first element
+            patches = patches[0]  
             patches = dict(sorted(patches.items(), key=lambda x: x[0], reverse=True))
 
         selected_patches = {score: patch for score, patch in list(patches.items())[:num_patches]}
         
-        # Создаем папку для патчей, если её нет
+        # Create a folder for patches if it does not exist
         patches_folder = os.path.join(folder_path, 'patches')
         print(f"folder_path: {folder_path}")
         print(f"patches_folder: {patches_folder}")
@@ -415,14 +411,13 @@ def main(args):
         if not os.path.exists(patches_folder):
             os.makedirs(patches_folder)
         
-        # Сохраняем патчи
+        # Save patches
         for i, (score, patch) in enumerate(selected_patches.items()):
             patch = Image.fromarray(patch)
             patch.save(os.path.join(patches_folder, f'{int(i)}_{int(score)}.png'))
         
-        # Проверка корректности
-        sanity_check(folder_path)  # Передаем правильный путь
-
+        # Perform a sanity check
+        sanity_check(folder_path) 
 
 
 
@@ -430,11 +425,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="WSI patch extraction and thumbnail generation")
     parser.add_argument("--gbm_data_path", "-g", default="/mnt/public-datasets/drim/TCGA-GBM_WSI", help="Path to the GBM data folder")
     parser.add_argument("--lgg_data_path", "-l", default="/mnt/public-datasets/drim/wsi", help="Path to the LGG data folder")
-    parser.add_argument("--mapping_path", "-m", default="/home/a.beliaeva/mtcp/src/data/wsi_mapping.json", help="Path to WSI mapping file")
+    parser.add_argument("--mapping_path", "-m", default="/mtcp/src/data/wsi_mapping.json", help="Path to WSI mapping file")
     parser.add_argument("--num_patches", "-n", type=int, default=100, help="Number of patches to extracе")
     parser.add_argument("--patch_size", "-s", type=int, default=256, help="Size of the patches (256x256)")
     parser.add_argument("--iterations", "-i", type=int, default=1000, help="Number of iterations for patch extraction")
-    parser.add_argument("--wsi_file_path", "-w", default="/home/a.beliaeva/mtcp/updated_utf8.csv", help="Path to the WSI files metadata")
+    parser.add_argument("--wsi_file_path", "-w", default="/mtcp/updated_utf8.csv", help="Path to the WSI files metadata")
     parser.add_argument("--downscale_factor", "-d", type=int, default=6, help="Downscale factor for thumbnail generation")
 
     args = parser.parse_args()
