@@ -36,9 +36,9 @@ if __name__ == "__main__":
     parser.add_argument("--n_gpus", type=int, default=4)
     parser.add_argument("--k", type=int, default=10)
     parser.add_argument("--seed", type=int, default=1999)
-    parser.add_argument("--model_path", type=str, default="/home/a.beliaeva/mtcp/src/outputs/models/wsi_encoder.pth")
-    parser.add_argument("--entity", type=str, default=None)  # Добавляем entity для wandb
-    parser.add_argument("--wandb_project", type=str, default="cancer_mtcp")  # Добавляем проект для wandb
+    parser.add_argument("--model_path", type=str, default="mtcp/src/outputs/models/wsi_encoder.pth")
+    parser.add_argument("--entity", type=str, default=None) 
+    parser.add_argument("--wandb_project", type=str, default="cancer_mtcp") 
     args = parser.parse_args()
 
     # Set seed
