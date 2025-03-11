@@ -191,8 +191,7 @@ class MultiMAEModel(PreTrainedModel):
         seq_length = self.get_patches_number(modality)
         device = sample.device
 
-        # print("Seq length: ", seq_length)
-        # print(mask)
+   
         # If mask is all True, process entire batch normally
         if torch.all(mask):
             
@@ -212,18 +211,15 @@ class MultiMAEModel(PreTrainedModel):
             ids_restore_empty = torch.arange(seq_length, device=device).repeat(len(empty_sample_ids), 1) + multimodal_lenths  
                       
             non_empty_sample_ids = torch.nonzero(mask, as_tuple=True)[0].to(device)
-            # print("Non empty sample ids: ", non_empty_sample_ids)
-            
+           
             # Process non-empty samples
             non_empty_samples = torch.index_select(sample, dim=0, index=non_empty_sample_ids)
-            # print("Non empty samples shape: ", non_empty_samples.shape)
+            
             embedded_non_empty = self.encoders[modality](non_empty_samples)
-            #print("embedded_non_empty.last_hidden_state.shape", embedded_non_empty.last_hidden_state.shape)
+            
             
             empty_sequence = self.mask_token.repeat(len(empty_sample_ids), embedded_non_empty.last_hidden_state.shape[1], 1)
-            # print("Empty sample ids: ", empty_sample_ids)
-            # print("Non empty sequence shape: ", embedded_non_empty.last_hidden_state.shape)
-            # print("Empty sequence shape: ", empty_sequence.shape)
+           
             # Combine empty and non-empty tensors
             last_hidden_state = torch.cat([
                 embedded_non_empty.last_hidden_state,
@@ -234,8 +230,7 @@ class MultiMAEModel(PreTrainedModel):
                 embedded_non_empty.mask,
                 mask_empty
             ], dim=0)
-            # print("Ids restore empty shape: ", ids_restore_empty.shape)
-            # print("embedded_non_empty.ids_restore: ", embedded_non_empty.ids_restore.shape)
+           
             
 
             ids_restore = torch.cat([
@@ -248,18 +243,12 @@ class MultiMAEModel(PreTrainedModel):
             #indices = torch.cat([empty_sample_ids, non_empty_sample_ids]).sort()[1]
             indices = torch.argsort(torch.cat([non_empty_sample_ids, empty_sample_ids]), dim=0)
             
-            # print("Last hidden state shape: ", last_hidden_state.shape)
-            # print("Mask combined shape: ", mask_combined.shape)
-            # print("Mask combined: ", torch.any(mask_combined, dim=1))
-            
-            # print("Indices: ", indices)
+          
             last_hidden_state = torch.index_select(last_hidden_state, dim=0, index=indices)
             mask_combined = torch.index_select(mask_combined, dim=0, index=indices)
             ids_restore = torch.index_select(ids_restore, dim=0, index=indices)
             
-            # print("Last hidden state shape: ", last_hidden_state.shape)
-            # print("Mask combined shape: ", mask_combined.shape)
-            # print("Mask combined: ", torch.any(mask_combined, dim=1))
+           
             return ViTMAEModelOutput(
                 last_hidden_state=last_hidden_state,
                 mask=mask_combined,
@@ -451,8 +440,7 @@ class MultiMaeForPretraining(nn.Module):
         # Convert input to patches
         target = encoder.encoder.patchify(values, interpolate_pos_encoding=interpolate_pos_encoding)
 
-        # print("target.shape: ", target.shape)
-        # print("pred.shape: ", pred.shape)
+       
         # Masked loss for all zero subjects (missing ones)
         modality_mask = modality_mask.unsqueeze(1).to(mask.device)
         mask =  mask * modality_mask
@@ -858,7 +846,11 @@ class MultiMaeForSurvival(nn.Module):
         #     print("concat_logits.shape", concat_logits.shape)
         #     logits = self.final_projection(concat_logits)
         #     logits =torch.squeeze(logits,2)
+<<<<<<< HEAD
         if self.cfg.return_attention:
             return logits, attn_weights
         else:
             return logits
+=======
+        return logits
+>>>>>>> 3b5edb12e6de55d400d2729bedce828c44f850fb

@@ -85,10 +85,7 @@ class RNASurvivalDataset(RNADataset):
                              return_mask=return_mask,
                              debug_mode = debug_mode)
             
-            # TODO подумать как тут лучше сделать выгрузку для мультимодальных данных 
-            # TODO добавить return_mask
-            # if not return_nan:
-            #     self.data  = self.data.loc[self.data['RNA'].isin(self.rna_dataset['file_id'].to_list())]
+
 
         def __getitem__(self, idx):
             if self.debug_mode:
