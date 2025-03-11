@@ -26,7 +26,7 @@ dnam:
 clinical:
     dataset_path: "src/data/dataset.csv"
     selected_columns: ["treatments_radiation_binary", "treatments_binary", "age_at_diagnosis"]
-
+    
 wsi:
   resize_to: [256, 256]
   max_patches_per_sample: 10
