@@ -846,11 +846,7 @@ class MultiMaeForSurvival(nn.Module):
         #     print("concat_logits.shape", concat_logits.shape)
         #     logits = self.final_projection(concat_logits)
         #     logits =torch.squeeze(logits,2)
-<<<<<<< HEAD
         if self.cfg.return_attention:
             return logits, attn_weights
         else:
             return logits
-=======
-        return logits
->>>>>>> 3b5edb12e6de55d400d2729bedce828c44f850fb
