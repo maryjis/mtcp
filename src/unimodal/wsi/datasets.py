@@ -2,7 +2,7 @@ from typing import Tuple, Union, Any
 from PIL import Image
 import torch
 import pandas as pd
-from src.datasets import BaseDataset  # Обновлено на BaseDataset, согласно новым изменениям
+from src.datasets import BaseDataset  
 import os
 import numpy as np
 from torchvision import transforms
@@ -13,7 +13,7 @@ from torch.utils.data import Dataset
 class PatchDataset(torch.utils.data.Dataset):
     def __init__(self, filepaths: Tuple[str, ...], transform: "torchvision.transforms" = None) -> None:
         self.filepaths = filepaths
-        self.transform = transform  # Параметр должен быть в единственном числе
+        self.transform = transform  # The parameter should be singular
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         path = self.filepaths[idx]
@@ -21,7 +21,7 @@ class PatchDataset(torch.utils.data.Dataset):
         if self.transform:
             image_1, image_2 = self.transform(image)
         else:
-            image_1, image_2 = image, image  # Если трансформации нет, возвращаем само изображение
+            image_1, image_2 = image, image  # If no transformation is applied, return the image itself
         return image_1, image_2
 
     def __len__(self) -> int:
@@ -36,7 +36,7 @@ class WSIDataset(BaseDataset):
         is_train: bool = True,
         return_mask: bool = False,
         transform: "torchvision.transforms" = None,
-        is_hazard_logits = False # Добавлен параметр
+        is_hazard_logits = False # Added parameter
     ) -> None:
         super().__init__(data=data, transform=transform, return_mask=return_mask, is_hazard_logits=is_hazard_logits)
         self.k = k
@@ -47,7 +47,7 @@ class WSIDataset(BaseDataset):
         
         if not pd.isna(sample.WSI):
             data = pd.read_csv(sample.WSI)
-            # get k random embeddings
+            # Get k random embeddings
             data = data.sample(self.k)  
 
             data = torch.from_numpy(data.values).float()
@@ -81,7 +81,7 @@ class WSIDataset_patches(BaseDataset):
         is_hazard_logits=False,
         resize_to: tuple = (256, 256),
         max_patches_per_sample: int = 10,
-        random_patch_selection: bool = False  # добавленный параметр
+        random_patch_selection: bool = False  # Added parameter
     ) -> None:
         super().__init__(data=data, transform=transform, return_mask=return_mask, is_hazard_logits=is_hazard_logits)
         self.resize_to = resize_to
@@ -89,34 +89,34 @@ class WSIDataset_patches(BaseDataset):
         self.random_patch_selection = random_patch_selection
 
     def _load_patches(self, image_dir: str):
-        """Загружает патчи, масштабирует и конвертирует в тензоры"""
+        """Loads patches, resizes them, and converts them to tensors"""
         patch_dir = os.path.join(image_dir, "patches")
 
-        # Если папки нет, вернуть нужное количество пустых патчей
+        # If the folder does not exist, return the required number of empty patches
         if not os.path.exists(patch_dir):
             if self.random_patch_selection:
-                return torch.zeros((1, 3, *self.resize_to), dtype=torch.float32)  # Один нулевой патч
+                return torch.zeros((1, 3, *self.resize_to), dtype=torch.float32)  # One zero patch
             else:
-                return torch.zeros((self.max_patches_per_sample, 3, *self.resize_to), dtype=torch.float32)  # `max_patches_per_sample` нулевых патчей
+                return torch.zeros((self.max_patches_per_sample, 3, *self.resize_to), dtype=torch.float32)  # `max_patches_per_sample` zero patches
 
         patch_files = sorted([f for f in os.listdir(patch_dir) if f.endswith(".png")])
 
-        # Если папка есть, но пустая, возвращаем нужный размер нулевых патчей
+        # If the folder exists but is empty, return the required size of zero patches
         if not patch_files:
             if self.random_patch_selection:
-                return torch.zeros((1, 3, *self.resize_to), dtype=torch.float32)  # Один нулевой патч
+                return torch.zeros((1, 3, *self.resize_to), dtype=torch.float32)  # One zero patch
             else:
-                return torch.zeros((self.max_patches_per_sample, 3, *self.resize_to), dtype=torch.float32)  # `max_patches_per_sample` нулевых патчей
+                return torch.zeros((self.max_patches_per_sample, 3, *self.resize_to), dtype=torch.float32)  # `max_patches_per_sample` zero patches
 
         patches = []
 
         if self.random_patch_selection:
-            # Выбираем один случайный патч
+            # Select one random patch
             max_idx = min(len(patch_files), self.max_patches_per_sample)
             idx_patch = torch.randint(0, max_idx, (1,)).item()
             patch_files = [patch_files[idx_patch]]
 
-        for patch_file in patch_files[:self.max_patches_per_sample]:  # Ограничение по `max_patches_per_sample`
+        for patch_file in patch_files[:self.max_patches_per_sample]:  # Limit by `max_patches_per_sample`
             patch_path = os.path.join(patch_dir, patch_file)
             patch = Image.open(patch_path).convert("RGB")
             patch = F.resize(patch, self.resize_to)
@@ -124,14 +124,14 @@ class WSIDataset_patches(BaseDataset):
             patches.append(patch)
 
         if self.random_patch_selection:
-            # Гарантируем, что размер всегда `(1, 3, 256, 256)`
+            # Ensure the size is always `(1, 3, 256, 256)`
             patches if patches else torch.zeros((1, 3, *self.resize_to), dtype=torch.float32)
         else:
-            # Гарантируем, что размер всегда `(max_patches_per_sample, 3, 256, 256)`
+            # Ensure the size is always `(max_patches_per_sample, 3, 256, 256)`
             while len(patches) < self.max_patches_per_sample:
                 patches.append(torch.zeros((3, *self.resize_to), dtype=torch.float32))
         patches = torch.stack(patches)
-        return patches  # Теперь `torch.Tensor` с гарантированным размером
+        return patches  # Now a `torch.Tensor` with a guaranteed size
 
 
 
@@ -141,7 +141,7 @@ class WSIDataset_patches(BaseDataset):
         if not pd.isna(sample.WSI_initial):
             svs_path = sample.WSI_initial
             image_dir = os.path.dirname(svs_path)
-            patches = self._load_patches(image_dir)  # `_load_patches()` уже возвращает `torch.Tensor`
+            patches = self._load_patches(image_dir)  # `_load_patches()` already returns `torch.Tensor`
             mask = True
         else:
             patches = torch.zeros(
@@ -155,7 +155,7 @@ class WSIDataset_patches(BaseDataset):
             return patches
   
     def __len__(self):
-        return len(self.data)  # Теперь длина = числу WSI, а не батчей!
+        return len(self.data)  # Now the length equals the number of WSI, not batches!
 
 
         
@@ -177,7 +177,7 @@ class SurvivalWSIDataset(torch.utils.data.Dataset):
             self.event = torch.from_numpy(split["event"].values)
 
     def __getitem__(self, idx: int) -> Tuple[Any, torch.Tensor, torch.Tensor]:
-        data, mask = self.dataset[idx]  # Разбиваем tuple
+        data, mask = self.dataset[idx]  # Unpacking the tuple
         #print(f"Index {idx} -> Data shape: {data.shape},  Time: {self.time[idx]}, Event: {self.event[idx]}")
         return data, mask, self.time[idx], self.event[idx]
 
