@@ -1,5 +1,5 @@
 
-modalities: ["rna", "dnam", "wsi"]
+modalities: ["rna", "dnam","mri","clinical"]
 defaults: 
   - rna_model: survival
   - mri_model: survival
@@ -29,13 +29,14 @@ num_hidden_layers: 4
 qkv_bias: true
 patch_size: 512
 
-is_load_pretrained: true
-pretrained_model_name: "multimodal_rna_dna_wsi_400_mae_last" #"multimodal_rna_dnam_mri_pretrained_mae_800_17_02", "multimodal_rna_dnam6_50_mae_pretrained_rna_with_mm_800_16_02"
+is_load_pretrained: false
+pretrained_model_name: "multimodal_rna_dnam_mri_pretrained_mae_800_17_02" 
+#"multimodal_rna_dna_wsi_mri_400_mae_last"  #"multimodal_rna_dna_wsi_400_mae_last" #"multimodal_rna_dnam_mri_pretrained_mae_800_17_02", "multimodal_rna_dnam6_50_mae_pretrained_rna_with_mm_800_16_02"
 pretrained_model_path: ""
 freezing_strategy: true
 
 missing_modalities_strategy: "decoder"
-mm_pretrained_model_name: "multimodal_rna_dna_wsi_400_mae_last"
+mm_pretrained_model_name: "multimodal_rna_dnam_mri_pretrained_mae_800_17_02"
 mm_pretrained_model_path: ""
 
 
@@ -63,7 +64,8 @@ fusion_depth: 1
 fusion_dim: 256
 fusion_nhead: 4
 fusion_dim_feedforward: 0
-fusion_dropout: 0.1
+fusion_dropout: 0.3
 fusion_logits: "mean"
 fusion_masking: false
 fusion_strategy_is_pretrained: false
+return_attention: false

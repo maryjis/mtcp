@@ -649,7 +649,7 @@ class MaskAttentionFusion(nn.Module):
             if self.fusion_dim_feedforward > 0:
                 x = layer(x, src_key_padding_mask= mask if mask is not None else None)
             else:
-               x = layer(x,x,x, key_padding_mask  = mask if mask is not None else None)[0]           
+               x = layer(x,x,x, key_padding_mask  = mask if mask is not None else None)          
         return x
 
 class PerceiverMultiResampler(nn.Module):
@@ -827,7 +827,7 @@ class MultiMaeForSurvival(nn.Module):
             concat_x = self.fusion_strategy(torch.squeeze(concat_x,1), None)
                
         elif self.cfg.fusion_strategy == "mask_attention":
-            concat_x = self.fusion_strategy(concat_x.last_hidden_state, concat_x.mask)
+            concat_x, attn_weights = self.fusion_strategy(concat_x.last_hidden_state, concat_x.mask)
         elif self.cfg.fusion_strategy == "disentangled_fusion":
             ## Get multimodal combination
             concat_x = self.fusion_strategy(concat_x.last_hidden_state, concat_x.mask)
@@ -849,7 +849,6 @@ class MultiMaeForSurvival(nn.Module):
         if "clinical" in self.modalities:
             clinical_logits = self.clinical_projection(clinical_data[:,0,:])    
             concat_with_clinical =torch.cat([concat_x[:,0,:], clinical_logits], axis =-1)
-            print("concat_with_clinical.shape ", concat_with_clinical.shape)
             logits = self.projection(concat_with_clinical) 
         else:    
             logits = self.projection(concat_x[:,0,:])
@@ -859,4 +858,7 @@ class MultiMaeForSurvival(nn.Module):
         #     print("concat_logits.shape", concat_logits.shape)
         #     logits = self.final_projection(concat_logits)
         #     logits =torch.squeeze(logits,2)
-        return logits
+        if self.cfg.return_attention:
+            return logits, attn_weights
+        else:
+            return logits
