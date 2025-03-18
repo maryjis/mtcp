@@ -27,6 +27,7 @@ import wandb
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.unimodal.rna.mae import RnaMAEForPreTraining
 from src.unimodal.mri.mae import MriMAEForPreTraining, MriMaeSurvivalModel
+from src.unimodal.mri.noise import MriNoiseForPreTraining
 from src.unimodal.wsi.mae import WsiMAEForPreTraining, WsiMaeSurvivalModel
 from src.utils import check_dir_exists, count_parameters, print_vit_sizes
 
@@ -70,10 +71,11 @@ class Trainer(object):
 
         elif modality == "mri":
             preproc = None
-            if self.cfg.base.strategy != "mae": #labels are not used for pre-training
+            if self.cfg.base.strategy == "survival": #labels are not used for pre-training
                 preproc = BaseUnimodalPreprocessor(splits["train"], self.cfg.base.n_intervals)
                 preproc.fit()
             return preproc
+        
         elif modality == "dnam":
             scaling_method = None
             if self.cfg.data.dnam.scaling_method in ["QuantileTransformer", "StandardScaler", "MinMaxScaler"]:
@@ -87,7 +89,7 @@ class Trainer(object):
         
         elif modality == "wsi":
             preproc = None
-            if self.cfg.base.strategy != "mae": #labels are not used for pre-training
+            if self.cfg.base.strategy == "survival": #labels are not used for pre-training
                 preproc = BaseUnimodalPreprocessor(splits["train"], self.cfg.base.n_intervals)
                 preproc.fit()
             return preproc
@@ -491,3 +493,14 @@ class UnimodalMAETrainer(Trainer):
             self.scheduler.step()
             
         return  metrics
+
+class UnimodalNoiseTrainer(UnimodalMAETrainer):
+    
+    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
+        super().__init__(splits, cfg)
+
+    def initialise_models(self):
+        if self.cfg.base.modalities[0]=="mri":
+            return MriNoiseForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))  
+        else:
+            raise NotImplementedError("Exist only for mri. Initialising models for other modalities aren't declared") 
