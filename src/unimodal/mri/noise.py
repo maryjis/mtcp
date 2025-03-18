@@ -184,7 +184,7 @@ class MriNoiseForPreTraining(MriMAEForPreTraining):
 
 class MriNoiseSurvivalModel(MriMaeSurvivalModel):
     def __init__(self, config):
-        super().__init__()
+        super().__init__(config)
         if config.to_dict().get("is_load_pretrained", False):
             self.vit = MriNoiseModel.from_pretrained(config.pretrained_model_path, config = config)
             print(f"Pretrained model loaded from {config.pretrained_model_path}")

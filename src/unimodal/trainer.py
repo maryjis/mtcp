@@ -27,7 +27,7 @@ import wandb
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.unimodal.rna.mae import RnaMAEForPreTraining
 from src.unimodal.mri.mae import MriMAEForPreTraining, MriMaeSurvivalModel
-from src.unimodal.mri.noise import MriNoiseForPreTraining
+from src.unimodal.mri.noise import MriNoiseForPreTraining, MriNoiseSurvivalModel
 from src.unimodal.wsi.mae import WsiMAEForPreTraining, WsiMaeSurvivalModel
 from src.utils import check_dir_exists, count_parameters, print_vit_sizes
 
@@ -228,7 +228,7 @@ class UnimodalSurvivalTrainer(Trainer):
             elif self.cfg.base.architecture=="CNN":    
                 transforms = base_transforms(self.preproc.get_scaling())
         elif self.cfg.base.modalities[0]=="dnam":
-            transforms = padded_transforms_scaling(self.preproc.get_scaling(), cfg.model.get("size", None))
+            transforms = padded_transforms_with_scaling(self.preproc.get_scaling(), cfg.model.get("size", None))
         elif self.cfg.base.modalities[0]=="clinical":
              transforms = base_scaling(self.preproc.get_scaling())       
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
@@ -244,11 +244,11 @@ class UnimodalSurvivalTrainer(Trainer):
         print(self.model)
         print_vit_sizes(self.model)
         torch.cuda.reset_peak_memory_stats(device=cfg.base.device)
-        print(f"gpu used {torch.cuda.max_memory_allocated(device=cfg.base.device)/1024/1024} Mb memory")
+        print(f"gpu used {torch.cuda.max_memory_allocated(device=cfg.base.device)/1024/1024} Mb memory for model weights (without gradients and optimizer state)")
    
     def initialise_datasets(self, splits, modality, preproc, transforms=None):
         datasets ={}
-        print("UnimodalSurvivalTrainer, initilise data")
+        print("UnimodalSurvivalTrainer, initailise data")
         # Todo - подумать нужно ли тут разббить для каждого trainerа - свой initialise_dataset
         if modality == "rna":
             for split_name, dataset in splits.items():
@@ -313,12 +313,14 @@ class UnimodalSurvivalTrainer(Trainer):
                 else:
                     raise NotImplementedError("Exist only for rna. Initialising datasets for other modalities aren't declared")
         elif self.cfg.base.modalities[0]=="mri":
-                if self.cfg.base.architecture=="MAE":
+                if self.cfg.base.architecture=="Noise":
+                    return MriNoiseSurvivalModel(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+                elif self.cfg.base.architecture=="MAE":
                     return MriMaeSurvivalModel(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
                 elif self.cfg.base.architecture=="CNN":
                     return MRIEmbeddingEncoder(self.cfg.model.input_embedding_dim, self.cfg.model.dropout, self.cfg.base.n_intervals)
                 else:
-                    raise NotImplementedError("Exist only MAE and CNN architectures for mri modality")
+                    raise NotImplementedError("Exist only Noise, MAE and CNN architectures for mri modality")
         elif self.cfg.base.modalities[0]=="dnam":
                 if self.cfg.base.architecture=="MAE":
                     return initialise_dnam_mae_model(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
@@ -391,7 +393,7 @@ class UnimodalMAETrainer(Trainer):
             transforms = padded_transforms_with_scaling(self.preproc.get_scaling(), cfg.model.size)
             print("transforms: ", transforms)
         elif self.cfg.base.modalities[0]=="dnam":
-            transforms = padded_transforms_scaling(self.preproc.get_scaling(), cfg.model.get("size", None))
+            transforms = padded_transforms_with_scaling(self.preproc.get_scaling(), cfg.model.get("size", None))
         elif self.cfg.base.modalities[0]=="mri":
             transforms = None
         elif self.cfg.base.modalities[0]=="wsi":

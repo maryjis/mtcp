@@ -1,0 +1,49 @@
+experiment_name: "mri_noise_model_t1c_nr_0.5_np_1.0"
+n_epochs: 50
+splits: 5
+
+n_intervals: 20
+random_seed: 1380
+
+optimizer:
+    name: "AdamW"
+    params:
+        lr: 2e-5
+        weight_decay: 1e-2
+
+scheduler: 
+    name: "CosineAnnealingLR"
+    params:
+        eta_min: 5e-6
+
+
+type: "unimodal"
+strategy: "survival" # noise, mae, survival
+modalities: ["mri"] #rna, mri
+architecture: "Noise"
+data_path: "src/data/dataset.csv"
+root_path: "../"
+save_path : "outputs/models/"
+device: "cuda:0"
+remove_nan_column: 'MRI'
+batch_size: 24
+num_workers: 8
+
+log:
+    logging: True
+    wandb_project: "cancer_mtcp"
+    wandb_run_name: ${..experiment_name}
+
+profiling:
+    sort_by_keyword: self_cuda_time_total #by which parameter profiler output should be sorted
+    row_limit: 10 #how many rows should be in profiler output
+    is_print: True
+
+early_stopping:
+    early_stopper:
+        patience: 20
+        eps: 0
+        smoothing: "running_average"
+        smoothing_period: 10
+        direction: "min"
+    value_to_track: "task_loss"
