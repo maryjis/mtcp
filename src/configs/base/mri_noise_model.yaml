@@ -21,7 +21,7 @@ type: "unimodal"
 strategy: "survival" # noise, mae, survival
 modalities: ["mri"] #rna, mri
 architecture: "Noise"
-data_path: "src/data/dataset.csv"
+data_path: "src/data/full_dataset.csv"
 root_path: "../"
 save_path : "outputs/models/"
 device: "cuda:0"
