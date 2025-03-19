@@ -46,6 +46,7 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
         super().__init__(splits, cfg)
         # TODO MRI - done preprocess! 
+        cfg.model.rna_model.size = cfg.model.rna_model.size if cfg.model.rna_model.get("size", None) else math.ceil(len(self.preproc["rna"].get_column_order()) /cfg.model.rna_model.patch_size)* cfg.model.rna_model.patch_size
         transforms = {"rna": padded_transforms_with_scaling(self.preproc["rna"].get_scaling(), cfg.model.rna_model.size), 
                       "dnam" : padded_transforms_scaling(self.preproc["dnam"].get_scaling(), cfg.model.dnam_model.get("size", None)) if cfg.model.get("dnam_model", None) else None, "mri" : None, "wsi" : None }
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities, self.preproc, transforms)
@@ -125,7 +126,8 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
         super().__init__(splits, cfg)
         ## TODO MRI add transforms!!
-        transforms = {"rna": padded_transforms_with_scaling(self.preproc["rna"].get_scaling(), cfg.model.rna_model.size), 
+        cfg.model.rna_model.size = cfg.model.rna_model.size if cfg.model.rna_model.get("size", None) else math.ceil(len(self.preproc["rna"].get_column_order()) /cfg.model.rna_model.patch_size)* cfg.model.rna_model.patch_size
+        transforms = {"rna": padded_transforms_with_scaling(self.preproc["rna"].get_scaling(), cfg.model.rna_model.size),
                       "dnam" : padded_transforms_scaling(self.preproc["dnam"].get_scaling(), cfg.model.dnam_model.get("size", None)) if cfg.model.get("dnam_model", None) else None,
                       "mri" : None, "wsi" : None,
                       "clinical" : base_scaling(self.preproc["clinical"].get_scaling() if "clinical" in self.preproc.keys() else None)}

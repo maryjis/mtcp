@@ -16,7 +16,8 @@ from scipy.spatial.distance import squareform
 import matplotlib.pyplot as plt
 from sklearn.base import TransformerMixin
 from sklearn.feature_selection import VarianceThreshold
-from src.unimodal.rna.transforms import UpperQuartileNormalizer
+from src.unimodal.rna.transforms import UpperQuartileNormalizer, TorchQuantileTransformer
+from sklearn.preprocessing import QuantileTransformer
 
 class RNAPreprocessor(BaseUnimodalPreprocessor):
     
@@ -34,9 +35,10 @@ class RNAPreprocessor(BaseUnimodalPreprocessor):
         
         self.scaling_method = None
         if scaling_method is not None:
-            self.scaling_method = scaling_method(**scaling_prams)
+            # self.scaling_method = scaling_method(**scaling_prams)
+            self.scaling_method =Pipeline(steps=[('scaler2', TorchQuantileTransformer(n_quantiles=1000, output_distribution='normal')), ('scaler3', scaling_method(**scaling_prams))])
         # if isinstance(scaling_method, StandardScaler):
-        #     print("!!!!!scaler: ")
+        print("!!!!!scaler: ", self.scaling_method)
         #self.scaling_method.set_output(transform='pandas')
         self.is_cluster_genes =is_cluster_genes
         self.column_order = None

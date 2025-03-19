@@ -16,7 +16,7 @@ scheduler:
 
 
 type: "unimodal"
-strategy: "mae" # mae, survival
+strategy: "survival" # mae, survival
 modalities: ["rna"]
 architecture: "MAE"
 splits: 5

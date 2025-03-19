@@ -167,11 +167,23 @@ class MriMAEModel(ViTMAEModel):
         
     def unpatchify(self, imgs, original_size: int =None):
         batch_size = imgs.shape[0]
-        return imgs.reshape(batch_size,
-                            self.config.num_channels,
-                            self.config.mri_size,
-                            self.config.mri_size,
-                            self.config.mri_size)
+        return rearrange(
+            imgs, 
+            'b (h w d) (c p1 p2 p3) -> b c (h p1) (w p2) (d p3)',
+            c = 1,
+            h = 4,
+            w = 4,
+            d = 4,
+            p1=self.config.patch_size, 
+            p2=self.config.patch_size, 
+            p3=self.config.patch_size
+        )
+        
+        # return imgs.reshape(batch_size,
+        #                     self.config.num_channels,
+        #                     self.config.mri_size,
+        #                     self.config.mri_size,
+        #                     self.config.mri_size)
 
 class MriMAEDecoderPred(nn.Module):
     def __init__(self, config):

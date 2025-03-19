@@ -1,0 +1,28 @@
+defaults: 
+  - model: rna_mae
+  - base: rna_base
+  - data: rna_base
+  - override hydra/sweeper: optuna
+  - override hydra/sweeper/sampler: grid
+  - _self_
+
+hydra:
+  mode: MULTIRUN
+  sweeper:
+    direction: maximize #!!! CHECK BEFORE LAUNCH !!!
+    study_name: mri_mae_pretrain_masking
+    storage: null
+    n_trials: 20
+    n_jobs: 20
+    # max_failure_rate: 0.0
+    params:
+      data.rna.rna_dataset_path: choice("src/data/cluster_genes/rna_cluster_0.csv", "src/data/cluster_genes/rna_cluster_1.csv", "src/data/cluster_genes/rna_cluster_2.csv",
+          "src/data/cluster_genes/rna_cluster_3.csv", "src/data/cluster_genes/rna_cluster_4.csv", "src/data/cluster_genes/rna_cluster_5.csv",
+          "src/data/cluster_genes/rna_cluster_6.csv", "src/data/cluster_genes/rna_cluster_7.csv", "src/data/cluster_genes/rna_cluster_8.csv",
+          "src/data/cluster_genes/rna_cluster_9.csv", "src/data/cluster_genes/rna_cluster_10.csv", "src/data/cluster_genes/rna_cluster_11.csv",
+          "src/data/cluster_genes/rna_cluster_12.csv", "src/data/cluster_genes/rna_cluster_13.csv", "src/data/cluster_genes/rna_cluster_14.csv",
+          "src/data/cluster_genes/rna_cluster_15.csv", "src/data/cluster_genes/rna_cluster_16.csv", "src/data/cluster_genes/rna_cluster_17.csv",
+          "src/data/cluster_genes/rna_cluster_18.csv", "src/data/cluster_genes/rna_cluster_19.csv")
+
+base:
+  experiment_name: "rna_survival_model_clusters_${data.rna.rna_dataset_path}"

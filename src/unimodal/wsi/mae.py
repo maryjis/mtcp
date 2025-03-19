@@ -144,8 +144,8 @@ class WsiMAEModel(ViTMAEModel):
     def patchify(self, imgs, interpolate_pos_encoding: bool = False):
         p = self.config.patch_size
         b, n, c, h, w = imgs.shape
-        assert h == w == self.config.image_size, 
-        assert h % p == 0 and w % p == 0, 
+        assert h == w == self.config.image_size 
+        assert h % p == 0 and w % p == 0 
         patches = rearrange(imgs, 'b n c (h p1) (w p2) -> (b n) (h w) (c p1 p2)', p1=p, p2=p)
         # patches = patches.flatten(2)
         return patches
@@ -220,8 +220,8 @@ class WsiMAEForPreTraining(ViTMAEForPreTraining):
     def patchify(self, imgs, interpolate_pos_encoding: bool = False):
         p = self.config.patch_size
         b, n, c, h, w = imgs.shape
-        assert h == w == self.config.image_size, 
-        assert h % p == 0 and w % p == 0, 
+        assert h == w == self.config.image_size 
+        assert h % p == 0 and w % p == 0
         patches = rearrange(imgs, 'b n c (h p1) (w p2) -> (b n) (h w) (c p1 p2)', p1=p, p2=p)
         # patches = patches.flatten(2)
         return patches

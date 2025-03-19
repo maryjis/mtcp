@@ -44,6 +44,7 @@ from src.utils import trace_handler
 from functools import partial
 from src.unimodal.dna.transforms import padded_transforms_simple
 from src.early_stopper import EarlyStopper
+import math
 
 class Trainer(object):
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
@@ -218,7 +219,10 @@ class UnimodalSurvivalTrainer(Trainer):
         transforms = None
         if cfg.base.modalities[0]=="rna":
             if self.cfg.base.architecture=="MAE":
-                transforms = padded_transforms_with_scaling(self.preproc.get_scaling(), cfg.model.size)
+                 OmegaConf.set_struct(cfg, False) 
+                 cfg.model["size"] = cfg.model.size if cfg.model.get("size", None) else math.ceil(len(self.preproc.get_column_order()) /cfg.model.patch_size)* cfg.model.patch_size
+                 transforms = padded_transforms_with_scaling(self.preproc.get_scaling(), cfg.model.size)
+                 print("transforms: ", transforms)
             elif self.cfg.base.architecture=="CNN":    
                 transforms = base_transforms(self.preproc.get_scaling())
         elif self.cfg.base.modalities[0]=="dnam":
@@ -380,7 +384,10 @@ class UnimodalMAETrainer(Trainer):
         super().__init__(splits, cfg)
         transforms = None
         if self.cfg.base.modalities[0]=="rna":
+            OmegaConf.set_struct(cfg, False) 
+            cfg.model["size"] = cfg.model.size if cfg.model.get("size", None) else math.ceil(len(self.preproc.get_column_order()) /cfg.model.patch_size)* cfg.model.patch_size
             transforms = padded_transforms_with_scaling(self.preproc.get_scaling(), cfg.model.size)
+            print("transforms: ", transforms)
         elif self.cfg.base.modalities[0]=="dnam":
             transforms = padded_transforms_scaling(self.preproc.get_scaling(), cfg.model.get("size", None))
         elif self.cfg.base.modalities[0]=="mri":
