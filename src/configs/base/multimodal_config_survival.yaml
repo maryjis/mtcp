@@ -1,4 +1,4 @@
-experiment_name: "multimodal_pretrained_rna_dnam_survival"
+experiment_name: "multimodal_pretrained_rna_dnam_mri_clinical_dropout_256_pretrained400_freeze_decoder_fix_survival"
 n_epochs: 50
 n_intervals: 20
 random_seed: 1380
@@ -23,7 +23,7 @@ splits: 5
 data_path: "src/data/dataset.csv"
 save_path : "outputs/models/"
 rna_dataset_path: "src/data/rna_dataset.csv"
-device: "cuda:2"
+device: "cuda:3"
 remove_nan_column: 'RNA'
 batch_size: 24
 
