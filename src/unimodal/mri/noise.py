@@ -56,13 +56,14 @@ class MriNoiseEmbeddings(MriMAEEmbeddings):
         # noise the second subset
         ids_noised = ids_shuffle[:, len_keep:]
         sequence_noised = torch.gather(sequence, dim=1, index=ids_noised.unsqueeze(-1).repeat(1, 1, dim))
-        means = sequence_noised.mean(dim=-1, keepdim=True)
-        stds = sequence_noised.std(dim=-1, keepdim=True)
         noise = torch.randn_like(sequence_noised)
-        noise_means = noise.mean(dim=-1, keepdim=True)
-        noise_stds = noise.std(dim=-1, keepdim=True)
         # noise_stds[noise_stds == 0] = 1 #very rare, but might be very painful
-        noise = (noise - noise_means) / noise_stds * stds + means
+        if self.config.to_dict().get("noise_like_sample", False):
+            means = sequence_noised.mean(dim=-1, keepdim=True)
+            stds = sequence_noised.std(dim=-1, keepdim=True)
+            noise_means = noise.mean(dim=-1, keepdim=True)
+            noise_stds = noise.std(dim=-1, keepdim=True)
+            noise = (noise - noise_means) / noise_stds * stds + means
         sequence_noised = sequence_noised * (1 - self.config.noise_power) + noise * self.config.noise_power
 
         sequence_processed = torch.cat([sequence_unmasked, sequence_noised], dim=1)

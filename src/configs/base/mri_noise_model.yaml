@@ -1,4 +1,4 @@
-experiment_name: "mri_noise_model_t1c_nr_0.5_np_1.0"
+experiment_name: "mri_noise_model_t1c_standard_noise_nr_0.0_np_0.0_pretrain_nr_0.5_np_1.0"
 n_epochs: 50
 splits: 5
 
