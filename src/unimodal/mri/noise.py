@@ -66,7 +66,7 @@ class MriNoiseEmbeddings(MriMAEEmbeddings):
             noise = (noise - noise_means) / noise_stds * stds + means
         sequence_noised = sequence_noised * (1 - self.config.noise_power) + noise * self.config.noise_power
 
-        sequence_processed = torch.cat([sequence_unmasked, sequence_noised], dim=1)
+        sequence_processed = torch.cat([sequence_unmasked, sequence_noised], dim=1) #we return shuffled sequence due to torch.gather in decoder
 
         # generate the binary mask: 0 is keep, 1 is noised
         mask = torch.ones([batch_size, seq_length], device=sequence.device)

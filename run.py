@@ -1,7 +1,7 @@
 import hydra
 from omegaconf import DictConfig, OmegaConf, open_dict
 from src.utils import  * 
-from src.unimodal.trainer import UnimodalSurvivalTrainer,  UnimodalMAETrainer, UnimodalNoiseTrainer
+from src.unimodal.trainer import UnimodalSurvivalTrainer,  UnimodalMAETrainer, UnimodalNoiseTrainer, UnimodalDiffusionTrainer
 from pathlib import Path
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.multimodal.trainer import MultiModalMAETrainer, MultiModalSurvivalTrainer
@@ -40,6 +40,8 @@ def run(cfg : DictConfig) -> None:
                 trainer = UnimodalMAETrainer(splits, cfg)
             elif cfg.base.strategy == "noise":
                 trainer = UnimodalNoiseTrainer(splits, cfg)
+            elif cfg.base.strategy == "diffusion":
+                trainer = UnimodalDiffusionTrainer(splits, cfg)
             else:
                 raise NotImplementedError(f"Such strategy - {cfg.base.strategy} isn't implemented in unimodal approach.")
         elif cfg.base.type == 'multimodal':

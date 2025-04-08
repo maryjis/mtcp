@@ -1,4 +1,4 @@
 defaults: 
-    - model: mri_noise_model
-    - base: mri_noise_model
+    - model: mri_diffusion_pretrain
+    - base: mri_diffusion_pretrain
     - data: mri_mae

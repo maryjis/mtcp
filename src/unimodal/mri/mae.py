@@ -41,7 +41,7 @@ class MriTMAEPatchEmbeddings(nn.Module):
         batch_size, num_channels, mri_size1, mri_size2, mri_size3 = mri_values.shape
         if num_channels != self.num_channels:
             raise ValueError(
-                "Make sure that the channel dimension of the mri values match with the one set in the configuration."
+                f"Make sure that the channel dimension of the mri values {num_channels} match with the one set in the configuration {self.num_channels}."
             )
           
         mri_values = rearrange(
