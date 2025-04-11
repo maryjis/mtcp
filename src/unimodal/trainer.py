@@ -28,7 +28,7 @@ from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.unimodal.rna.mae import RnaMAEForPreTraining
 from src.unimodal.mri.mae import MriMAEForPreTraining, MriMaeSurvivalModel
 from src.unimodal.mri.noise import MriNoiseForPreTraining, MriNoiseSurvivalModel
-from src.unimodal.mri.diffusion import MriDiffusionForPreTraining
+from src.unimodal.mri.diffusion import MriDiffusionForPreTraining, MriDiffusionSurvivalModel
 from src.unimodal.wsi.mae import WsiMAEForPreTraining, WsiMaeSurvivalModel
 from src.utils import check_dir_exists, count_parameters, print_vit_sizes
 
@@ -314,7 +314,9 @@ class UnimodalSurvivalTrainer(Trainer):
                 else:
                     raise NotImplementedError("Exist only for rna. Initialising datasets for other modalities aren't declared")
         elif self.cfg.base.modalities[0]=="mri":
-                if self.cfg.base.architecture=="Noise":
+                if self.cfg.base.architecture=="Diffusion":
+                    return MriDiffusionSurvivalModel(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+                elif self.cfg.base.architecture=="Noise":
                     return MriNoiseSurvivalModel(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
                 elif self.cfg.base.architecture=="MAE":
                     return MriMaeSurvivalModel(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
