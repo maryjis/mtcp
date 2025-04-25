@@ -6,7 +6,8 @@ rna:
     scaling_params: {}
     var_threshold: 0.0
     root_path: "../"
-    rna_dataset_path: "src/data/rna_dataset.csv"
+    # rna_dataset_path: "src/data/rna_dataset.csv"
+    rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
 
 mri:
     sizes: [64, 64, 64]
@@ -21,7 +22,8 @@ dnam:
     scaling_params: {}
     clustering_threshold: 0.7
     var_threshold: 0.0
-    dnam_dataset_path: "src/data/dna_dataset.csv"
+    # dnam_dataset_path: "src/data/dna_dataset.csv"
+    dnam_dataset_path: "src/data/dna_dataset_full_tcga.csv"
 
 clinical:
     dataset_path: "src/data/dataset.csv"

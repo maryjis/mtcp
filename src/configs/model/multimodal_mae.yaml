@@ -1,5 +1,5 @@
 
-modalities: ["rna", "dnam", "wsi", "mri"]
+modalities: ["rna", "dnam"]
 defaults: 
   - rna_model: rna_mae
   - mri_model: mri_mae_model

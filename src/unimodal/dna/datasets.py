@@ -22,7 +22,6 @@ class DNAmDataset(BaseDataset):
         super().__init__(data_split, dataset_file, transform, is_hazard_logits, return_mask)
         self.dna_dataset = pd.read_csv(dataset_file)
         self.column_order = column_order
-        
         if isinstance(column_order, pd.Index): 
             self.column_order = self.column_order.append(pd.Index(["file_id"]))
             self.dna_dataset = self.dna_dataset[self.column_order]
@@ -41,22 +40,24 @@ class DNAmDataset(BaseDataset):
     def __getitem__(self, idx):
         sample = self.data.iloc[idx]
         mask = False
-        
+
         if not pd.isna(sample["DNAm"]):
             
             sample =self.dna_dataset.loc[self.dna_dataset["file_id"]==sample["DNAm"]]
             if sample.empty:
-                return torch.zeros((1, self.dna_dataset.shape[1]-1)).float(), mask
+                sample = np.zeros((1, self.dna_dataset.shape[1]-1))
             else:
+                mask = True
                 sample =sample.iloc[0, :-1].astype(np.float32).fillna(0)
    
                 sample = sample.values.reshape(1, -1)
          
-            mask = True
+            
             if self.transform:
                 sample = self.transform(sample)
                 
             sample = torch.from_numpy(sample)
+                
             return sample.float(), mask
         else:
             sample = torch.zeros((1, self.dna_dataset.shape[1]-1))

@@ -3,13 +3,15 @@ from transformers.models.vit_mae.modeling_vit_mae import (
     ViTMAEModel, 
     get_1d_sincos_pos_embed_from_grid,
     ViTMAEConfig,
-    ViTMAEDecoder
+    ViTMAEDecoder,
+    ViTMAEModelOutput
 )
 import torch.nn as nn
 import torch
 import numpy as np
 from einops import rearrange
 from omegaconf import OmegaConf
+import random
 
 class MriTMAEPatchEmbeddings(nn.Module):
     """
@@ -111,7 +113,12 @@ class MriMAEEmbeddings(nn.Module):
                 mainly used for testing purposes to control randomness and maintain the reproducibility
         """
         batch_size, seq_length, dim = sequence.shape
-        len_keep = int(seq_length * (1 - self.config.mask_ratio))
+        if isinstance(self.config.mask_ratio, list):
+            mask_ratio = random.choice(self.config.mask_ratio)
+
+            len_keep = int(seq_length * (1 - mask_ratio))
+        else:
+            len_keep = int(seq_length * (1 - self.config.mask_ratio))
 
         if noise is None:
             noise = torch.rand(batch_size, seq_length, device=sequence.device)  # noise in [0, 1]
@@ -154,7 +161,7 @@ class MriMAEModel(ViTMAEModel):
     def __init__(self, config):
         super().__init__(config)
         self.embeddings = MriMAEEmbeddings(config)
-        self.post_init()
+        self.post_init()  
         
     def patchify(self, imgs, interpolate_pos_encoding: bool = False):
         return rearrange(

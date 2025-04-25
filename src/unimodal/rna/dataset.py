@@ -22,9 +22,7 @@ class RNADataset(BaseDataset):
         """
         super().__init__(data_split, dataset_file, transform, is_hazard_logits, return_mask)
         self.rna_dataset = pd.read_csv(dataset_file)
-        print(self.rna_dataset["file_id"])
         self.column_order = column_order
-        print("Column order type: ", type(self.column_order))
         self.debug_mode = debug_mode
         if isinstance(column_order, pd.Index): 
             
@@ -51,12 +49,13 @@ class RNADataset(BaseDataset):
             sample =self.rna_dataset.loc[self.rna_dataset["file_id"]==sample["RNA"]]
     
             if sample.empty:
-                return torch.zeros((1, self.rna_dataset.shape[1]-1)).float(), mask
+                sample = np.zeros((1, self.rna_dataset.shape[1]-1))
             else:
+                mask = True
                 file_id = sample["file_id"].values[0]
                 sample = sample.values[0, :-1].reshape(1, -1).astype(np.float32)
          
-            mask = True
+            
             if self.transform:
                 sample = self.transform(sample)
                 

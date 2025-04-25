@@ -1,5 +1,5 @@
-experiment_name: "multimodal_rna_dna_wsi_mri_400_mae_last1"
-n_epochs: 400
+experiment_name: "multimodal_rna_dna_bigset_balanced_800_mae_16_april"
+n_epochs: 800
 n_intervals: 20
 random_seed: 1380
 
@@ -15,26 +15,30 @@ scheduler:
         eta_min: 5e-6
 
 type: "multimodal"
+# project_ids: ["GBM", "LGG"]
 strategy: "mae" # mae, survival
-modalities: ["rna", "dnam", "wsi", "mri"]
+modalities: ["rna", "dnam"]
 multimodal_intersection_test: false
 architecture: "MAE"
 splits: 5
-data_path: "src/data/dataset.csv"
+# data_path: "src/data/dataset.csv"
+# data_path: "src/data/dataset_full_tcga_with_dna.csv"
+data_path: "src/data/dataset_full_tcga_with_dna_balanced.csv"
 save_path : "outputs/models/"
-rna_dataset_path: "src/data/rna_dataset.csv"
-device: "cuda:1"  # Указываем, что основное устройство - GPU 2
+#rna_dataset_path: "src/data/rna_dataset.csv"
+rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
+device: "cuda:4"  # Указываем, что основное устройство - GPU 2
 available_gpus:  [1, 2, 0, 4]  # Указываем, какие GPU можно использовать
 
 remove_nan_column: 'RNA'
-batch_size: 96
+batch_size: 32
 
 log:
     logging: True
     wandb_project: "cancer_mtcp"
-    wandb_run_name: "multimodal_rna_dna_wsi_400_mae_last"
+    wandb_run_name: "multimodal_rna_dna_800_mae_last"
 
-profiling:
-    sort_by_keyword: self_cuda_time_total #by which parameter profiler output should be sorted
-    row_limit: 10 #how many rows should be in profiler output
-    is_print: True
+# profiling:
+#     sort_by_keyword: self_cuda_time_total #by which parameter profiler output should be sorted
+#     row_limit: 10 #how many rows should be in profiler output
+#     is_print: True

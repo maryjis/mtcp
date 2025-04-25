@@ -3,6 +3,7 @@ import torch
 from transformers.models.vit_mae.modeling_vit_mae import ViTMAEModel,ViTMAEDecoder, ViTMAEForPreTraining, get_1d_sincos_pos_embed_from_grid
 import numpy as np
 from typing import Optional, Set, Tuple, Union
+import random
 
 """
 This classes adopted from  https://github.com/huggingface/transformers/blob/main/src/transformers/models/vit_mae/modeling_vit_mae.py#L323
@@ -55,8 +56,12 @@ class RnaMAEEmbeddings(nn.Module):
                 mainly used for testing purposes to control randomness and maintain the reproducibility
         """
         batch_size, seq_length, dim = sequence.shape
-        len_keep = int(seq_length * (1 - self.config.mask_ratio))
-
+        if isinstance(self.config.mask_ratio, list):
+            mask_ratio = random.choice(self.config.mask_ratio)
+            len_keep = int(seq_length * (1 - mask_ratio))
+        else:
+            len_keep = int(seq_length * (1 - self.config.mask_ratio))
+            
         if noise is None:
             noise = torch.rand(batch_size, seq_length, device=sequence.device)  # noise in [0, 1]
 
@@ -81,6 +86,7 @@ class RnaMAEEmbeddings(nn.Module):
         embeddings = self.patch_embeddings(rna_values)
         
         # add position embeddings w/o cls token
+
         embeddings = embeddings + self.position_embeddings[:, 1:, :]
      
 
@@ -108,10 +114,14 @@ class RnaTMAEPatchEmbeddings(nn.Module):
         num_channels, hidden_size = cfg.num_channels, cfg.hidden_size
 
         num_patches = rna_size // patch_size
+        
         self.rna_size = rna_size
+        
+
         self.patch_size = patch_size
         self.num_channels = num_channels
         self.num_patches = num_patches
+
 
         self.projection = nn.Conv1d(num_channels, hidden_size, kernel_size=patch_size, stride=patch_size)
 
@@ -133,7 +143,7 @@ class RnaMAEModel(ViTMAEModel):
         self.embeddings = RnaMAEEmbeddings(config)
         self.mask_token = nn.Parameter(torch.zeros(1, 1, config.hidden_size))
         self.post_init()
-        
+    
     def patchify(self, rna_values, interpolate_pos_encoding: bool = False):
         """
         Args:
@@ -256,15 +266,14 @@ class RnaMAEForPreTraining(ViTMAEForPreTraining):
         """
         
         target = self.patchify(pixel_values, interpolate_pos_encoding=interpolate_pos_encoding)
-        print("mask.mean", mask.mean())
+
 
         if self.config.norm_pix_loss:
             mean = target.mean(dim=-1, keepdim=True)
             var = target.var(dim=-1, keepdim=True)
             target = (target - mean) / (var + 1.0e-6) ** 0.5
 
-        print("target.mean", target.mean())
-        print("pred.mean", pred.mean())
+
         loss = (pred - target) ** 2
         loss = loss.mean(dim=-1)  # [N, L], mean loss per patch
         loss = (loss * mask).sum() / mask.sum()  # mean loss on removed patches

@@ -1,12 +1,12 @@
-experiment_name: "multimodal_pretrained_rna_dnam_mri_clinical_dropout_256_pretrained400_freeze_decoder_fix_survival"
-n_epochs: 50
+experiment_name: "multimodal_rna_dnam_balanced_pretrained_dropout_256_clusters_survival"
+n_epochs: 20
 n_intervals: 20
 random_seed: 1380
 
 optimizer:
     name: "Adam"
     params:
-        lr: 1e-3 # 1e-3
+        lr: 1e-4 # 1e-3
         weight_decay: 1e-2
     
 scheduler: 
@@ -16,14 +16,16 @@ scheduler:
 
 type: "multimodal"
 strategy: "survival" # mae, survival
-modalities: ["rna", "dnam", "mri", "clinical"]
+modalities: ["rna", "dnam"]
 multimodal_intersection_test: true
 architecture: "MAE"
 splits: 5
-data_path: "src/data/dataset.csv"
 save_path : "outputs/models/"
-rna_dataset_path: "src/data/rna_dataset.csv"
-device: "cuda:3"
+project_ids: ["GBM", "LGG"]
+data_path: "src/data/dataset_full_tcga_with_dna_balanced.csv"
+rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
+device: "cuda:4"
+available_gpus:  [1, 2, 3, 0, 4]  # Указываем, какие GPU можно использовать
 remove_nan_column: 'RNA'
 batch_size: 24
 
@@ -32,3 +34,11 @@ log:
     wandb_project: "cancer_mtcp"
     wandb_run_name: "test_multimodal_mae"
 
+# early_stopping:
+#     early_stopper:
+#         patience: 10
+#         eps: 0
+#         smoothing: "running_average"
+#         smoothing_period: 5
+#         direction: "min"
+#     value_to_track: "task_loss"
