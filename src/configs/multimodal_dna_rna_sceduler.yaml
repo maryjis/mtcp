@@ -1,0 +1,26 @@
+defaults: 
+  - model: multimodal_survival
+  - base: multimodal_config_survival
+  - data: multimodal_data
+  - override hydra/sweeper: optuna
+  - override hydra/sweeper/sampler: grid
+  - _self_
+
+hydra:
+  mode: MULTIRUN
+  sweeper:
+    direction: maximize #!!! CHECK BEFORE LAUNCH !!!
+    study_name: dna_rna_cancer_types
+    storage: null
+    n_trials: 20
+    n_jobs: 20
+    # max_failure_rate: 0.0
+    params:
+      base.project_ids: choice(["GBM", "LGG"],["UCEC"],["BRCA"],["KIRC"],["LUAD"], ["BLCA"])
+      # base.optimizer.params.lr: choice(1e-5,5e-5,1e-4,5e-4,1e-3, 5e-3,1e-2)
+      # model.pretrained_model_name: choice("multimodal_rna_dna_bigset_800_mae_29_march", "multimodal_rna_dna_smallset_800_mae_29_march")
+      # model.missing_modalities_strategy: choice("", "decoder")
+
+
+base:
+  experiment_name: "rna_dna_survival_model_pretrained_${model.pretrained_model_name}_lr_${base.optimizer.params.lr}_mm_${model.missing_modalities_strategy}"

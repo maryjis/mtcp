@@ -104,7 +104,8 @@ def seed_everything(seed: int):
     
     
 def load_splits(data_path: Path, fold_ind : int, remove_nan_column : str, 
-                max_samples_per_split : int = None, multimodal_intersection_test:bool = False, modalities: List[str] = None ) -> Dict[str,pd.DataFrame]:
+                max_samples_per_split : int = None, multimodal_intersection_test:bool = False,
+                modalities: List[str] = None, project_ids: List[str] = None ) -> Dict[str,pd.DataFrame]:
     '''
     Use 'group' column to split data into train_validation/test sets
     Loads and splits a dataset from a CSV file into train/validation/test sets
@@ -116,6 +117,9 @@ def load_splits(data_path: Path, fold_ind : int, remove_nan_column : str,
     if data_path.exists():
         
         dataset = pd.read_csv(data_path)
+        print("Dataset shape before: ", dataset.shape)
+        if project_ids:
+            dataset =dataset.loc[dataset["project_id"].isin(project_ids)]
         print("Dataset shape before: ", dataset.shape)
         if remove_nan_column:
             dataset =dataset.loc[dataset[remove_nan_column].notnull()]
