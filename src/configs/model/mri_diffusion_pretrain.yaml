@@ -19,36 +19,75 @@ qkv_bias: true
 patch_size: 16 
 mri_size: 64
 
+padding: 2
 embeddings_layers:
-  - name: "Conv3d"
-    args: 
-      - ${....num_channels} #in
-      - 16 #out
-      - ${eval:'${....patch_size}//4'} #kernel
-    kwargs:
-      stride: ${eval:'${....patch_size}//4'}
-  - name: "GELU"
-  - name: "Conv3d"
-    args: 
-      - 16 #in
-      - ${....hidden_size} #out
-      - 4 #kernel
-    kwargs:
-      stride: 4
+- name: "Conv3d"
+  args: 
+    - ${....num_channels} #in
+    - 16 #out
+    - ${eval:'${....patch_size}//4+2*${....padding}'} #kernel
+  kwargs:
+    stride: ${eval:'${....patch_size}//4'}
+    padding: ${....padding}
+- name: "GELU"
+- name: "Conv3d"
+  args: 
+    - 16 #in
+    - ${....hidden_size} #out
+    - ${eval:'${....patch_size}//4+2*${....padding}'} #kernel
+  kwargs:
+    stride: 4
+    padding: ${....padding}
 
 decoder_pred_layers:
-  - name: "ConvTranspose3d"
-    args:
-      - ${....decoder_hidden_size}
-      - 16
-      - 4
-    kwargs:
-      stride: 4
-  - name: "GELU"
-  - name: "ConvTranspose3d"
-    args:
-      - 16
-      - ${....num_channels}
-      - ${eval:'${....patch_size}//4'}
-    kwargs:
-      stride: ${eval:'${....patch_size}//4'}
+- name: "ConvTranspose3d"
+  args:
+    - ${....decoder_hidden_size}
+    - 16
+    - ${eval:'${....patch_size}//4+2*${....padding}'}
+  kwargs:
+    stride: 4
+    padding: ${....padding}
+- name: "GELU"
+- name: "ConvTranspose3d"
+  args:
+    - 16
+    - ${....num_channels}
+    - ${eval:'${....patch_size}//4+2*${....padding}'}
+  kwargs:
+    stride: ${eval:'${....patch_size}//4'}
+    padding: ${....padding}
+
+# embeddings_layers:
+#   - name: "Conv3d"
+#     args: 
+#       - ${....num_channels} #in
+#       - 16 #out
+#       - ${eval:'${....patch_size}//4'} #kernel
+#     kwargs:
+#       stride: ${eval:'${....patch_size}//4'}
+#   - name: "GELU"
+#   - name: "Conv3d"
+#     args: 
+#       - 16 #in
+#       - ${....hidden_size} #out
+#       - 4 #kernel
+#     kwargs:
+#       stride: 4
+
+# decoder_pred_layers:
+#   - name: "ConvTranspose3d"
+#     args:
+#       - ${....decoder_hidden_size}
+#       - 16
+#       - 4
+#     kwargs:
+#       stride: 4
+#   - name: "GELU"
+#   - name: "ConvTranspose3d"
+#     args:
+#       - 16
+#       - ${....num_channels}
+#       - ${eval:'${....patch_size}//4'}
+#     kwargs:
+#       stride: ${eval:'${....patch_size}//4'}

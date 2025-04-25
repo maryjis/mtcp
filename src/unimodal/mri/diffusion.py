@@ -1,11 +1,5 @@
 from transformers.models.vit_mae.modeling_vit_mae import (
-    ViTMAEForPreTraining, 
-    ViTMAEModel, 
-    get_1d_sincos_pos_embed_from_grid,
-    ViTMAEConfig,
-    ViTMAEDecoder,
     ViTMAEForPreTrainingOutput,
-    ViTMAEDecoderOutput
 )
 import torch.nn as nn
 import torch
@@ -55,6 +49,7 @@ class MriDiffusionEmbeddings(MriMAEEmbeddings):
         embeddings = torch.cat((cls_tokens, embeddings), dim=1)
 
         return embeddings, mask, ids_restore
+
 
 class MriDiffusionModel(MriMAEModel):
     def __init__(self, config):
@@ -141,7 +136,6 @@ class MriDiffusionForPreTraining(MriMAEForPreTraining):
         logits = decoder_outputs.logits  # shape (batch_size, num_patches, patch_size*patch_size*num_channels)
         # models forward
         ################
-        
         loss = self.forward_loss(pixel_values, logits, mask, interpolate_pos_encoding=interpolate_pos_encoding)
 
         if not return_dict:

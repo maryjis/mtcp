@@ -154,6 +154,10 @@ class MriMAEModel(ViTMAEModel):
     def __init__(self, config):
         super().__init__(config)
         self.embeddings = MriMAEEmbeddings(config)
+        self.c = config.num_channels
+        self.h = config.mri_size // config.patch_size
+        self.w = config.mri_size // config.patch_size
+        self.d = config.mri_size // config.patch_size
         self.post_init()
         
     def patchify(self, imgs, interpolate_pos_encoding: bool = False):
@@ -170,10 +174,10 @@ class MriMAEModel(ViTMAEModel):
         return rearrange(
             imgs, 
             'b (h w d) (c p1 p2 p3) -> b c (h p1) (w p2) (d p3)',
-            c = 1,
-            h = 4,
-            w = 4,
-            d = 4,
+            c = self.c,
+            h = self.h,
+            w = self.w,
+            d = self.d,
             p1=self.config.patch_size, 
             p2=self.config.patch_size, 
             p3=self.config.patch_size
@@ -205,7 +209,6 @@ class MriMAEDecoderPred(nn.Module):
 
     def forward(self, x):
         batch_size = x.shape[0]
-
         x = x.unsqueeze(dim=-1).unsqueeze(dim=-1).unsqueeze(dim=-1) # [B, S, E] -> [B, S, E, 1, 1, 1]
         x = rearrange(x, 'b s e x y z -> (b s) e x y z')
         x = self.projector(x) # [B*S, E, 1, 1, 1] -> [(B*S), C, 16, 16, 16]

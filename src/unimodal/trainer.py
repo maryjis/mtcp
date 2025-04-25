@@ -29,6 +29,7 @@ from src.unimodal.rna.mae import RnaMAEForPreTraining
 from src.unimodal.mri.mae import MriMAEForPreTraining, MriMaeSurvivalModel
 from src.unimodal.mri.noise import MriNoiseForPreTraining, MriNoiseSurvivalModel
 from src.unimodal.mri.diffusion import MriDiffusionForPreTraining, MriDiffusionSurvivalModel
+from src.unimodal.mri.time_diffusion import MriTimeDiffusionForPreTraining
 from src.unimodal.wsi.mae import WsiMAEForPreTraining, WsiMaeSurvivalModel
 from src.utils import check_dir_exists, count_parameters, print_vit_sizes
 
@@ -519,6 +520,9 @@ class UnimodalDiffusionTrainer(UnimodalMAETrainer):
 
     def initialise_models(self):
         if self.cfg.base.modalities[0]=="mri":
-            return MriDiffusionForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))  
+            if self.cfg["model"].get("time_embeddging_dim", None) is None:
+                return MriDiffusionForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))  
+            else:
+                return MriTimeDiffusionForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
         else:
             raise NotImplementedError("Exist only for mri. Initialising models for other modalities aren't declared") 

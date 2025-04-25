@@ -1,5 +1,5 @@
-experiment_name: "mri_diffusion_pretrain_t1c_no_time_sample_prediction"
-n_epochs: 50
+experiment_name: "mri_diffusion_pretrain_t1c_sample_prediction"
+n_epochs: 800
 splits: 5
 
 n_intervals: 20
