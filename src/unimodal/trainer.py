@@ -384,9 +384,10 @@ class UnimodalMAETrainer(Trainer):
         super().__init__(splits, cfg)
         transforms = None
         if self.cfg.base.modalities[0]=="rna":
-            OmegaConf.set_struct(cfg, False) 
-            cfg.model["size"] = cfg.model.size if cfg.model.get("size", None) else math.ceil(len(self.preproc.get_column_order()) /cfg.model.patch_size)* cfg.model.patch_size
-            transforms = padded_transforms_with_scaling(self.preproc.get_scaling(), cfg.model.size)
+            OmegaConf.set_struct(cfg, False)
+            print("math.ceil(len(self.preproc.get_column_order()) /cfg.model.patch_size)* cfg.model.patch_size", math.ceil(len(self.preproc.get_column_order()) /cfg.model.patch_size)* cfg.model.patch_size)
+            #cfg.model["size"] = cfg.model.size if cfg.model.get("size", None) else math.ceil(len(self.preproc.get_column_order()) /cfg.model.patch_size)* cfg.model.patch_size
+            transforms = padded_transforms_with_scaling(self.preproc.get_scaling(), cfg.model.get("size", None))
             print("transforms: ", transforms)
         elif self.cfg.base.modalities[0]=="dnam":
             transforms = padded_transforms_scaling(self.preproc.get_scaling(), cfg.model.get("size", None))

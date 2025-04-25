@@ -13,6 +13,7 @@ from transformers import PreTrainedModel
 from src.unimodal.mri.mae import MriMAEDecoderPred
 from flamingo_pytorch import PerceiverResampler
 from src.multimodal.losses import CLIPAlignmentLoss
+import random 
 
 class UnimodalEncoder(nn.Module):
     def __init__(self, encoder, unimodal_hidden_size, multimodal_hidden_size = None, is_projection = False, modality =None):
@@ -261,7 +262,11 @@ class MultiMAEModel(PreTrainedModel):
             # Create tensors for empty samples
             mask_empty = torch.ones(len(empty_sample_ids), seq_length, device=device)
             ids_restore_empty = torch.arange(seq_length, device=device).repeat(len(empty_sample_ids), 1) + multimodal_lenths 
-            len_keep = int(seq_length * (1 - self.encoders[modality].encoder.config.mask_ratio))
+            if isinstance(self.encoders[modality].encoder.config.mask_ratio, list):
+                mask_ratio = random.choice(self.encoders[modality].encoder.config.mask_ratio)
+                len_keep = int(seq_length * (1 - mask_ratio))
+            else:
+                len_keep = int(seq_length * (1 - self.encoders[modality].encoder.config.mask_ratio))
              
             empty_sequence = self.mask_token.repeat(len(empty_sample_ids),len_keep+1, 1)
             return ViTMAEModelOutput(
@@ -589,6 +594,9 @@ class MultiMaeForPretraining(nn.Module):
         """
             
         concat_embedding = self.model(x, modality_masks, interpolate_pos_encoding)
+        concat_embedding = self.model(x, modality_masks, interpolate_pos_encoding)
+            
+        concat_embedding = self.model(x, modality_masks, interpolate_pos_encoding)  
             
         latent = concat_embedding.last_hidden_state
         ids_restore = concat_embedding.ids_restore
@@ -696,7 +704,9 @@ class MultiMaeForSurvival(nn.Module):
             self.model = MultiMAEModel(cfg)
             
         if cfg.missing_modalities_strategy =="decoder":
+            print("cfg.mm_pretrained_model_path: ", cfg.mm_pretrained_model_path)
             model_state_dict = torch.load(cfg.mm_pretrained_model_path)
+            print("decoder_params: ", model_state_dict.keys())
             self.decoder_mm = MultiMaeForPretraining(ViTMAEConfig(**cfg.mm_decoder_config))
             self.decoder_mm.load_state_dict(model_state_dict)
             
@@ -826,10 +836,8 @@ class MultiMaeForSurvival(nn.Module):
                 embedding_modality = self.model.encoders[modality](x_modality)
                 modalities_cls.append(embedding_modality.last_hidden_state[:,0,:])
             fused_embedding = torch.stack((concat_x[:,0,:], *modalities_cls), dim=1)
-            print(fused_embedding.shape)
             fused_embedding = fused_embedding.permute(0,2,1)
             concat_x =self.agregation(fused_embedding).permute(0,2,1)
-            print(concat_x.shape)
         else:
             concat_x = self.fusion_strategy(concat_x.last_hidden_state)
         

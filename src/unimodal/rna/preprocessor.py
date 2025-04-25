@@ -18,6 +18,7 @@ from sklearn.base import TransformerMixin
 from sklearn.feature_selection import VarianceThreshold
 from src.unimodal.rna.transforms import UpperQuartileNormalizer, TorchQuantileTransformer
 from sklearn.preprocessing import QuantileTransformer
+import os
 
 class RNAPreprocessor(BaseUnimodalPreprocessor):
     
@@ -45,7 +46,32 @@ class RNAPreprocessor(BaseUnimodalPreprocessor):
         self.threshold =threshold
         self.is_hierarchical_cluster =is_hierarchical_cluster
     
+    def save_list_to_file(self, filename="../data/selected_genes/columns_set.txt"):
+        """
+        Save a list of strings to a file.
+        If file already exists, increment filename.
         
+        Parameters:
+        - data: list of strings
+        - filename: base filename (default "file.txt")
+        """
+        
+        genes = self.pipe['var'].get_feature_names_out()
+        base, ext = os.path.splitext(filename)
+        counter = 1
+        new_filename = filename
+
+        while os.path.exists(new_filename):
+            new_filename = f"{base}_{counter}{ext}"
+            counter += 1
+
+        with open(new_filename, "w", encoding="utf-8") as f:
+            for line in genes:
+                f.write(line + "\n")
+        
+        print(f"Saved to: {new_filename}")
+        return new_filename
+    
     def fit(self):
         print("RNA Preprocessing......")
         super().fit() 
@@ -55,6 +81,7 @@ class RNAPreprocessor(BaseUnimodalPreprocessor):
         print(data)
         self.pipe.fit(data)
         print( "Number of features: ", self.pipe['var'].get_feature_names_out().shape)
+        # self.save_list_to_file()
         data = self.pipe.transform(data)
         if self.scaling_method is not None:
             data = self.scaling_method.fit_transform(data)

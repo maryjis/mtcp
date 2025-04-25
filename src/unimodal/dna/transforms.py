@@ -31,6 +31,7 @@ def padded_transforms_simple(size):
     
     
 def padded_transforms_scaling(standart_scaler, size=None):
+    print("padded_transforms_scaling: ", size)
     if standart_scaler is not None:
         return transforms.Compose([
                                 Scale(standart_scaler),
