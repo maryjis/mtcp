@@ -33,7 +33,6 @@ def run(cfg : DictConfig) -> None:
             project_ids = cfg.base.get("project_ids", None),
         )
         print(splits)
-        print(splits["train"]["DNAm"])
         if cfg.base.type == 'unimodal':
 
             if cfg.base.strategy == "survival":

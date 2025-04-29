@@ -1,12 +1,12 @@
 experiment_name: "multimodal_rna_dnam_balanced_pretrained_dropout_256_clusters_survival"
-n_epochs: 20
-n_intervals: 20
+n_epochs: 50
+n_intervals: 4
 random_seed: 1380
 
 optimizer:
     name: "Adam"
     params:
-        lr: 1e-4 # 1e-3
+        lr: 1e-3 # 1e-3
         weight_decay: 1e-2
     
 scheduler: 
@@ -22,9 +22,9 @@ architecture: "MAE"
 splits: 5
 save_path : "outputs/models/"
 project_ids: ["GBM", "LGG"]
-data_path: "src/data/dataset_full_tcga_with_dna_balanced.csv"
+data_path: "src/data/dataset_glioma_new.csv"
 rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
-device: "cuda:4"
+device: "cuda:3"
 available_gpus:  [1, 2, 3, 0, 4]  # Указываем, какие GPU можно использовать
 remove_nan_column: 'RNA'
 batch_size: 24

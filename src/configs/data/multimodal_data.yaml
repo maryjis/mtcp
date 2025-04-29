@@ -9,6 +9,16 @@ rna:
     # rna_dataset_path: "src/data/rna_dataset.csv"
     rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
 
+cnv:
+    is_cluster_genes: False
+    is_hierarchical_clusters: False
+    clustering_threshold: 0.7
+    scaling_method: ""
+    scaling_params: {}
+    var_threshold: 0.0
+    root_path: "../"
+    cnv_dataset_path: "src/data/cnv_dataset_full_tcga.csv"
+
 mri:
     sizes: [64, 64, 64]
     modalities: ["t1c"]

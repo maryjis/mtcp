@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from scipy.stats import norm
 import torch
 import numpy as np
+import pandas as pd
 
 class TorchQuantileTransformer:
     """
@@ -107,6 +108,7 @@ class UpperQuartileNormalizer(BaseEstimator, TransformerMixin):
     """
     Custom transformer for upper-quartile normalization.
     Normalizes each sample (row) by dividing its values by the 75th percentile.
+    Supports numpy.ndarray, torch.Tensor, and pandas.DataFrame inputs.
     """
     
     def __init__(self, quantile: int = 75):
@@ -116,30 +118,67 @@ class UpperQuartileNormalizer(BaseEstimator, TransformerMixin):
         """
         Fit method (not used, as no learning is needed for normalization).
         """
-        return self  # Nothing to fit, return self
+        return self
 
     def transform(self, X):
         """
         Apply upper-quartile normalization to the input data.
 
         Args:
-            X (numpy.ndarray): Input data array where rows are samples and columns are features.
+            X (numpy.ndarray, torch.Tensor, or pandas.DataFrame): Input data array where rows are samples and columns are features.
 
         Returns:
-            numpy.ndarray: Normalized data.
+            Same type as input: normalized data.
         """
-        # Calculate the 75th percentile (upper quartile) for each sample (row)
-        upper_quartiles = np.percentile(X, self.quantile, axis=1, keepdims=True)
-        
-        # Avoid division by zero
-        upper_quartiles[upper_quartiles == 0] = 1
-        
-        # Normalize each value by dividing by the upper quartile
-        return X / upper_quartiles
+
+        if isinstance(X, torch.Tensor):
+            # Use torch operations
+            q = torch.quantile(X, self.quantile / 100.0, dim=1, keepdim=True)
+            q = torch.where(q == 0, torch.ones_like(q), q)
+            normalized = X / q
+            return normalized
+
+        elif isinstance(X, np.ndarray):
+            # Use numpy operations
+            upper_quartiles = np.percentile(X, self.quantile, axis=1, keepdims=True)
+            upper_quartiles[upper_quartiles == 0] = 1
+            normalized = X / upper_quartiles
+            return normalized
+
+        elif isinstance(X, pd.DataFrame):
+            # Operate on the underlying numpy array
+            values = X.values
+            upper_quartiles = np.percentile(values, self.quantile, axis=1, keepdims=True)
+            upper_quartiles[upper_quartiles == 0] = 1
+            normalized_values = values / upper_quartiles
+            # Return DataFrame preserving columns and index
+            return pd.DataFrame(normalized_values, columns=X.columns, index=X.index)
+
+        else:
+             raise TypeError(f"Unsupported data type: {type(X)}. Expected numpy.ndarray, torch.Tensor, or pandas.DataFrame.")
     
-    
+
+
 def log_transform(x):
-    return np.log(x + 1)
+    """
+    Apply log(x + 1) transform.
+    Supports numpy.ndarray, torch.Tensor, and pandas.DataFrame inputs.
+
+    Args:
+        x (numpy.ndarray, torch.Tensor, or pandas.DataFrame): Input array, tensor, or dataframe.
+
+    Returns:
+        Same type as input: transformed data.
+    """
+    if isinstance(x, torch.Tensor):
+        return torch.log(x + 1)
+    elif isinstance(x, np.ndarray):
+        return np.log(x + 1)
+    elif isinstance(x, pd.DataFrame):
+        transformed_values = np.log(x.values + 1)
+        return pd.DataFrame(transformed_values, columns=x.columns, index=x.index)
+    else:
+        raise TypeError(f"Unsupported data type: {type(x)}. Expected numpy.ndarray, torch.Tensor, or pandas.DataFrame.")
 
 class Scale(object):
     """Rescale the image in a sample to a given size.
@@ -156,8 +195,10 @@ class Scale(object):
 
     def __call__(self, sample):
         sample =self.standart_scaler.transform(sample)
-
-        return sample
+        if isinstance(sample, np.ndarray):
+            return torch.from_numpy(sample)
+        else:
+            return sample
 
 class Padding(object):
     def __init__(self, size):
@@ -165,7 +206,7 @@ class Padding(object):
         
 
     def __call__(self, sample):
-        padded_sample = np.zeros((sample.shape[0],self.size))
+        padded_sample = torch.zeros((sample.shape[0],self.size))
         padded_sample[:, :sample.shape[1]] = sample
 
         return padded_sample
@@ -194,7 +235,6 @@ def padded_transforms_with_scaling(standart_scaler2, size):
                                 Padding(size)
                                 ])
     else:
-        print("padding size", size)
         return transforms.Compose([
                                 transforms.Lambda(log_transform),
                                 Scale(UpperQuartileNormalizer(quantile=50)),
