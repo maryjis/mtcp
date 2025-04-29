@@ -2,10 +2,10 @@ from pycox.models import LogisticHazard
 from sklearn.preprocessing import StandardScaler,Normalizer
 from sklearn.preprocessing import FunctionTransformer
 import pandas as pd
-from ...preprocessor import BaseUnimodalPreprocessor
+from ...preprocessor import BaseUnimodalPreprocessor, QuantilePreprocessor
 #  TODO one class -> like transfer scaler.fit_predict
 from pathlib import Path
-from src.unimodal.rna.dataset import RNADataset
+from src.unimodal.rna.dataset import OmicsDataset
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 from sklearn.preprocessing import FunctionTransformer
@@ -20,14 +20,14 @@ from src.unimodal.rna.transforms import UpperQuartileNormalizer, TorchQuantileTr
 from sklearn.preprocessing import QuantileTransformer
 import os
 
-class RNAPreprocessor(BaseUnimodalPreprocessor):
+class RNAPreprocessor(QuantilePreprocessor):
     
     def __init__(self, data_train :pd.DataFrame, dataset_dir : Path,
                  n_intervals: int, scaling_method: TransformerMixin, scaling_prams: dict = {},
                  var_threshold = 0.0, is_cluster_genes: bool = False , threshold: float =0, is_hierarchical_cluster: bool =False):
         super().__init__(data_train, n_intervals)
         self.data_train = data_train
-        self.train_dataset = RNADataset(data_train, dataset_dir)
+        self.train_dataset = OmicsDataset(data_train, dataset_dir)
         self.train_loaders = DataLoader(self.train_dataset)
         
         self.pipe = Pipeline(steps=[('log', FunctionTransformer(log_transform)) ,
@@ -80,7 +80,7 @@ class RNAPreprocessor(BaseUnimodalPreprocessor):
         
         print(data)
         self.pipe.fit(data)
-        print( "Number of features: ", self.pipe['var'].get_feature_names_out().shape)
+        print( "Features names: ", self.pipe['var'].get_feature_names_out())
         # self.save_list_to_file()
         data = self.pipe.transform(data)
         if self.scaling_method is not None:

@@ -3,16 +3,17 @@ import numpy as np
 from typing import Dict, List, Tuple, Union
 from omegaconf import DictConfig, OmegaConf
 import pandas as pd
-from src.unimodal.rna.dataset import RNADataset, RNASurvivalDataset
-from src.unimodal.dna.datasets import DNAmDataset, DNAmSurvivalDataset
+from src.unimodal.rna.dataset import OmicsDataset, OmicsSurvivalDataset
 from src.unimodal.dna.models import initialise_dnam_mae_model,  initialise_dnam_model, DNAmMAEForPreTraining
 from src.unimodal.dna.preprocessor import DNAmPreprocessor
+from src.unimodal.cnv.preprocessor import CNVPreprocessor
 from src.unimodal.wsi.datasets import WSIDataset, WSIDataset_patches, SurvivalWSIDataset
 from src.unimodal.mri.datasets import SurvivalMRIDataset, MRIEmbeddingDataset, MRIDataset, MRISurvivalDataset
 
 from src.unimodal.rna.preprocessor import RNAPreprocessor
 from src.preprocessor import BaseUnimodalPreprocessor
 from src.unimodal.rna.transforms import base_transforms, padded_transforms_with_scaling
+from src.unimodal.cnv.transforms import padded_transforms_cnv_scaling
 from torch.utils.data import Dataset, DataLoader
 from pycox.models.loss import NLLLogistiHazardLoss
 from torch.optim import AdamW
@@ -21,6 +22,7 @@ from src.unimodal.rna.encoder import initialise_rna_model
 from src.unimodal.mri.models import MRIEmbeddingEncoder
 from src.unimodal.wsi.models import WSIEncoder
 from src.unimodal.rna.mae import initialise_rna_mae_model
+from src.unimodal.cnv.models import initialise_cnv_mae_model
 import torch
 from ..evaluation import compute_survival_metrics
 import wandb
@@ -44,6 +46,8 @@ from src.utils import trace_handler
 from functools import partial
 from src.unimodal.dna.transforms import padded_transforms_simple
 from src.early_stopper import EarlyStopper
+
+from src.unimodal.cnv.models import CNVMAEForPreTraining
 import math
 
 class Trainer(object):
@@ -67,7 +71,17 @@ class Trainer(object):
                                           self.cfg.data.rna.is_cluster_genes , self.cfg.data.rna.clustering_threshold, self.cfg.data.rna.get("is_hierarchical_clusters", False))
             preproc.fit()
             return preproc
-
+        elif modality=="cnv":
+            scaling_method = None
+            if self.cfg.data.cnv.scaling_method in ["QuantileTransformer", "StandardScaler", "MinMaxScaler"]:
+                scaling_method = getattr(__import__('sklearn.preprocessing', fromlist=[self.cfg.data.cnv.scaling_method]), self.cfg.data.cnv.scaling_method)
+            preproc = CNVPreprocessor(splits["train"], self.cfg.data.cnv.cnv_dataset_path,self.cfg.base.n_intervals, 
+                                           self.cfg.data.cnv.var_threshold,
+                                          self.cfg.data.cnv.is_cluster_genes , self.cfg.data.cnv.clustering_threshold,
+                                          self.cfg.data.cnv.get("is_hierarchical_clusters", False),  scaling_method, self.cfg.data.cnv.scaling_params)
+            preproc.fit()
+            return preproc
+        
         elif modality == "mri":
             preproc = None
             if self.cfg.base.strategy != "mae": #labels are not used for pre-training
@@ -228,7 +242,9 @@ class UnimodalSurvivalTrainer(Trainer):
         elif self.cfg.base.modalities[0]=="dnam":
             transforms = padded_transforms_scaling(self.preproc.get_scaling(), cfg.model.get("size", None))
         elif self.cfg.base.modalities[0]=="clinical":
-             transforms = base_scaling(self.preproc.get_scaling())       
+             transforms = base_scaling(self.preproc.get_scaling()) 
+        elif self.cfg.base.modalities[0]=="cnv": 
+            transforms = padded_transforms_cnv_scaling(self.preproc.get_scaling(), cfg.model.get("size", None))          
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
 
         self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False,
@@ -251,8 +267,11 @@ class UnimodalSurvivalTrainer(Trainer):
         if modality == "rna":
             for split_name, dataset in splits.items():
                 splits[split_name] = preproc.transform_labels(dataset)
-                datasets[split_name] = RNASurvivalDataset(splits[split_name], self.cfg.data.rna.rna_dataset_path, 
-                                                 transform = transforms, is_hazard_logits = True, column_order=preproc.get_column_order(), debug_mode = self.cfg.data.rna.get("debug_mode", False))
+                datasets[split_name] = OmicsSurvivalDataset(splits[split_name], self.cfg.data.rna.rna_dataset_path, 
+                                                 transform = transforms, is_hazard_logits = True, 
+                                                 column_order=preproc.get_column_order(), 
+                                                 debug_mode = self.cfg.data.rna.get("debug_mode", False),
+                                                 column_name ="RNA")
 
         elif modality == "mri":
                 splits = {split_name: preproc.transform_labels(split) for split_name, split in splits.items()}
@@ -271,11 +290,22 @@ class UnimodalSurvivalTrainer(Trainer):
                             is_hazard_logits=True,
                             tensor_name=self.cfg.data.mri.get("tensor_name", None)
                         )
+        elif modality == "cnv":
+            for split_name, dataset in splits.items():
+                splits[split_name] = preproc.transform_labels(dataset)
+                datasets[split_name] = OmicsSurvivalDataset(splits[split_name], self.cfg.data.cnv.cnv_dataset_path, 
+                                                 transform = transforms, is_hazard_logits = True,
+                                                 column_order=preproc.get_column_order(),
+                                                 debug_mode = self.cfg.data.cnv.get("debug_mode", False),
+                                                 column_name ="CNV")
         elif modality == "dnam":
             for split_name, dataset in splits.items():
                 splits[split_name] = preproc.transform_labels(dataset)
-                datasets[split_name] = DNAmSurvivalDataset(splits[split_name], self.cfg.data.dnam.dnam_dataset_path, 
-                                                 transform = transforms, is_hazard_logits = True, column_order=preproc.get_column_order())
+                datasets[split_name] = OmicsSurvivalDataset(splits[split_name], self.cfg.data.dnam.dnam_dataset_path, 
+                                                 transform = transforms, is_hazard_logits = True,
+                                                 column_order=preproc.get_column_order(),
+                                                 debug_mode = self.cfg.data.dnam.get("debug_mode", False),
+                                                 column_name ="DNAm")
         elif modality == "clinical":
             for split_name, dataset in splits.items():
                 splits[split_name] = preproc.transform_labels(dataset)
@@ -324,6 +354,11 @@ class UnimodalSurvivalTrainer(Trainer):
                     return initialise_dnam_model(self.cfg.model)
                 else:
                     raise NotImplementedError("Exist only for rna. Initialising datasets for other modalities aren't declared")
+        elif self.cfg.base.modalities[0]=="cnv":
+                if self.cfg.base.architecture=="MAE":
+                    return initialise_cnv_mae_model(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+                else:
+                    raise NotImplementedError("Exist only MAE for cnv. Initialising datasets for other modalities aren't declared")
         elif self.cfg.base.modalities[0]=="wsi":
                 if self.cfg.base.architecture=="MAE":
                     return WsiMaeSurvivalModel(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
@@ -391,6 +426,8 @@ class UnimodalMAETrainer(Trainer):
             print("transforms: ", transforms)
         elif self.cfg.base.modalities[0]=="dnam":
             transforms = padded_transforms_scaling(self.preproc.get_scaling(), cfg.model.get("size", None))
+        elif self.cfg.base.modalities[0]=="cnv":
+            transforms = padded_transforms_cnv_scaling(self.preproc.get_scaling(), cfg.model.get("size", None))     
         elif self.cfg.base.modalities[0]=="mri":
             transforms = None
         elif self.cfg.base.modalities[0]=="wsi":
@@ -418,6 +455,8 @@ class UnimodalMAETrainer(Trainer):
     def initialise_models(self):
         if self.cfg.base.modalities[0]=="rna":
             return  RnaMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+        if self.cfg.base.modalities[0]=="cnv":
+            return  CNVMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
         elif self.cfg.base.modalities[0]=="mri":
             return MriMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
         elif self.cfg.base.modalities[0]=="dnam":
@@ -433,8 +472,11 @@ class UnimodalMAETrainer(Trainer):
         if modality == "rna":
             for split_name, dataset in splits.items():
                 splits[split_name] = preproc.transform_labels(dataset)
-                datasets[split_name] = RNADataset(splits[split_name], self.cfg.data.rna.rna_dataset_path, 
-                                                 transform = transforms, is_hazard_logits = True, column_order=preproc.get_column_order())
+                datasets[split_name] = OmicsDataset(splits[split_name], self.cfg.data.rna.rna_dataset_path, 
+                                                 transform = transforms, is_hazard_logits = True,
+                                                 column_order=preproc.get_column_order(),
+                                                 debug_mode = self.cfg.data.rna.get("debug_mode", False),
+                                                 column_name ="RNA")
 
         elif modality == "mri":
             for split_name, split in splits.items():
@@ -451,8 +493,19 @@ class UnimodalMAETrainer(Trainer):
         elif modality == "dnam":
             for split_name, dataset in splits.items():
                 splits[split_name] = preproc.transform_labels(dataset)
-                datasets[split_name] = DNAmDataset(splits[split_name], self.cfg.data.dnam.dnam_dataset_path, 
-                                                 transform = transforms, is_hazard_logits = True, column_order=preproc.get_column_order())
+                datasets[split_name] = OmicsDataset(splits[split_name], self.cfg.data.dnam.dnam_dataset_path, 
+                                                 transform = transforms, is_hazard_logits = True,
+                                                 column_order=preproc.get_column_order(),
+                                                 debug_mode = self.cfg.data.dnam.get("debug_mode", False),
+                                                 column_name ="DNAm")
+        elif modality == "cnv":
+            for split_name, dataset in splits.items():
+                splits[split_name] = preproc.transform_labels(dataset)
+                datasets[split_name] = OmicsDataset(splits[split_name], self.cfg.data.cnv.cnv_dataset_path, 
+                                                 transform = transforms, is_hazard_logits = True,
+                                                 column_order=preproc.get_column_order(),
+                                                 debug_mode = self.cfg.data.cnv.get("debug_mode", False),
+                                                 column_name ="CNV")
         elif modality == "wsi":
             for split_name, split in splits.items():
                     # Определяем значение параметра num в зависимости от типа раздела                  

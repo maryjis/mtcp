@@ -16,18 +16,18 @@ from scipy.spatial.distance import squareform
 from sklearn.base import TransformerMixin
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.preprocessing import StandardScaler,Normalizer
-
-
-class DNAmPreprocessor(RNAPreprocessor):
+from src.unimodal.cnv.transforms import Log2RatioTransformSk
+from src.unimodal.rna.transforms import UpperQuartileNormalizer
+class CNVPreprocessor(RNAPreprocessor):
     
     def __init__(self, data_train :pd.DataFrame, dataset_dir : Path,
                  n_intervals: int, var_threshold = 0.0, is_cluster_genes: bool = False , threshold: float =0,  is_hierarchical_cluster: bool =False, scaling_method= None, scaling_params = {}):
         super().__init__(data_train, dataset_dir, n_intervals, scaling_method,
                         scaling_params, var_threshold, is_cluster_genes,threshold,is_hierarchical_cluster )
         
-        self.train_dataset = OmicsDataset(data_train, dataset_dir, column_name='DNAm')
+        self.train_dataset = OmicsDataset(data_train, dataset_dir, column_name="CNV")
         self.train_loaders = DataLoader(self.train_dataset)
-        self.pipe =Pipeline(steps= [('var' , VarianceThreshold(var_threshold))])
+        self.pipe =Pipeline(steps= [ ('log2',Log2RatioTransformSk()), ('scaler1',UpperQuartileNormalizer(quantile=50)), ('var' , VarianceThreshold(var_threshold))])
        
 
     
