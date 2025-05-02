@@ -6,7 +6,7 @@ from pathlib import Path
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.multimodal.trainer import MultiModalMAETrainer, MultiModalSurvivalTrainer
 
-@hydra.main(version_base=None, config_path="src/configs", config_name="multimodal_config")
+@hydra.main(version_base=None, config_path="src/configs", config_name="unimodal_config_wsi_mae_surv")
 def run(cfg : DictConfig) -> None:
     if not OmegaConf.has_resolver("eval"): OmegaConf.register_new_resolver("eval", eval) #arithmetic in config params
     print(OmegaConf.to_yaml(cfg))
