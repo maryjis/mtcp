@@ -21,11 +21,14 @@ from src.unimodal.rna.transforms import UpperQuartileNormalizer
 class CNVPreprocessor(RNAPreprocessor):
     
     def __init__(self, data_train :pd.DataFrame, dataset_dir : Path,
-                 n_intervals: int, var_threshold = 0.0, is_cluster_genes: bool = False , threshold: float =0,  is_hierarchical_cluster: bool =False, scaling_method= None, scaling_params = {}):
+                 n_intervals: int, var_threshold = 0.0,
+                 is_cluster_genes: bool = False , threshold: float =0,
+                 is_hierarchical_cluster: bool =False, 
+                 scaling_method= None, scaling_params = {},project_ids = []):
         super().__init__(data_train, dataset_dir, n_intervals, scaling_method,
-                        scaling_params, var_threshold, is_cluster_genes,threshold,is_hierarchical_cluster )
+                        scaling_params, var_threshold, is_cluster_genes,threshold,is_hierarchical_cluster,project_ids)
         
-        self.train_dataset = OmicsDataset(data_train, dataset_dir, column_name="CNV")
+        self.train_dataset = OmicsDataset(data_train, dataset_dir, column_name="CNV",project_ids = project_ids)
         self.train_loaders = DataLoader(self.train_dataset)
         self.pipe =Pipeline(steps= [ ('log2',Log2RatioTransformSk()), ('scaler1',UpperQuartileNormalizer(quantile=50)), ('var' , VarianceThreshold(var_threshold))])
        

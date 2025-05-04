@@ -20,14 +20,16 @@ from src.unimodal.rna.transforms import UpperQuartileNormalizer, TorchQuantileTr
 from sklearn.preprocessing import QuantileTransformer
 import os
 
-class RNAPreprocessor(QuantilePreprocessor):
+class RNAPreprocessor(BaseUnimodalPreprocessor):
     
     def __init__(self, data_train :pd.DataFrame, dataset_dir : Path,
                  n_intervals: int, scaling_method: TransformerMixin, scaling_prams: dict = {},
-                 var_threshold = 0.0, is_cluster_genes: bool = False , threshold: float =0, is_hierarchical_cluster: bool =False):
+                 var_threshold = 0.0, is_cluster_genes: bool = False ,
+                 threshold: float =0, is_hierarchical_cluster: bool =False,
+                 project_ids = []):
         super().__init__(data_train, n_intervals)
         self.data_train = data_train
-        self.train_dataset = OmicsDataset(data_train, dataset_dir)
+        self.train_dataset = OmicsDataset(data_train, dataset_dir, project_ids =project_ids)
         self.train_loaders = DataLoader(self.train_dataset)
         
         self.pipe = Pipeline(steps=[('log', FunctionTransformer(log_transform)) ,
