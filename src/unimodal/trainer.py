@@ -66,9 +66,10 @@ class Trainer(object):
             else:
                  scaling_method = None
             print("Scaling method: ", scaling_method)
+            print(self.cfg.base.project_ids, self.cfg.base.get("project_ids", None))
             preproc = RNAPreprocessor(splits["train"], self.cfg.data.rna.rna_dataset_path, self.cfg.base.n_intervals, scaling_method, 
                                           self.cfg.data.rna.scaling_params, self.cfg.data.rna.var_threshold,
-                                          self.cfg.data.rna.is_cluster_genes , self.cfg.data.rna.clustering_threshold, self.cfg.data.rna.get("is_hierarchical_clusters", False))
+                                          self.cfg.data.rna.is_cluster_genes , self.cfg.data.rna.clustering_threshold, self.cfg.data.rna.get("is_hierarchical_clusters", False), project_ids = self.cfg.base.get("project_ids", None))
             preproc.fit()
             return preproc
         elif modality=="cnv":
@@ -78,7 +79,7 @@ class Trainer(object):
             preproc = CNVPreprocessor(splits["train"], self.cfg.data.cnv.cnv_dataset_path,self.cfg.base.n_intervals, 
                                            self.cfg.data.cnv.var_threshold,
                                           self.cfg.data.cnv.is_cluster_genes , self.cfg.data.cnv.clustering_threshold,
-                                          self.cfg.data.cnv.get("is_hierarchical_clusters", False),  scaling_method, self.cfg.data.cnv.scaling_params)
+                                          self.cfg.data.cnv.get("is_hierarchical_clusters", False),  scaling_method, self.cfg.data.cnv.scaling_params, project_ids = self.cfg.base.get("project_ids", []))
             preproc.fit()
             return preproc
         
@@ -95,7 +96,7 @@ class Trainer(object):
             preproc = DNAmPreprocessor(splits["train"], self.cfg.data.dnam.dnam_dataset_path,self.cfg.base.n_intervals, 
                                            self.cfg.data.dnam.var_threshold,
                                           self.cfg.data.dnam.is_cluster_genes , self.cfg.data.dnam.clustering_threshold,
-                                          self.cfg.data.dnam.get("is_hierarchical_clusters", False),  scaling_method, self.cfg.data.dnam.scaling_params)
+                                          self.cfg.data.dnam.get("is_hierarchical_clusters", False),  scaling_method, self.cfg.data.dnam.scaling_params, project_ids = self.cfg.base.get("project_ids", []))
             preproc.fit()
             return preproc
         
@@ -271,7 +272,8 @@ class UnimodalSurvivalTrainer(Trainer):
                                                  transform = transforms, is_hazard_logits = True, 
                                                  column_order=preproc.get_column_order(), 
                                                  debug_mode = self.cfg.data.rna.get("debug_mode", False),
-                                                 column_name ="RNA")
+                                                 column_name ="RNA",
+                                                 project_ids = self.cfg.base.get("project_ids", []))
 
         elif modality == "mri":
                 splits = {split_name: preproc.transform_labels(split) for split_name, split in splits.items()}
@@ -297,7 +299,8 @@ class UnimodalSurvivalTrainer(Trainer):
                                                  transform = transforms, is_hazard_logits = True,
                                                  column_order=preproc.get_column_order(),
                                                  debug_mode = self.cfg.data.cnv.get("debug_mode", False),
-                                                 column_name ="CNV")
+                                                 column_name ="CNV",
+                                                 project_ids = self.cfg.base.get("project_ids", []))
         elif modality == "dnam":
             for split_name, dataset in splits.items():
                 splits[split_name] = preproc.transform_labels(dataset)
@@ -305,7 +308,8 @@ class UnimodalSurvivalTrainer(Trainer):
                                                  transform = transforms, is_hazard_logits = True,
                                                  column_order=preproc.get_column_order(),
                                                  debug_mode = self.cfg.data.dnam.get("debug_mode", False),
-                                                 column_name ="DNAm")
+                                                 column_name ="DNAm",
+                                                 project_ids = self.cfg.base.get("project_ids", []))
         elif modality == "clinical":
             for split_name, dataset in splits.items():
                 splits[split_name] = preproc.transform_labels(dataset)
@@ -476,7 +480,8 @@ class UnimodalMAETrainer(Trainer):
                                                  transform = transforms, is_hazard_logits = True,
                                                  column_order=preproc.get_column_order(),
                                                  debug_mode = self.cfg.data.rna.get("debug_mode", False),
-                                                 column_name ="RNA")
+                                                 column_name ="RNA",
+                                                 project_ids = self.cfg.base.get("project_ids", []))
 
         elif modality == "mri":
             for split_name, split in splits.items():
@@ -497,7 +502,8 @@ class UnimodalMAETrainer(Trainer):
                                                  transform = transforms, is_hazard_logits = True,
                                                  column_order=preproc.get_column_order(),
                                                  debug_mode = self.cfg.data.dnam.get("debug_mode", False),
-                                                 column_name ="DNAm")
+                                                 column_name ="DNAm",
+                                                 project_ids = self.cfg.base.get("project_ids", []))
         elif modality == "cnv":
             for split_name, dataset in splits.items():
                 splits[split_name] = preproc.transform_labels(dataset)
@@ -505,7 +511,8 @@ class UnimodalMAETrainer(Trainer):
                                                  transform = transforms, is_hazard_logits = True,
                                                  column_order=preproc.get_column_order(),
                                                  debug_mode = self.cfg.data.cnv.get("debug_mode", False),
-                                                 column_name ="CNV")
+                                                 column_name ="CNV",
+                                                 project_ids = self.cfg.base.get("project_ids", []))
         elif modality == "wsi":
             for split_name, split in splits.items():
                     # Определяем значение параметра num в зависимости от типа раздела                  
