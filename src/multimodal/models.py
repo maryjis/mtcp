@@ -7,6 +7,7 @@ from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.unimodal.mri.mae import MriMAEModel
 from src.unimodal.dna.models import DNAmSurvivalModel, DNAmMAEModel
 from src.unimodal.wsi.mae import WsiMAEModel
+from src.unimodal.cnv.models import CNVMAEModel
 
 from omegaconf import DictConfig, OmegaConf
 from transformers import PreTrainedModel
@@ -127,6 +128,23 @@ class MultiMAEModel(PreTrainedModel):
                 self.encoders[modality] = UnimodalEncoder(
                     encoder,
                     cfg_dnam_model.hidden_size, 
+                    self.cfg.hidden_size,
+                    self.cfg.is_projection,
+                    modality
+                )
+            elif modality == "cnv":
+                cfg_cnv_model = ViTMAEConfig(**self.cfg.cnv_model)
+                encoder = None
+                if cfg_cnv_model.is_load_pretrained:
+                    encoder = CNVMAEModel.from_pretrained(cfg_cnv_model.pretrained_model_path, config=cfg_cnv_model)
+                    for param in encoder.parameters():
+                        param.requires_grad = False
+                else:
+                    encoder = CNVMAEModel(cfg_cnv_model)
+                    
+                self.encoders[modality] = UnimodalEncoder(
+                    encoder,
+                    cfg_cnv_model.hidden_size, 
                     self.cfg.hidden_size,
                     self.cfg.is_projection,
                     modality
