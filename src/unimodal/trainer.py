@@ -389,8 +389,8 @@ class UnimodalSurvivalTrainer(Trainer):
             data = {modality :value.to(device) for modality, value in data.items()} if isinstance(data, dict) else data.to(device)
 
             outputs =self.model(data, masks = mask)
-    
-            loss = self.criterion(outputs, time.to(device), event.to(device))
+
+            loss = self.criterion(outputs, time.to(device), event.to(dtype=torch.float32,device=device))
                 
             # Backpropagation
             if split=="train":

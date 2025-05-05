@@ -1,7 +1,7 @@
-pandas==2.0.3
+pandas
 tqdm==4.65.0
-matplotlib==3.7.2
-numpy==1.24.3
+matplotlib
+numpy
 pycox==0.3.0
 einops==0.8.0
 opencv-python==4.10.0.84
