@@ -10,7 +10,7 @@ from omegaconf import DictConfig, OmegaConf, open_dict
 from torch import nn
 
 
-MODALITY_TO_COLUMN_MAP ={"rna" : "RNA", "mri" : "MRI", "dnam" : "DNAm", "wsi": "WSI", "cnv": "CNV"}
+MODALITY_TO_COLUMN_MAP ={"rna" : "RNA", "mri" : "MRI", "dnam" : "DNAm", "wsi": "WSI_initial", "cnv": "CNV"}
 
 def get_config_mode(config_path, base_path=None):
     if base_path is not None:
