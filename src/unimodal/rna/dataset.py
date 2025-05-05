@@ -13,7 +13,8 @@ class OmicsDataset(BaseDataset):
                  column_order = None,
                  return_mask = True,
                  debug_mode = False,
-                 column_name ='RNA'):
+                 column_name ='RNA',
+                 project_ids =[]):
         """
         Arguments:
             csv_file (string): Path to the csv file with annotations.
@@ -23,6 +24,12 @@ class OmicsDataset(BaseDataset):
         """
         super().__init__(data_split, dataset_file, transform, is_hazard_logits, return_mask)
         self.rna_dataset = pd.read_csv(dataset_file)
+        
+        print("Omics dataset, project_ids ", project_ids)
+        if project_ids:
+            print("Dataset.shape before ", self.rna_dataset.shape)
+            self.rna_dataset =self.rna_dataset.loc[self.rna_dataset.project_id.isin(project_ids)]
+            print("Dataset.shape after ", self.rna_dataset.shape)
         self.column_order = column_order
         self.column_name = column_name
         self.debug_mode = debug_mode
@@ -34,7 +41,7 @@ class OmicsDataset(BaseDataset):
             self.column_order = np.append(self.column_order, "file_id")
             self.rna_dataset = self.rna_dataset[self.column_order]
         else:   
-            self.column_order = self.rna_dataset.columns[:-1]
+            self.column_order = self.rna_dataset.columns[:-3]
 
     def len(self):
         return self.data.shape[0]
@@ -52,11 +59,11 @@ class OmicsDataset(BaseDataset):
             sample =self.rna_dataset.loc[self.rna_dataset["file_id"]==name]
 
             if sample.empty:
-                sample = np.zeros((1, self.rna_dataset.shape[1]-1))
+                sample = np.zeros((1, self.rna_dataset.shape[1]-3))
             else:
                 mask = True
                 file_id = sample["file_id"].values[0]
-                sample = sample.iloc[0, :-1].fillna(0).values.reshape(1, -1).astype(np.float32)
+                sample = sample.iloc[0, :-3].fillna(0).values.reshape(1, -1).astype(np.float32)
          
             sample = torch.from_numpy(sample)
             if self.transform:
@@ -66,7 +73,7 @@ class OmicsDataset(BaseDataset):
             
             return sample.float(), mask
         else:
-            sample = torch.zeros((1, self.rna_dataset.shape[1]-1)).float()
+            sample = torch.zeros((1, self.rna_dataset.shape[1]-3)).float()
             if self.transform:
                 sample = self.transform(sample)
                 
@@ -76,14 +83,18 @@ class OmicsDataset(BaseDataset):
         
 class OmicsSurvivalDataset(OmicsDataset):
         def __init__(self, data_split, dataset_dir, transform = None, 
-            is_hazard_logits = False, column_order = None, return_mask =True, debug_mode =False, column_name ='RNA'):
+            is_hazard_logits = False, column_order = None,
+            return_mask =True, debug_mode =False,
+            column_name ='RNA',
+            project_ids =[]):
             super().__init__(data_split, dataset_dir,
                              transform = transform, 
                              is_hazard_logits = is_hazard_logits, 
                              column_order = column_order, 
                              return_mask=return_mask,
                              debug_mode = debug_mode,
-                             column_name = column_name)
+                             column_name = column_name,
+                             project_ids =project_ids)
             
 
 
