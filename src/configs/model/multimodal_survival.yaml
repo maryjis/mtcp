@@ -1,10 +1,11 @@
 
-modalities: ["rna", "dnam"]
+modalities: ["rna", "dnam", "wsi"]
 defaults: 
   - rna_model: survival
   - mri_model: survival
   - dnam_model: survival
   - wsi_model: survival
+  - cnv_model: survival
   - mm_decoder_config: multimodal_mae
 
 
