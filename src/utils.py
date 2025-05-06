@@ -4,13 +4,227 @@ import torch
 from monai.utils import set_determinism
 import pandas as pd
 from pathlib import Path
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Tuple, Union, Optional
 import wandb
 from omegaconf import DictConfig, OmegaConf, open_dict
 from torch import nn
+import math
+from math import ceil
+from einops import rearrange, reduce
 
 
 MODALITY_TO_COLUMN_MAP ={"rna" : "RNA", "mri" : "MRI", "dnam" : "DNAm", "wsi": "WSI_initial", "cnv": "CNV"}
+
+# Components for transformer pool
+def exists(val: any) -> bool:
+    """Checks if value exists (not None)."""
+    return val is not None
+
+
+def moore_penrose_iter_pinv(x: torch.Tensor, iters: int = 6) -> torch.Tensor:
+    """
+    Iteratively computes the Moore-Penrose pseudoinverse matrix.
+    
+    Args:
+        x: Input tensor
+        iters: Number of iterations for approximation
+        
+    Returns:
+        Pseudoinverse matrix
+    """
+    device = x.device
+    
+    # Normalization for numerical stability
+    abs_x = torch.abs(x)
+    norm_factor = torch.max(abs_x.sum(dim=-1)) * torch.max(abs_x.sum(dim=-2))
+    z = rearrange(x, "... i j -> ... j i") / norm_factor
+    
+    # Identity matrix for computation
+    I = torch.eye(x.shape[-1], device=device).unsqueeze(0)
+    
+    # Iterative computation of pseudoinverse matrix
+    for _ in range(iters):
+        xz = x @ z
+        z = 0.25 * z @ (13 * I - (xz @ (15 * I - (xz @ (7 * I - xz)))))
+    
+    return z
+
+
+class NystromAttention(nn.Module):
+    """
+    Efficient implementation of attention with Nyström approximation.
+    Reduces complexity from O(n²) to O(n*m), where m is the number of landmarks.
+    """
+    def __init__(
+        self,
+        dim: int,
+        dim_head: int = 64,
+        heads: int = 8,
+        num_landmarks: int = 256,
+        pinv_iterations: int = 6,
+        residual: bool = True,
+        residual_conv_kernel: int = 33,
+        eps: float = 1e-8,
+        dropout: float = 0.0,
+    ):
+        super().__init__()
+        self.eps = eps
+        inner_dim = heads * dim_head
+        
+        # Attention parameters
+        self.num_landmarks = num_landmarks
+        self.pinv_iterations = pinv_iterations
+        self.heads = heads
+        self.scale = dim_head**-0.5
+        
+        # Layers
+        self.to_qkv = nn.Linear(dim, inner_dim * 3, bias=False)
+        self.to_out = nn.Sequential(
+            nn.Linear(inner_dim, dim),
+            nn.Dropout(dropout)
+        )
+        
+        # Residual convolutional connection
+        self.residual = residual
+        if residual:
+            padding = residual_conv_kernel // 2
+            self.res_conv = nn.Conv2d(
+                heads, 
+                heads, 
+                kernel_size=(residual_conv_kernel, 1),
+                padding=(padding, 0),
+                groups=heads,
+                bias=False
+            )
+
+    def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None, return_attn: bool = False):
+        b, n, _ = x.shape
+        h, m, iters, eps = self.heads, self.num_landmarks, self.pinv_iterations, self.eps
+        
+        # Padding for even division of sequence into landmarks
+        if n % m != 0:
+            padding = m - (n % m)
+            x = torch.nn.functional.pad(x, (0, 0, 0, padding), value=0)
+            if exists(mask):
+                mask = torch.nn.functional.pad(mask, (0, padding), value=False)
+        
+        # Get Q, K, V from input
+        q, k, v = self.to_qkv(x).chunk(3, dim=-1)
+        q, k, v = map(lambda t: rearrange(t, "b n (h d) -> b h n d", h=h), (q, k, v))
+        
+        # Apply mask if it exists
+        if exists(mask):
+            mask = mask.unsqueeze(1)  # b, 1, n
+            q, k, v = map(lambda t: t * mask.unsqueeze(-1), (q, k, v))
+        
+        # Scale queries
+        q = q * self.scale
+        
+        # Compute landmarks by aggregation
+        l = ceil(n / m)
+        q_landmarks = reduce(q, "b h (n l) d -> b h n d", "mean", l=l)
+        k_landmarks = reduce(k, "b h (n l) d -> b h n d", "mean", l=l)
+        
+        # Compute similarity matrices
+        sim1 = torch.einsum("b h i d, b h j d -> b h i j", q, k_landmarks)  # (b, h, n, m)
+        sim2 = torch.einsum("b h i d, b h j d -> b h i j", q_landmarks, k_landmarks)  # (b, h, m, m)
+        sim3 = torch.einsum("b h i d, b h j d -> b h i j", q_landmarks, k)  # (b, h, m, n)
+        
+        # Apply mask to similarity computations if it exists
+        if exists(mask):
+            # Create mask for landmarks
+            mask_landmarks = reduce(mask, "b 1 (n l) -> b 1 n", "any", l=l)
+            
+            # Calculate value for filling masked positions
+            mask_value = -torch.finfo(q.dtype).max
+            
+            # Apply masks to similarity matrices
+            sim1.masked_fill_(~(mask.unsqueeze(-1) * mask_landmarks.unsqueeze(-2)), mask_value)
+            sim2.masked_fill_(~(mask_landmarks.unsqueeze(-1) * mask_landmarks.unsqueeze(-2)), mask_value)
+            sim3.masked_fill_(~(mask_landmarks.unsqueeze(-1) * mask.unsqueeze(-2)), mask_value)
+        
+        # Get attention weight coefficients
+        attn1, attn2, attn3 = map(lambda t: t.softmax(dim=-1), (sim1, sim2, sim3))
+        
+        # Compute pseudoinverse matrix
+        attn2_inv = moore_penrose_iter_pinv(attn2, iters)
+        
+        # Compute attention output
+        out = (attn1 @ attn2_inv) @ (attn3 @ v)
+        
+        # Add residual connection through convolution if enabled
+        if self.residual:
+            out = out + self.res_conv(v)
+        
+        # Combine attention heads
+        out = rearrange(out, "b h n d -> b n (h d)")
+        out = self.to_out(out)
+        
+        # Trim to original length
+        out = out[:, :n]
+        
+        # Return output and, if needed, attention weights
+        if return_attn:
+            attn = attn1 @ attn2_inv @ attn3
+            return out, attn
+            
+        return out
+
+
+class TransLayer(nn.Module):
+    """
+    Transformer layer with normalization and Nyström attention.
+    """
+    def __init__(self, norm_layer=nn.LayerNorm, dim=512):
+        super().__init__()
+        self.norm = norm_layer(dim)
+        self.attn = NystromAttention(
+            dim=dim,
+            dim_head=dim // 8,
+            heads=8,
+            num_landmarks=dim // 2,  # number of landmarks
+            pinv_iterations=6,  # number of iterations for approximating pseudoinverse
+            residual=True,  # whether to use residual connection through values
+            dropout=0.1,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Apply attention with normalization and residual connection
+        return x + self.attn(self.norm(x))
+
+
+class PPEG(nn.Module):
+    """
+    Positional Encoding with Convolutional Networks.
+    Uses depth-wise convolutions for positional encoding.
+    """
+    def __init__(self, dim: int = 512):
+        super().__init__()
+        # Use three depth-wise convolutions with different kernel sizes
+        self.proj = nn.Conv2d(dim, dim, kernel_size=7, stride=1, padding=3, groups=dim)
+        self.proj1 = nn.Conv2d(dim, dim, kernel_size=5, stride=1, padding=2, groups=dim)
+        self.proj2 = nn.Conv2d(dim, dim, kernel_size=3, stride=1, padding=1, groups=dim)
+
+    def forward(self, x: torch.Tensor, H: int, W: int) -> torch.Tensor:
+        B, _, C = x.shape
+        
+        # Extract cls_token and feature_tokens
+        cls_token, feat_token = x[:, 0], x[:, 1:]
+        
+        # Transform feature tokens to spatial format
+        cnn_feat = feat_token.transpose(1, 2).reshape(B, C, H, W)
+        
+        # Apply convolutions and add residual connections
+        x = self.proj(cnn_feat) + cnn_feat + self.proj1(cnn_feat) + self.proj2(cnn_feat)
+        
+        # Transform back to sequence
+        x = x.flatten(2).transpose(1, 2)
+        
+        # Combine with cls_token
+        x = torch.cat((cls_token.unsqueeze(1), x), dim=1)
+        
+        return x
+
 
 def get_config_mode(config_path, base_path=None):
     if base_path is not None:
