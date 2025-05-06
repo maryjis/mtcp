@@ -7,11 +7,20 @@ from transformers.models.vit_mae.modeling_vit_mae import (
     get_1d_sincos_pos_embed_from_grid,
     get_2d_sincos_pos_embed
 )
-from einops import rearrange
+from einops import rearrange, reduce
 import numpy as np
 import os
+import math
+from math import ceil
 from omegaconf import OmegaConf
 
+# Import necessary components from utils.py
+from ...utils import (
+    exists,
+    NystromAttention,
+    TransLayer,
+    PPEG
+)
 
 
 class WsiMAEPatchEmbeddings(nn.Module):
@@ -34,40 +43,6 @@ class WsiMAEPatchEmbeddings(nn.Module):
         else:
             self.total_patches = max_patches_per_sample * self.num_patches
 
-        ############################################
-        # Вариант с несколькими мелкими свёртками
-        # Допустим, хотим уменьшить разрешение с 256 -> 16x16, но постепенно
-        # Можно сделать последовательность Conv3×3 + BatchNorm + ReLU + Pooling
-        ############################################
-        # layers = []
-        # in_ch = self.num_channels
-        # out_ch = 64  # К примеру, начнём с 64 каналов
-        # # Первый блок: Conv3x3 (уменьшим размер в 2 раза пуллингом)
-        # layers.append(nn.Conv2d(in_ch, out_ch, kernel_size=3, stride=1, padding=1))
-        # layers.append(nn.BatchNorm2d(out_ch))
-        # layers.append(nn.ReLU(inplace=True))
-        # layers.append(nn.MaxPool2d(kernel_size=2, stride=2))  # деление разрешения на 2
-
-        # # Второй блок: Conv3x3 (снова уменьшим размер в 2 раза)
-        # layers.append(nn.Conv2d(out_ch, out_ch, kernel_size=3, stride=1, padding=1))
-        # layers.append(nn.BatchNorm2d(out_ch))
-        # layers.append(nn.ReLU(inplace=True))
-        # layers.append(nn.MaxPool2d(kernel_size=2, stride=2))
-
-        # # Третий блок (опционально, если хотим ещё меньше):
-        # # Можно ещё уменьшить в 2 раза размер, если нужно.
-        # # layers.append(nn.Conv2d(out_ch, out_ch, kernel_size=3, stride=1, padding=1))
-        # # layers.append(nn.BatchNorm2d(out_ch))
-        # # layers.append(nn.ReLU(inplace=True))
-        # # layers.append(nn.MaxPool2d(kernel_size=2, stride=2))
-
-        # # Далее "доворачиваем" до нужного hidden_size
-        # # Можно одним линейным слоем после global pooling или Conv, чтобы достичь нужного hidden_size
-        # layers.append(nn.AdaptiveAvgPool2d((1, 1)))
-        # layers.append(nn.Flatten())
-        # layers.append(nn.Linear(out_ch, self.hidden_size))
-
-        # self.projection = nn.Sequential(*layers)
         if cfg.to_dict().get("embeddings_layers", None):
             c = OmegaConf.create(cfg.to_dict())
             self.projection = nn.Sequential(*[getattr(nn, layer["name"])(*layer.get("args", []), **layer.get("kwargs", {})) for layer in c["embeddings_layers"]])
@@ -100,10 +75,8 @@ class WsiMAEPatchEmbeddings(nn.Module):
         # Reshape to (batch_size * num_patches, c, h, w)
         patches = rearrange(patches, 'b n c h w -> (b n) c h w')
 
-        # Pass through several small convolutional layers + pooling
         x = self.projection(patches).flatten(2).transpose(1, 2)  # [b*n, hidden_size]
-        # Return to (batch_size, num_patches, hidden_size)
-        # x = rearrange(x, '(b n) c -> b n c', b=b, n=self.total_patches)
+
 
         return x
 
@@ -131,17 +104,8 @@ class WsiMAEEmbeddings(nn.Module):
         self.position_embeddings.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
         # initialize patch_embeddings like nn.Linear (instead of nn.Conv2d)
-        # Найти первый слой, у которого есть weight
-
-        if isinstance(self.patch_embeddings.projection, nn.Sequential):
-            for layer in self.patch_embeddings.projection:
-                if hasattr(layer, "weight"):
-                    w = layer.weight.data
-                    torch.nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
-                    break  # Берём только первый слой с весами
-        elif isinstance(self.patch_embeddings.projection, nn.Conv2d):
-            w = self.patch_embeddings.projection.weight.data
-            torch.nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
+        w = self.patch_embeddings.projection.weight.data
+        torch.nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
 
         # timm's trunc_normal_(std=.02) is effectively normal_(std=0.02) as cutoff is too big (2.)
         torch.nn.init.normal_(self.cls_token, std=self.config.initializer_range)
@@ -199,13 +163,23 @@ class WsiMAEModel(ViTMAEModel):
         # patches = patches.flatten(2)
         return patches
     
-    def unpatchify(self, imgs, original_size: int =None):
+    def unpatchify(self, imgs):
         batch_size = imgs.shape[0]
-        return imgs.reshape(batch_size,
-                            -1,
-                            self.config.num_channels,
-                            self.config.image_size,
-                            self.config.image_size)
+        patch_size = self.config.patch_size
+        channels = self.config.num_channels
+        image_size = self.config.image_size
+        
+        h = w = image_size // patch_size
+
+        return rearrange(
+            imgs,
+            'b (h w) (c p1 p2) -> b c (h p1) (w p2)',
+            h=h,
+            w=w,
+            c=channels,
+            p1=patch_size,
+            p2=patch_size
+        )
 
     def forward(self, imgs, is_multimodal: bool = False):
         out = super().forward(imgs)
@@ -279,41 +253,69 @@ class WsiMAEForPreTraining(ViTMAEForPreTraining):
         return patches
 
 
-
-
 class WsiMaeSurvivalModel(nn.Module):
     def __init__(self, config):
         super().__init__()
-
         if config.to_dict().get("is_load_pretrained", False):
-            # Загружаем state_dict из файла
-            model_state_dict = torch.load(config.pretrained_model_path, map_location=torch.device("cpu"))
-            print(f"Loaded model state_dict from {config.pretrained_model_path}")
-
-            # Удаляем префикс "encoders.wsi." у всех ключей
-            wsi_state_dict = {k.replace("model.", "").replace("encoders.wsi.", ""): v for k, v in model_state_dict.items()}
-
-            
-            #print("Extracted and fixed WSI-related keys: ", wsi_state_dict.keys())
-            # Проверяем, какие ключи в модели соответствуют загруженным весам
-            model_keys = set(WsiMAEModel(config).state_dict().keys())  # Ключи в модели
-            loaded_keys = model_keys.intersection(wsi_state_dict.keys())
-
-            print("Successfully loaded keys:", loaded_keys)
-            # Создаём новую модель
-            self.vit = WsiMAEModel(config)  # Инициализируем `vit` с нуля
-            self.projection = nn.Linear(config.hidden_size, config.output_dim)
-
-            # Загружаем только найденные веса
-            missing_keys, unexpected_keys = self.vit.load_state_dict(wsi_state_dict, strict=False)
-            #print("Missing keys:", missing_keys)
-            #print("Unexpected keys:", unexpected_keys)
+            self.vit = WsiMAEModel.from_pretrained(config.pretrained_model_path, config=config)
+            print(f"Pretrained model loaded from {config.pretrained_model_path}")
         else:
             self.vit = WsiMAEModel(config)
         self.projection = nn.Linear(config.hidden_size, config.output_dim)
+        self.max_patches_per_sample = config.max_patches_per_sample
+        self.use_transformer_pool = config.use_transformer_pool
         
+        # Add components for transformer pool
+        if self.use_transformer_pool:
+            self.cls_token = nn.Parameter(torch.randn(1, 1, config.hidden_size))
+            nn.init.normal_(self.cls_token, std=1e-6)
+            self.trans_layer1 = TransLayer(dim=config.hidden_size)
+            self.pos_layer = PPEG(dim=config.hidden_size)
+            self.trans_layer2 = TransLayer(dim=config.hidden_size)
+            self.norm = nn.LayerNorm(config.hidden_size)
+            
     def forward(self, wsi_values, masks=None):
-        x = self.vit(wsi_values)
-        x = self.projection(x.last_hidden_state[:, 0, :])
-        return x.squeeze(-1) 
-
+        vit_out = self.vit(wsi_values)
+        cls_tokens = vit_out.last_hidden_state[:, 0, :]  # [B_new, hidden_size]
+        N = self.max_patches_per_sample
+        B_new = cls_tokens.shape[0]
+        B = B_new // N
+        
+        if self.use_transformer_pool:
+            # Reshape classification tokens and get patient representation
+            features = cls_tokens.view(B, N, -1)  # [B, N, hidden_size]
+            
+            # 1. Padding to the nearest square number of tokens
+            H = features.shape[1]
+            _H, _W = int(np.ceil(np.sqrt(H))), int(np.ceil(np.sqrt(H)))
+            add_length = _H * _W - H
+            if add_length > 0:
+                h = torch.cat([features, features[:, :add_length, :]], dim=1)
+            else:
+                h = features
+                
+            # 2. Append cls_token at the beginning
+            cls_tokens_pool = self.cls_token.expand(B, -1, -1).to(h.device)
+            h = torch.cat((cls_tokens_pool, h), dim=1)
+            
+            # 3. First TransLayer
+            h = self.trans_layer1(h)
+            
+            # 4. PPEG
+            h = self.pos_layer(h, _H, _W)
+            
+            # 5. Second TransLayer
+            h = self.trans_layer2(h)
+            
+            # 6. Final LayerNorm
+            h = self.norm(h)
+            
+            # 7. Output - first token as patient representation
+            patient_repr = h[:, 0]
+            x = self.projection(patient_repr)
+        else:
+            cls_tokens = cls_tokens.view(B, N, -1)  # [B, N, hidden_size]
+            patient_repr = cls_tokens.mean(dim=1)  # [B, hidden_size]
+            x = self.projection(patient_repr)
+            
+        return x.squeeze(-1)
