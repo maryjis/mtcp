@@ -54,7 +54,7 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
                       "mri" : None, "wsi" : None }
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities, self.preproc, transforms)
         self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False, batch_size=cfg.base.batch_size 
-                                              if split == "train" else 1)
+                                              if split == "train" else 1, drop_last=True if split == "train" else False)
                             for split in splits.keys()}
         print("Device from config: ", cfg.base.device)
         self.model =self.initialise_models().to(cfg.base.device)
@@ -137,7 +137,7 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
                       "clinical" : base_scaling(self.preproc["clinical"].get_scaling() if "clinical" in self.preproc.keys() else None)}
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities, self.preproc, transforms)
         self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False, batch_size=cfg.base.batch_size 
-                                              if split == "train" else 1)
+                                              if split == "train" else 1, drop_last=True if split == "train" else False)
                             for split in splits.keys()}
         self.model = self.initialise_models().to(cfg.base.device)
         self.initialise_loss()

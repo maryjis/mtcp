@@ -36,8 +36,55 @@ dnam:
     dnam_dataset_path: "src/data/dna_dataset_full_tcga.csv"
 
 clinical:
-    dataset_path: "src/data/dataset.csv"
-    selected_columns: ["treatments_radiation_binary", "treatments_binary", "age_at_diagnosis"]
+    dataset_path: "src/data/dataset_glioma_with_treatment.csv"
+    # selected_columns: ["treatments_radiation_binary", "treatments_binary", "age_at_diagnosis"]
+    selected_columns: ["Chemotherapy",
+                        "Radiation Therapy",
+                        "Hormone Therapy",
+                        "Immunotherapy",
+                        "Targeted Molecular Therapy",
+                        "Not Specified",
+                        "Other",
+                        "Ancillary",
+                        "Temozolomide",
+                        "Radiation 1",
+                        "Bevacizumab",
+                        "Lomustine",
+                        "Radiation 2",
+                        "Carmustine",
+                        "Irinotecan",
+                        "Dexamethasone",
+                        "Etoposide",
+                        "Procarbazine",
+                        "Tamoxifen",
+                        "Erlotinib",
+                        "Vincristine",
+                        "Carboplatin",
+                        "Radiation 3",
+                        "Hydroxyurea",
+                        "Celecoxib",
+                        "Cisplatin",
+                        "Imatinib",
+                        "Tetrathiomolybdate",
+                        "81C6",
+                        "Sirolimus",
+                        "Isotretinoin",
+                        "Cilengitide",
+                        "6-O-Benzylguanine",
+                        "Mab I-131",
+                        "Cyclophosphamide",
+                        "Fotemustine",
+                        "Procarbazine + Lomustine + Vincristine",
+                        "Radiation 4",
+                        "Ci-980",
+                        "Oxaliplatin",
+                        "Dc Vax (Dendritic Cell Vaccine)",
+                        "Levetiracetam",
+                        "Motexafin Gadolinium",
+                        "Interleukin-13 + Pseudomonas Exotoxin",
+                        "Attac",
+                        "Sorafenib",
+                        "Cabozantinib"]
     
 wsi:
   resize_to: [256, 256]

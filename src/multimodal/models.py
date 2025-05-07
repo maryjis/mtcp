@@ -778,8 +778,13 @@ class MultiMaeForSurvival(nn.Module):
         
         if "clinical" in self.modalities:
             #TODO add special param for it -> cfg.fusion_dim+3
-            self.clinical_projection = nn.Linear(3, 3)
-            self.projection = nn.Linear(cfg.fusion_dim+3, cfg.output_dim)
+            self.clinical_projection = nn.Sequential(nn.Linear(47, 32),
+                                                  nn.BatchNorm1d(32),
+                                                  nn.ReLU(),
+                                                  nn.Linear(32, 16),
+                                                  nn.BatchNorm1d(16),
+                                                  nn.ReLU())
+            self.projection = nn.Linear(cfg.fusion_dim+16, cfg.output_dim)
         else:
             self.projection = nn.Linear(cfg.fusion_dim, cfg.output_dim)    
         
@@ -861,6 +866,8 @@ class MultiMaeForSurvival(nn.Module):
         
         
         if "clinical" in self.modalities:
+            print("clinical_data.shape", clinical_data.shape)
+            print("clinical_data[:,0,:].shape", clinical_data[:,0,:].shape)
             clinical_logits = self.clinical_projection(clinical_data[:,0,:])    
             concat_with_clinical =torch.cat([concat_x[:,0,:], clinical_logits], axis =-1)
             logits = self.projection(concat_with_clinical) 

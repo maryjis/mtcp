@@ -250,7 +250,7 @@ class UnimodalSurvivalTrainer(Trainer):
 
         self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False,
                                               batch_size=cfg.base.batch_size if split == "train" else 1,
-                                              num_workers=self.cfg.base.get("num_workers", 0))
+                                              num_workers=self.cfg.base.get("num_workers", 0), drop_last=True if split == "train" else False)
                             for split in splits.keys()}
 
         self.model =self.initialise_models().to(cfg.base.device)
@@ -440,7 +440,7 @@ class UnimodalMAETrainer(Trainer):
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
         self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False, batch_size=cfg.base.batch_size  
-                                              if split == "train" else 1, num_workers=self.cfg.base.get("num_workers", 0))
+                                              if split == "train" else 1, num_workers=self.cfg.base.get("num_workers", 0), drop_last=True if split == "train" else False)
                             for split in splits.keys()}
 
         self.model =self.initialise_models().to(cfg.base.device)
