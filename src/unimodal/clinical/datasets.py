@@ -30,11 +30,10 @@ class ClinicalDataset(BaseDataset):
     def __getitem__(self, idx):
         sample = self.data.iloc[idx]
         mask = False
-        sample = sample[self.selected_columns].values.reshape(1, -1).astype(np.float32)
+        sample = sample[self.selected_columns].fillna(0).values.reshape(1, -1).astype(np.float32)
         sample = torch.from_numpy(sample)
         if self.transform:
             sample = self.transform(sample)
-            sample = torch.from_numpy(sample)
         return sample.float(), mask
  
             
