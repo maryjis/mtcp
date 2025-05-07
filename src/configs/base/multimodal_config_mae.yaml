@@ -1,4 +1,4 @@
-experiment_name: "multimodal_rna_dna_bigset_balanced_800_mae_16_april"
+experiment_name: "multimodal_rna_dna_wsi_bigset_balanced_800_mae_07_may"
 n_epochs: 800
 n_intervals: 20
 random_seed: 1380
@@ -17,17 +17,17 @@ scheduler:
 type: "multimodal"
 # project_ids: ["GBM", "LGG"]
 strategy: "mae" # mae, survival
-modalities: ["rna", "dnam"]
+modalities: ["rna", "dnam", "wsi"]
 multimodal_intersection_test: false
 architecture: "MAE"
 splits: 5
 # data_path: "src/data/dataset.csv"
 # data_path: "src/data/dataset_full_tcga_with_dna.csv"
-data_path: "src/data/dataset_full_tcga_with_dna_balanced.csv"
+data_path: "src/data/dataset_full_tcga_all_balanced.csv"
 save_path : "outputs/models/"
 #rna_dataset_path: "src/data/rna_dataset.csv"
 rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
-device: "cuda:4"  # Указываем, что основное устройство - GPU 2
+device: "cuda:1"  # Указываем, что основное устройство - GPU 2
 available_gpus:  [1, 2, 0, 4]  # Указываем, какие GPU можно использовать
 
 remove_nan_column: 'RNA'
