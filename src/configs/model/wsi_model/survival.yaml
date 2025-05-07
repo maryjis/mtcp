@@ -28,3 +28,27 @@ max_patches_per_sample: 10
 num_patches: 10
 random_patch_selection: True
 pretrained_model_path: "facebook/vit-mae-base"
+embeddings_layers:
+  - name: "Conv2d"
+    args: [3, 64, 4]
+    kwargs: {stride: 4}
+  - name: "ReLU"
+  - name: "Conv2d"
+    args: [64, 256, 4]
+    kwargs: {stride: 4}
+decoder_pred_layers:
+  - name: "ConvTranspose2d"
+    args:
+      - 256    # input channels
+      - 64     # intermediate channels
+      - 4      # kernel_size
+    kwargs:
+      stride: 2
+  - name: "GELU"
+  - name: "ConvTranspose2d"
+    args:
+      - 64
+      - 3      # RGB output
+      - 4
+    kwargs:
+      stride: 2
