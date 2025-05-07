@@ -6,7 +6,7 @@ conda activate base
 
 # 2. Пути
 MANIFEST_FILE="/home/a.beliaeva/mtcp/wsi_id_filename.txt"
-FILTERED_MANIFEST="/home/a.beliaeva/mtcp/filtered_wsi_id_filename.txt"
+FILTERED_MANIFEST="/home/a.beliaeva/mtcp/wsi_id_filename.txt"
 DOWNLOAD_DIR="/mnt/public-datasets/drim/TCGA_all_wsi"
 
 # 3. Создаём новый файл с заголовком
