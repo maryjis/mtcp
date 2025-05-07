@@ -17,3 +17,4 @@ transformers==4.47.1
 pyvips==2.2.1
 pillow
 flamingo_pytorch
+hydra-optuna-sweeper
