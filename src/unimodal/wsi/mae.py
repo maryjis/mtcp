@@ -7,9 +7,20 @@ from transformers.models.vit_mae.modeling_vit_mae import (
     get_1d_sincos_pos_embed_from_grid,
     get_2d_sincos_pos_embed
 )
-from einops import rearrange
+from einops import rearrange, reduce
 import numpy as np
 import os
+import math
+from math import ceil
+from omegaconf import OmegaConf
+
+# Import necessary components from utils.py
+from ...utils import (
+    exists,
+    NystromAttention,
+    TransLayer,
+    PPEG
+)
 
 
 class WsiMAEPatchEmbeddings(nn.Module):
@@ -32,7 +43,11 @@ class WsiMAEPatchEmbeddings(nn.Module):
         else:
             self.total_patches = max_patches_per_sample * self.num_patches
 
-        self.projection = nn.Conv2d(self.num_channels, self.hidden_size, kernel_size=self.patch_size, stride=self.patch_size)
+        if cfg.to_dict().get("embeddings_layers", None):
+            c = OmegaConf.create(cfg.to_dict())
+            self.projection = nn.Sequential(*[getattr(nn, layer["name"])(*layer.get("args", []), **layer.get("kwargs", {})) for layer in c["embeddings_layers"]])
+        else:
+            self.projection = nn.Conv2d(self.num_channels, self.hidden_size, kernel_size=self.patch_size, stride=self.patch_size)
 
     def _split_patches(self, wsi_tensor):
         """
@@ -60,10 +75,8 @@ class WsiMAEPatchEmbeddings(nn.Module):
         # Reshape to (batch_size * num_patches, c, h, w)
         patches = rearrange(patches, 'b n c h w -> (b n) c h w')
 
-        # Pass through several small convolutional layers + pooling
         x = self.projection(patches).flatten(2).transpose(1, 2)  # [b*n, hidden_size]
-        # Return to (batch_size, num_patches, hidden_size)
-        # x = rearrange(x, '(b n) c -> b n c', b=b, n=self.total_patches)
+
 
         return x
 
@@ -150,13 +163,23 @@ class WsiMAEModel(ViTMAEModel):
         # patches = patches.flatten(2)
         return patches
     
-    def unpatchify(self, imgs, original_size: int =None):
+    def unpatchify(self, imgs):
         batch_size = imgs.shape[0]
-        return imgs.reshape(batch_size,
-                            -1,
-                            self.config.num_channels,
-                            self.config.image_size,
-                            self.config.image_size)
+        patch_size = self.config.patch_size
+        channels = self.config.num_channels
+        image_size = self.config.image_size
+        
+        h = w = image_size // patch_size
+
+        return rearrange(
+            imgs,
+            'b (h w) (c p1 p2) -> b c (h p1) (w p2)',
+            h=h,
+            w=w,
+            c=channels,
+            p1=patch_size,
+            p2=patch_size
+        )
 
     def forward(self, imgs, is_multimodal: bool = False):
         out = super().forward(imgs)
@@ -176,12 +199,15 @@ class WsiMAEDecoderPred(nn.Module):
         super().__init__()
         assert config.image_size % config.patch_size == 0
         self.num_patches_per_dim = config.image_size // config.patch_size
-        self.projector = nn.ConvTranspose2d(
-            config.decoder_hidden_size,
-            config.num_channels,
-            config.patch_size,
-            stride=config.patch_size
-        )
+        if config.to_dict().get("decoder_pred_layers", None): 
+            c = OmegaConf.create(config.to_dict())
+            self.projector = nn.Sequential(*[getattr(nn, layer["name"])(*layer.get("args", []), **layer.get("kwargs", {})) for layer in c["decoder_pred_layers"]])
+        else:        
+            self.projector = nn.ConvTranspose2d(
+                config.decoder_hidden_size,
+                config.num_channels,
+                config.patch_size,
+                stride=config.patch_size)
 
     def forward(self, x):
         batch_size = x.shape[0]
@@ -227,7 +253,6 @@ class WsiMAEForPreTraining(ViTMAEForPreTraining):
         return patches
 
 
-
 class WsiMaeSurvivalModel(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -238,14 +263,59 @@ class WsiMaeSurvivalModel(nn.Module):
             self.vit = WsiMAEModel(config)
         self.projection = nn.Linear(config.hidden_size, config.output_dim)
         self.max_patches_per_sample = config.max_patches_per_sample
-
+        self.use_transformer_pool = config.use_transformer_pool
+        
+        # Add components for transformer pool
+        if self.use_transformer_pool:
+            self.cls_token = nn.Parameter(torch.randn(1, 1, config.hidden_size))
+            nn.init.normal_(self.cls_token, std=1e-6)
+            self.trans_layer1 = TransLayer(dim=config.hidden_size)
+            self.pos_layer = PPEG(dim=config.hidden_size)
+            self.trans_layer2 = TransLayer(dim=config.hidden_size)
+            self.norm = nn.LayerNorm(config.hidden_size)
+            
     def forward(self, wsi_values, masks=None):
         vit_out = self.vit(wsi_values)
         cls_tokens = vit_out.last_hidden_state[:, 0, :]  # [B_new, hidden_size]
         N = self.max_patches_per_sample
         B_new = cls_tokens.shape[0]
         B = B_new // N
-        cls_tokens = cls_tokens.view(B, N, -1)  # [B, N, hidden_size]
-        patient_repr = cls_tokens.mean(dim=1)  # [B, hidden_size]
-        x = self.projection(patient_repr)
+        
+        if self.use_transformer_pool:
+            # Reshape classification tokens and get patient representation
+            features = cls_tokens.view(B, N, -1)  # [B, N, hidden_size]
+            
+            # 1. Padding to the nearest square number of tokens
+            H = features.shape[1]
+            _H, _W = int(np.ceil(np.sqrt(H))), int(np.ceil(np.sqrt(H)))
+            add_length = _H * _W - H
+            if add_length > 0:
+                h = torch.cat([features, features[:, :add_length, :]], dim=1)
+            else:
+                h = features
+                
+            # 2. Append cls_token at the beginning
+            cls_tokens_pool = self.cls_token.expand(B, -1, -1).to(h.device)
+            h = torch.cat((cls_tokens_pool, h), dim=1)
+            
+            # 3. First TransLayer
+            h = self.trans_layer1(h)
+            
+            # 4. PPEG
+            h = self.pos_layer(h, _H, _W)
+            
+            # 5. Second TransLayer
+            h = self.trans_layer2(h)
+            
+            # 6. Final LayerNorm
+            h = self.norm(h)
+            
+            # 7. Output - first token as patient representation
+            patient_repr = h[:, 0]
+            x = self.projection(patient_repr)
+        else:
+            cls_tokens = cls_tokens.view(B, N, -1)  # [B, N, hidden_size]
+            patient_repr = cls_tokens.mean(dim=1)  # [B, hidden_size]
+            x = self.projection(patient_repr)
+            
         return x.squeeze(-1)

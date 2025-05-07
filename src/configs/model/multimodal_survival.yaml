@@ -1,5 +1,6 @@
 
-modalities: ["rna", "dnam", "cnv"]
+modalities: ["rna", "dnam", "wsi"]
+
 defaults: 
   - rna_model: survival
   - mri_model: survival
