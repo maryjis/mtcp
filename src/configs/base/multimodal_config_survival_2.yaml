@@ -1,0 +1,34 @@
+experiment_name: "multimodal_pretrained_rna_dnam_wsi_clinical_256_pretrained400_freeze_without_decoder_survival_1e_3_10_ep"
+n_epochs: 10
+n_intervals: 20
+random_seed: 1380
+
+optimizer:
+    name: "Adam"
+    params:
+        lr: 1e-3
+        weight_decay: 1e-2
+    
+scheduler: 
+    name: "CosineAnnealingLR"
+    params:
+        eta_min: 5e-6
+
+type: "multimodal"
+strategy: "survival" # mae, survival
+modalities: ["rna", "dnam", "wsi", "clinical"]
+multimodal_intersection_test: true
+architecture: "MAE"
+splits: 5
+data_path: "src/data/dataset.csv"
+save_path : "outputs/models/"
+rna_dataset_path: "src/data/rna_dataset.csv"
+device: "cuda:0"
+remove_nan_column: 'RNA'
+batch_size: 48
+
+log:
+    logging: True
+    wandb_project: "cancer_mtcp"
+    wandb_run_name: "multimodal_pretrained_rna_dnam_wsi_clinical_256_pretrained400_freeze_without_decoder_survival_1e_3_10_ep"
+

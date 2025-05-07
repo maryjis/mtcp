@@ -206,3 +206,4 @@ class SurvivalWSIDataset(torch.utils.data.Dataset):
 
     def __len__(self) -> int:
         return len(self.dataset)
+
