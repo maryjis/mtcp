@@ -6,7 +6,7 @@ from pathlib import Path
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.multimodal.trainer import MultiModalMAETrainer, MultiModalSurvivalTrainer
 
-@hydra.main(version_base=None, config_path="src/configs", config_name="unimodal_config_wsi_mae_surv")
+@hydra.main(version_base=None, config_path="src/configs", config_name="multimodal_config_2")
 def run(cfg : DictConfig) -> None:
     if not OmegaConf.has_resolver("eval"): OmegaConf.register_new_resolver("eval", eval) #arithmetic in config params
     print(OmegaConf.to_yaml(cfg))
@@ -29,12 +29,12 @@ def run(cfg : DictConfig) -> None:
             cfg.base.remove_nan_column, 
             max_samples_per_split=cfg.base.get("max_samples_per_split", None),
             multimodal_intersection_test =cfg.base.get("multimodal_intersection_test", None),
-            modalities=cfg.base.modalities,
-            project_ids = cfg.base.get("project_ids", None),
+            modalities=cfg.base.modalities
         )
-        print(splits)
+
         if cfg.base.type == 'unimodal':
 
+            # унимодальные (тут мы должны выбрать модальность) или мультимодальный + способ дообучения
             if cfg.base.strategy == "survival":
                 trainer = UnimodalSurvivalTrainer(splits, cfg)
             elif cfg.base.strategy == "mae": 
