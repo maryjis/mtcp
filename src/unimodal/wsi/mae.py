@@ -104,8 +104,16 @@ class WsiMAEEmbeddings(nn.Module):
         self.position_embeddings.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
         # initialize patch_embeddings like nn.Linear (instead of nn.Conv2d)
-        w = self.patch_embeddings.projection.weight.data
-        torch.nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
+        if isinstance(self.patch_embeddings.projection, nn.Sequential):
+            # Initialize the last layer in Sequential, if it's Conv2d or Linear
+            for m in self.patch_embeddings.projection.modules():
+                if isinstance(m, (nn.Linear, nn.Conv2d)):
+                    w = m.weight.data
+                    torch.nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
+        else:
+            # projection - 1 layer
+            w = self.patch_embeddings.projection.weight.data
+            torch.nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
 
         # timm's trunc_normal_(std=.02) is effectively normal_(std=0.02) as cutoff is too big (2.)
         torch.nn.init.normal_(self.cls_token, std=self.config.initializer_range)
