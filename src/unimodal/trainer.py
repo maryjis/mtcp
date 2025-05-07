@@ -66,7 +66,7 @@ class Trainer(object):
             else:
                  scaling_method = None
             print("Scaling method: ", scaling_method)
-            print(self.cfg.base.project_ids, self.cfg.base.get("project_ids", None))
+            print("self.cfg.base.get(project_ids):", self.cfg.base.get("project_ids", None))
             preproc = RNAPreprocessor(splits["train"], self.cfg.data.rna.rna_dataset_path, self.cfg.base.n_intervals, scaling_method, 
                                           self.cfg.data.rna.scaling_params, self.cfg.data.rna.var_threshold,
                                           self.cfg.data.rna.is_cluster_genes , self.cfg.data.rna.clustering_threshold, self.cfg.data.rna.get("is_hierarchical_clusters", False), project_ids = self.cfg.base.get("project_ids", None))
