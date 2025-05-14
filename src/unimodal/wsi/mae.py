@@ -189,7 +189,7 @@ class WsiMAEModel(ViTMAEModel):
             p2=patch_size
         )
 
-    def forward(self, imgs, is_multimodal: bool = False):
+    def forward(self, imgs, is_multimodal: bool = False, **kwargs):
         out = super().forward(imgs)
         if is_multimodal and not self.config.random_patch_selection:
             N = self.config.max_patches_per_sample

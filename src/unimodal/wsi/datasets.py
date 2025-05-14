@@ -157,30 +157,6 @@ class WSIDataset_patches(BaseDataset):
         return len(self.data)
 
 
-
-    def __getitem__(self, idx: int):
-        sample = self.data.iloc[idx]
-
-        if not pd.isna(sample.WSI_initial):
-            svs_path = sample.WSI_initial
-            image_dir = os.path.dirname(svs_path)
-            patches = self._load_patches(image_dir)  # `_load_patches()` уже возвращает `torch.Tensor`
-            mask = True
-        else:
-            patches = torch.zeros(
-                (1 if self.random_patch_selection else self.max_patches_per_sample, 3, *self.resize_to), 
-                dtype=torch.float32)
-            mask = False
-
-        if self.return_mask:
-            return patches, mask
-        else:
-            return patches
-  
-    def __len__(self):
-        return len(self.data)  # Теперь длина = числу WSI, а не батчей!
-
-
         
 
 
