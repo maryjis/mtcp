@@ -21,7 +21,7 @@ image_size: 256
 patch_size: 16
 qkv_bias: true
 is_load_pretrained: true
-pretrained_model_name: "multimodal_rna_dna_wsi_400_mae_last"
+pretrained_model_name: "unimodal_wsi_800_mae_2"
 output_dim: 20
 max_patches_per_sample: 10
 num_patches: 10
