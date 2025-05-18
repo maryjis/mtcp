@@ -16,11 +16,11 @@ def run(cfg : DictConfig) -> None:
     all_valid_metrics, all_test_metrics , all_test_metrics_in_intersection =[], [], []
     for fold_ind in range(cfg.base.splits):
         print(f"Fold #{fold_ind}")
-        cfg.base.save_path = f"/home/a.beliaeva/mtcp/src/outputs/models/unimodal_wsi_800_mae_2/{cfg.base.experiment_name}_split_{fold_ind}.pth"
+        cfg.base.save_path = f"/home/a.beliaeva/mtcp/src/outputs/models/unimodal_wsi_800_mae_1/{cfg.base.experiment_name}_split_{fold_ind}.pth"
         if cfg.model.get("is_load_pretrained", False):
             with open_dict(cfg):
-                print("Model path", f"/home/a.beliaeva/mtcp/src/outputs/models/unimodal_wsi_800_mae_2/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth")
-                cfg.model.pretrained_model_path = f"/home/a.beliaeva/mtcp/src/outputs/models/unimodal_wsi_800_mae_2/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth"
+                print("Model path", f"/home/a.beliaeva/mtcp/src/outputs/models/unimodal_wsi_800_mae_1/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth")
+                cfg.model.pretrained_model_path = f"/home/a.beliaeva/mtcp/src/outputs/models/unimodal_wsi_800_mae_1/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth"
         
              
         splits = load_splits(

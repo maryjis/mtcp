@@ -3,7 +3,7 @@ defaults:
     - base: wsi_mae_model
     - data: wsi_mae
 base:
-    experiment_name: "unimodal_wsi_800_mae_2"
+    experiment_name: "unimodal_wsi_800_mae_1"
     n_epochs: 800
     n_intervals: 20
     random_seed: 1380
@@ -26,11 +26,11 @@ base:
     splits: 5
     data_path: "/home/a.beliaeva/mtcp/src/data/dataset_glioma_with_treatment.csv"
     root_path: "../"
-    save_path : "/home/a.beliaeva/mtcp/src/outputs/models/unimodal_wsi_800_mae_2/"
+    save_path : "/home/a.beliaeva/mtcp/src/outputs/models/unimodal_wsi_800_mae_1"
     device: "cuda:3"  # Указываем, что основное устройство - GPU 2
     available_gpus:  [3]  # Указываем, какие GPU можно использовать
     remove_nan_column: 'WSI_initial'
-    batch_size: 8
+    batch_size: 2
 
     log:
         logging: True
