@@ -190,15 +190,21 @@ class WsiMAEModel(ViTMAEModel):
         )
 
     def forward(self, imgs, is_multimodal: bool = False, **kwargs):
+        print(f"[WsiMAEModel.forward] Input imgs shape: {imgs.shape}")
         out = super().forward(imgs)
-        if is_multimodal and not self.config.random_patch_selection:
+        print(f"[WsiMAEModel.forward] After super().forward - last_hidden_state shape: {out.last_hidden_state.shape}")
+        
+        if not self.config.random_patch_selection:
             N = self.config.max_patches_per_sample
             B_new = out.last_hidden_state.shape[0]
             B = B_new // N
             seq_length = out.last_hidden_state.shape[1]
+            print(f"[WsiMAEModel.forward] N={N}, B_new={B_new}, B={B}, seq_length={seq_length}")
+            
             out.last_hidden_state = out.last_hidden_state.view(B, N, seq_length, -1).mean(dim=1)
             out.mask = out.mask.view(B, N, -1).mean(dim=1)
-            out.ids_restore =torch.arange(seq_length-1, device=out.ids_restore.device).repeat(B, 1)   
+            out.ids_restore = torch.arange(seq_length-1, device=out.ids_restore.device).repeat(B, 1)
+            print(f"[WsiMAEModel.forward] After reshape - last_hidden_state shape: {out.last_hidden_state.shape}")
         return out
 
 
@@ -264,11 +270,7 @@ class WsiMAEForPreTraining(ViTMAEForPreTraining):
 class WsiMaeSurvivalModel(nn.Module):
     def __init__(self, config):
         super().__init__()
-        if config.to_dict().get("is_load_pretrained", False):
-            self.vit = WsiMAEModel.from_pretrained(config.pretrained_model_path, config=config)
-            print(f"Pretrained model loaded from {config.pretrained_model_path}")
-        else:
-            self.vit = WsiMAEModel(config)
+        self.vit = WsiMAEModel(config)
         self.projection = nn.Linear(config.hidden_size, config.output_dim)
         self.max_patches_per_sample = config.max_patches_per_sample
         self.use_transformer_pool = config.use_transformer_pool
@@ -283,15 +285,17 @@ class WsiMaeSurvivalModel(nn.Module):
             self.norm = nn.LayerNorm(config.hidden_size)
             
     def forward(self, wsi_values, masks=None):
+        print(f"[WsiMaeSurvivalModel.forward] Input wsi_values shape: {wsi_values.shape}")
         vit_out = self.vit(wsi_values)
+        print(f"[WsiMaeSurvivalModel.forward] vit_out.last_hidden_state shape: {vit_out.last_hidden_state.shape}")
+        
         cls_tokens = vit_out.last_hidden_state[:, 0, :]  # [B_new, hidden_size]
-        N = self.max_patches_per_sample
-        B_new = cls_tokens.shape[0]
-        B = B_new // N
+        print(f"[WsiMaeSurvivalModel.forward] cls_tokens shape after extraction: {cls_tokens.shape}")
         
         if self.use_transformer_pool:
             # Reshape classification tokens and get patient representation
-            features = cls_tokens.view(B, N, -1)  # [B, N, hidden_size]
+            features = cls_tokens.unsqueeze(1)  # [B_new, 1, hidden_size]
+            print(f"[WsiMaeSurvivalModel.forward] features shape after unsqueeze: {features.shape}")
             
             # 1. Padding to the nearest square number of tokens
             H = features.shape[1]
@@ -303,7 +307,7 @@ class WsiMaeSurvivalModel(nn.Module):
                 h = features
                 
             # 2. Append cls_token at the beginning
-            cls_tokens_pool = self.cls_token.expand(B, -1, -1).to(h.device)
+            cls_tokens_pool = self.cls_token.expand(features.shape[0], -1, -1).to(h.device)
             h = torch.cat((cls_tokens_pool, h), dim=1)
             
             # 3. First TransLayer
@@ -321,9 +325,10 @@ class WsiMaeSurvivalModel(nn.Module):
             # 7. Output - first token as patient representation
             patient_repr = h[:, 0]
             x = self.projection(patient_repr)
+            print(f"[WsiMaeSurvivalModel.forward] Final output shape: {x.shape}")
         else:
-            cls_tokens = cls_tokens.view(B, N, -1)  # [B, N, hidden_size]
-            patient_repr = cls_tokens.mean(dim=1)  # [B, hidden_size]
-            x = self.projection(patient_repr)
+            print(f"[WsiMaeSurvivalModel.forward] Before projection - cls_tokens shape: {cls_tokens.shape}")
+            x = self.projection(cls_tokens)
+            print(f"[WsiMaeSurvivalModel.forward] Final output shape: {x.shape}")
             
         return x.squeeze(-1)

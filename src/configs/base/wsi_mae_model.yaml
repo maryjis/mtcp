@@ -1,4 +1,4 @@
-experiment_name: "unimodal_wsi_800_mae_2"
+experiment_name: "unimodal_wsi_800_mae_1"
 splits: 5
 n_epochs: 800
 
@@ -8,7 +8,7 @@ random_seed: 1380
 optimizer:
     name: "AdamW"
     params:
-        lr: 2e-5
+        lr: 1e-8 #2e-5
         weight_decay: 1e-2
 
 scheduler: 
@@ -23,7 +23,7 @@ modalities: ["wsi"] #rna, mri
 architecture: "MAE"
 data_path: "/home/a.beliaeva/mtcp/src/data/dataset_glioma_with_treatment.csv"
 root_path: "../"
-save_path : "/home/a.beliaeva/mtcp/src/outputs/models/unimodal_wsi_800_mae_2/"
+save_path : "/home/a.beliaeva/mtcp/src/outputs/models/unimodal_wsi_800_mae_1/"
 device: "cuda:3"
 remove_nan_column: 'WSI_initial'
 batch_size: 8
