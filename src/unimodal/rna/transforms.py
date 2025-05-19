@@ -207,6 +207,8 @@ class Padding(object):
 
     def __call__(self, sample):
         padded_sample = torch.zeros((sample.shape[0],self.size))
+        if isinstance(sample, np.ndarray):
+            sample = torch.from_numpy(sample)
         padded_sample[:, :sample.shape[1]] = sample
 
         return padded_sample
