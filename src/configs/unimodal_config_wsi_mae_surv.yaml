@@ -3,7 +3,7 @@ defaults:
     - base: wsi_mae_model
     - data: wsi_mae
 base:
-    experiment_name: "wsi mae"
+    experiment_name: "unimodal_wsi_800_mae_2conv_surv_1e_2_with_pyramid"
     n_epochs: 50
     n_intervals: 20
     random_seed: 1380
@@ -11,7 +11,7 @@ base:
     optimizer:
         name: "AdamW"
         params:
-            lr: 1e-3
+            lr: 1e-2 #1e-3
             weight_decay: 1e-2
     
     scheduler: 
@@ -24,13 +24,13 @@ base:
     strategy: "survival" # mae, survival
     modalities: ["wsi"] #rna, mri
     splits: 5
-    data_path: "/home/a.beliaeva/mtcp/updated_utf8.csv"
+    data_path: "/home/a.beliaeva/mtcp/src/data/dataset_glioma_with_treatment.csv"
     root_path: "../"
-    save_path : "/home/a.beliaeva/mtcp/src/outputs/models/main_mae/"
-    device: "cuda:2"  # Указываем, что основное устройство - GPU 2
-    available_gpus: [0, 1, 2]  # Указываем, какие GPU можно использовать
+    save_path : "/home/a.beliaeva/mtcp/src/outputs/models/unimodal_wsi_800_mae_2conv_surv/"
+    device: "cuda:3"  # Указываем, что основное устройство - GPU 2
+    available_gpus: [3]  # Указываем, какие GPU можно использовать
     remove_nan_column: 'WSI_initial'
-    batch_size: 96
+    batch_size: 16
 
     log:
         logging: True
