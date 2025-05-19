@@ -1,4 +1,4 @@
-experiment_name: "multimodal_rna_dnam_wsi_balanced_pretrained_dropout_256_clusters_survival"
+experiment_name: "multimodal_rna_dnam_balanced_pretrained_dropout_256_clusters_survival"
 n_epochs: 50
 n_intervals: 20
 random_seed: 1380
@@ -26,7 +26,7 @@ save_path : "outputs/models/"
 project_ids: ["GBM", "LGG"]
 data_path: "src/data/dataset_full_tcga_all_balanced.csv"
 rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
-device: "cuda:0"
+device: "cuda:2"
 available_gpus:  [1, 2, 3, 0, 4]  # Указываем, какие GPU можно использовать
 remove_nan_column: 'RNA'
 batch_size: 24
@@ -38,7 +38,7 @@ log:
 
 # early_stopping:
 #     early_stopper:
-#         patience: 10
+#         patience: 7
 #         eps: 0
 #         smoothing: "running_average"
 #         smoothing_period: 5
