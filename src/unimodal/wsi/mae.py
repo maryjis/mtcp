@@ -270,7 +270,11 @@ class WsiMAEForPreTraining(ViTMAEForPreTraining):
 class WsiMaeSurvivalModel(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.vit = WsiMAEModel(config)
+        if config.to_dict().get("is_load_pretrained", False):
+            self.vit = WsiMAEModel.from_pretrained(config.pretrained_model_path, config=config)
+            print(f"Pretrained model loaded from {config.pretrained_model_path}")
+        else:
+            self.vit = WsiMAEModel(config)
         self.projection = nn.Linear(config.hidden_size, config.output_dim)
         self.max_patches_per_sample = config.max_patches_per_sample
         self.use_transformer_pool = config.use_transformer_pool
@@ -325,7 +329,6 @@ class WsiMaeSurvivalModel(nn.Module):
             # 7. Output - first token as patient representation
             patient_repr = h[:, 0]
             x = self.projection(patient_repr)
-            print(f"[WsiMaeSurvivalModel.forward] Final output shape: {x.shape}")
         else:
             print(f"[WsiMaeSurvivalModel.forward] Before projection - cls_tokens shape: {cls_tokens.shape}")
             x = self.projection(cls_tokens)
