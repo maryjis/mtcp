@@ -193,37 +193,65 @@ class TransLayer(nn.Module):
         return x + self.attn(self.norm(x))
 
 
+import torch
+import torch.nn as nn
+from timm.models.layers import DropPath
+
 class PPEG(nn.Module):
     """
-    Positional Encoding with Convolutional Networks.
-    Uses depth-wise convolutions for positional encoding.
+    Positional Encoding with Grouped Convolutions + Residual Fusion.
+    Inspired by CPVT, ConvNeXt, and CoAtNet.
     """
-    def __init__(self, dim: int = 512):
+    def __init__(self, dim: int = 512, drop_path: float = 0.1):
         super().__init__()
-        # Use three depth-wise convolutions with different kernel sizes
-        self.proj = nn.Conv2d(dim, dim, kernel_size=7, stride=1, padding=3, groups=dim)
-        self.proj1 = nn.Conv2d(dim, dim, kernel_size=5, stride=1, padding=2, groups=dim)
-        self.proj2 = nn.Conv2d(dim, dim, kernel_size=3, stride=1, padding=1, groups=dim)
+        
+        def depthwise_block(kernel_size: int) -> nn.Sequential:
+            return nn.Sequential(
+                nn.Conv2d(dim, dim, kernel_size=kernel_size, stride=1, padding=kernel_size//2, groups=dim),
+                nn.BatchNorm2d(dim),
+                nn.GELU()
+            )
+        
+        # Multi-scale depthwise convolutions
+        self.proj = depthwise_block(7)
+        self.proj1 = depthwise_block(5)
+        self.proj2 = depthwise_block(3)
+
+        # Learnable fusion layer
+        self.fusion = nn.Sequential(
+            nn.Conv2d(dim * 4, dim, kernel_size=1),
+            nn.BatchNorm2d(dim),
+            nn.GELU()
+        )
+
+        # DropPath regularization
+        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+
+        # Normalization for cls_token
+        self.cls_norm = nn.LayerNorm(dim)
 
     def forward(self, x: torch.Tensor, H: int, W: int) -> torch.Tensor:
-        B, _, C = x.shape
+        B, N, C = x.shape
+        assert N == 1 + H * W, f"Expected sequence length {1 + H*W}, got {N}"
         
-        # Extract cls_token and feature_tokens
         cls_token, feat_token = x[:, 0], x[:, 1:]
-        
-        # Transform feature tokens to spatial format
         cnn_feat = feat_token.transpose(1, 2).reshape(B, C, H, W)
-        
-        # Apply convolutions and add residual connections
-        x = self.proj(cnn_feat) + cnn_feat + self.proj1(cnn_feat) + self.proj2(cnn_feat)
-        
-        # Transform back to sequence
-        x = x.flatten(2).transpose(1, 2)
-        
-        # Combine with cls_token
-        x = torch.cat((cls_token.unsqueeze(1), x), dim=1)
-        
-        return x
+
+        # Multi-scale depthwise convolutions
+        x1 = self.proj(cnn_feat)
+        x2 = self.proj1(cnn_feat)
+        x3 = self.proj2(cnn_feat)
+
+        # Concatenate and fuse
+        x_cat = torch.cat([cnn_feat, x1, x2, x3], dim=1)  # [B, 4C, H, W]
+        x_fused = self.fusion(x_cat)
+        x_fused = self.drop_path(x_fused)
+
+        # Reshape back to sequence
+        x_flat = x_fused.flatten(2).transpose(1, 2)  # [B, H*W, C]
+        cls_token = self.cls_norm(cls_token)
+        x_out = torch.cat((cls_token.unsqueeze(1), x_flat), dim=1)
+        return x_out
 
 
 def get_config_mode(config_path, base_path=None):
