@@ -653,7 +653,7 @@ class MaskAttentionFusion(nn.Module):
         
         if self.fusion_dim_feedforward > 0:
             self.fusion_layers = nn.ModuleList([nn.TransformerEncoderLayer(fusion_dim, fusion_nhead, dim_feedforward=fusion_dim_feedforward, dropout=fusion_dropout,
-                                   layer_norm_eps=1e-05, batch_first=True) for _ in range(fusion_depth)])
+                                   layer_norm_eps=1e-05, batch_first=True, norm_first=True) for _ in range(fusion_depth)])
         else:    
             self.fusion_layers = nn.ModuleList([nn.MultiheadAttention(fusion_dim, fusion_nhead, dropout=fusion_dropout, batch_first=True) for _ in range(fusion_depth)])
         
@@ -847,8 +847,10 @@ class MultiMaeForSurvival(nn.Module):
             concat_x, mask  = self.resampler(concat_x.last_hidden_state,concat_x.mask, intervals)
             concat_x = self.fusion_strategy(torch.squeeze(concat_x,1), None)
                
-        elif self.cfg.fusion_strategy == "mask_attention":
+        elif self.cfg.fusion_strategy == "mask_attention" and self.cfg.fusion_dim_feedforward==0:
             concat_x, attn_weights = self.fusion_strategy(concat_x.last_hidden_state, concat_x.mask)
+        elif self.cfg.fusion_strategy == "mask_attention" and self.cfg.fusion_dim_feedforward>0:
+            concat_x = self.fusion_strategy(concat_x.last_hidden_state, concat_x.mask)
         elif self.cfg.fusion_strategy == "disentangled_fusion":
             ## Get multimodal combination
             concat_x = self.fusion_strategy(concat_x.last_hidden_state, concat_x.mask)

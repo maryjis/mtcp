@@ -30,6 +30,7 @@ class OmicsDataset(BaseDataset):
             print("Dataset.shape before ", self.rna_dataset.shape)
             self.rna_dataset =self.rna_dataset.loc[self.rna_dataset.project_id.isin(project_ids)]
             print("Dataset.shape after ", self.rna_dataset.shape)
+        self.rna_dataset =self.rna_dataset.iloc[:, :-2]
         self.column_order = column_order
         self.column_name = column_name
         self.debug_mode = debug_mode
@@ -41,7 +42,7 @@ class OmicsDataset(BaseDataset):
             self.column_order = np.append(self.column_order, "file_id")
             self.rna_dataset = self.rna_dataset[self.column_order]
         else:   
-            self.column_order = self.rna_dataset.columns[:-3]
+            self.column_order = self.rna_dataset.columns[:-1]
 
     def len(self):
         return self.data.shape[0]
@@ -59,12 +60,11 @@ class OmicsDataset(BaseDataset):
             sample =self.rna_dataset.loc[self.rna_dataset["file_id"]==name]
 
             if sample.empty:
-                sample = np.zeros((1, self.rna_dataset.shape[1]-3))
+                sample = np.zeros((1, self.rna_dataset.shape[1]-1))
             else:
                 mask = True
                 file_id = sample["file_id"].values[0]
-                sample = sample.iloc[0, :-3].fillna(0).values.reshape(1, -1).astype(np.float32)
-         
+                sample = sample.iloc[0, :-1].fillna(0).values.reshape(1, -1).astype(np.float32)
             sample = torch.from_numpy(sample)
             if self.transform:
                 sample = self.transform(sample)
@@ -73,7 +73,7 @@ class OmicsDataset(BaseDataset):
             
             return sample.float(), mask
         else:
-            sample = torch.zeros((1, self.rna_dataset.shape[1]-3)).float()
+            sample = torch.zeros((1, self.rna_dataset.shape[1]-1)).float()
             if self.transform:
                 sample = self.transform(sample)
                 
