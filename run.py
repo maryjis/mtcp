@@ -6,7 +6,7 @@ from pathlib import Path
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.multimodal.trainer import MultiModalMAETrainer, MultiModalSurvivalTrainer
 
-@hydra.main(version_base=None, config_path="src/configs", config_name="unimodal_config_wsi_mae")
+@hydra.main(version_base=None, config_path="src/configs", config_name="multimodal_config")
 def run(cfg : DictConfig) -> None:
     if not OmegaConf.has_resolver("eval"): OmegaConf.register_new_resolver("eval", eval) #arithmetic in config params
     print(OmegaConf.to_yaml(cfg))
@@ -16,11 +16,11 @@ def run(cfg : DictConfig) -> None:
     all_valid_metrics, all_test_metrics , all_test_metrics_in_intersection =[], [], []
     for fold_ind in range(cfg.base.splits):
         print(f"Fold #{fold_ind}")
-        cfg.base.save_path = f"/home/a.beliaeva/mtcp/src/outputs/models/unimodal_wsi_800_mae_1/{cfg.base.experiment_name}_split_{fold_ind}.pth"
+        cfg.base.save_path = f"outputs/models/{cfg.base.experiment_name}_split_{fold_ind}.pth"
         if cfg.model.get("is_load_pretrained", False):
             with open_dict(cfg):
-                print("Model path", f"/home/a.beliaeva/mtcp/src/outputs/models/unimodal_wsi_800_mae_1/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth")
-                cfg.model.pretrained_model_path = f"/home/a.beliaeva/mtcp/src/outputs/models/unimodal_wsi_800_mae_1/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth"
+                print("Model path", f"outputs/models/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth")
+                cfg.model.pretrained_model_path = f"outputs/models/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth"
         
              
         splits = load_splits(
@@ -29,10 +29,9 @@ def run(cfg : DictConfig) -> None:
             cfg.base.remove_nan_column, 
             max_samples_per_split=cfg.base.get("max_samples_per_split", None),
             multimodal_intersection_test =cfg.base.get("multimodal_intersection_test", None),
-            modalities=cfg.base.modalities,
-            project_ids = cfg.base.get("project_ids", None),
+            modalities=cfg.base.modalities
         )
-        print(splits)
+
         if cfg.base.type == 'unimodal':
 
             if cfg.base.strategy == "survival":
