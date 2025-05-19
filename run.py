@@ -29,10 +29,9 @@ def run(cfg : DictConfig) -> None:
             cfg.base.remove_nan_column, 
             max_samples_per_split=cfg.base.get("max_samples_per_split", None),
             multimodal_intersection_test =cfg.base.get("multimodal_intersection_test", None),
-            modalities=cfg.base.modalities,
-            project_ids = cfg.base.get("project_ids", None),
+            modalities=cfg.base.modalities
         )
-        print(splits)
+
         if cfg.base.type == 'unimodal':
 
             if cfg.base.strategy == "survival":
