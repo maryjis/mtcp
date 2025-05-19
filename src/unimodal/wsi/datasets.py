@@ -120,7 +120,10 @@ class WSIDataset_patches(BaseDataset):
             patch_path = os.path.join(patch_dir, patch_file)
             patch = Image.open(patch_path).convert("RGB")
             patch = F.resize(patch, self.resize_to)
-            patch = F.pil_to_tensor(patch).float() / 255.0
+            patch = F.pil_to_tensor(patch).float()
+            min_val = patch.min()
+            max_val = patch.max()
+            patch = (patch - min_val) / (max_val - min_val + 1e-8) 
             patches.append(patch)
 
         if not patches:
