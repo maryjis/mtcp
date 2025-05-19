@@ -5,7 +5,7 @@ decoder_num_attention_heads: 4
 decoder_num_hidden_layers: 2
 hidden_act: "gelu"
 hidden_dropout_prob: 0.0
-hidden_size: 256 # maybe 384?
+hidden_size: 256 # размерность скрытого слоя
 # input_embedding_dim: 512
 # size: 512
 initializer_range: 0.02
@@ -27,7 +27,7 @@ output_dim: 20
 max_patches_per_sample: 10
 num_patches: 10
 random_patch_selection: True
-pretrained_model_path: "facebook/vit-mae-base"
+#pretrained_model_path: "facebook/vit-mae-base"
 embeddings_layers:
   - name: "Conv2d"
     args: [3, 64, 4]
