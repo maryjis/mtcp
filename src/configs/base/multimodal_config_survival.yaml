@@ -17,17 +17,17 @@ scheduler:
 type: "multimodal"
 strategy: "survival" # mae, survival
 
-modalities: ["rna", "dnam", "wsi"]
+modalities: ["rna", "dnam"]
 
 multimodal_intersection_test: true
 architecture: "MAE"
 splits: 5
 save_path : "outputs/models/"
-project_ids: ["GBM", "LGG"]
+project_ids: ["KIRC"]
 data_path: "src/data/dataset_full_tcga_all_balanced.csv"
 rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
-device: "cuda:2"
-available_gpus:  [1, 2, 3, 0, 4]  # Указываем, какие GPU можно использовать
+device: "cuda:1"
+available_gpus:  [1, 3]  # Указываем, какие GPU можно использовать
 remove_nan_column: 'RNA'
 batch_size: 24
 
