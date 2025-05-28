@@ -1,5 +1,5 @@
 
-modalities: ["rna", "dnam", "wsi"]
+modalities: ["rna", "dnam"]
 
 defaults: 
   - rna_model: survival
