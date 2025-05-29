@@ -1,4 +1,4 @@
-experiment_name: "multimodal_rna_dna_wsi_bigset__standartscaler_balanced_200_mae_19_may"
+experiment_name: "multimodal_rna_dna_wsi_minmax1e3_bigset_balanced_200_mae_20p_may"
 n_epochs: 200
 n_intervals: 20
 random_seed: 1380
@@ -6,7 +6,7 @@ random_seed: 1380
 optimizer:
     name: "Adam"
     params:
-        lr: 1e-4 # 2e-5
+        lr: 1e-3 # 2e-5
         weight_decay: 1e-2
     
 scheduler: 
@@ -27,7 +27,7 @@ data_path: "src/data/dataset_full_tcga_all_balanced.csv"
 save_path : "outputs/models/"
 #rna_dataset_path: "src/data/rna_dataset.csv"
 rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
-device: "cuda:2"  # Указываем, что основное устройство - GPU 2
+device: "cuda:0"  # Указываем, что основное устройство - GPU 2
 available_gpus:  [1, 2, 0, 4]  # Указываем, какие GPU можно использовать
 
 remove_nan_column: 'RNA'
