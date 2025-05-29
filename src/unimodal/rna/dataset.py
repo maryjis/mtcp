@@ -56,9 +56,10 @@ class OmicsDataset(BaseDataset):
         file_id = None
 
         if not pd.isna(sample[self.column_name]):
+            print("sample[self.column_name]: ", sample[self.column_name])
             name =sample[self.column_name]
             sample =self.rna_dataset.loc[self.rna_dataset["file_id"]==name]
-
+            print("sample: ", sample)
             if sample.empty:
                 sample = np.zeros((1, self.rna_dataset.shape[1]-1))
             else:
@@ -73,6 +74,7 @@ class OmicsDataset(BaseDataset):
             
             return sample.float(), mask
         else:
+            print("Not such column")
             sample = torch.zeros((1, self.rna_dataset.shape[1]-1)).float()
             if self.transform:
                 sample = self.transform(sample)
