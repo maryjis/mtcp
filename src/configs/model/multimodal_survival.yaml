@@ -31,14 +31,14 @@ num_hidden_layers: 4
 qkv_bias: true
 patch_size: 512
 
-is_load_pretrained: False
-pretrained_model_name: "multimodal_rna_dna_bigset_balanced_800_mae_16_april"
+is_load_pretrained: True
+pretrained_model_name: "multimodal_rna_dna_wsi_minmax1e3_bigset_balanced_200_mae_20p_may"
 #"multimodal_rna_dna_wsi_mri_400_mae_last"  #"multimodal_rna_dna_wsi_400_mae_last" #"multimodal_rna_dnam_mri_pretrained_mae_800_17_02", "multimodal_rna_dnam6_50_mae_pretrained_rna_with_mm_800_16_02"
 pretrained_model_path: ""
-freezing_strategy: False
+freezing_strategy: True
 
 missing_modalities_strategy: ""
-mm_pretrained_model_name:  "multimodal_rna_dna_bigset_balanced_800_mae_16_april"
+mm_pretrained_model_name:  "multimodal_rna_dna_wsi_minmax1e3_bigset_balanced_200_mae_20p_may"
 # "multimodal_rna_dna_smallset_800_mae_29_march"
 mm_pretrained_model_path: ""
 
@@ -48,7 +48,8 @@ return_order: true
 
 contrastive_loss: false
 
-encoder_fusion_strategy: "identity"
+encoder_fusion_strategy: "masked_attention"
+
 encoder_fusion_depth: 1
 encoder_fusion_dim: 256
 encoder_fusion_nhead: 4

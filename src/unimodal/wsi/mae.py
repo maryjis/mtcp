@@ -190,21 +190,21 @@ class WsiMAEModel(ViTMAEModel):
         )
 
     def forward(self, imgs, is_multimodal: bool = False, **kwargs):
-        print(f"[WsiMAEModel.forward] Input imgs shape: {imgs.shape}")
+ 
         out = super().forward(imgs)
-        print(f"[WsiMAEModel.forward] After super().forward - last_hidden_state shape: {out.last_hidden_state.shape}")
+  
         
         if not self.config.random_patch_selection:
             N = self.config.max_patches_per_sample
             B_new = out.last_hidden_state.shape[0]
             B = B_new // N
             seq_length = out.last_hidden_state.shape[1]
-            print(f"[WsiMAEModel.forward] N={N}, B_new={B_new}, B={B}, seq_length={seq_length}")
+
             
             out.last_hidden_state = out.last_hidden_state.view(B, N, seq_length, -1).mean(dim=1)
             out.mask = out.mask.view(B, N, -1).mean(dim=1)
             out.ids_restore = torch.arange(seq_length-1, device=out.ids_restore.device).repeat(B, 1)
-            print(f"[WsiMAEModel.forward] After reshape - last_hidden_state shape: {out.last_hidden_state.shape}")
+
         return out
 
 

@@ -1,5 +1,5 @@
 
-modalities: ["rna", "dnam"]
+modalities: ["rna", "dnam", "wsi"]
 defaults: 
   - rna_model: rna_mae
   - mri_model: mri_mae_model
@@ -31,7 +31,7 @@ pretrained_model_name: ""
 pretrained_model_path: ""
 postprocessing: True
 output_dim: 20
-encoder_fusion_strategy: "identity"
+encoder_fusion_strategy: "masked_attention"
 contrastive_loss: false
 encoder_fusion_depth: 1
 encoder_fusion_dim: 256

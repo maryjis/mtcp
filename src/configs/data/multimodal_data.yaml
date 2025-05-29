@@ -2,7 +2,7 @@ rna:
     is_cluster_genes: False
     is_hierarchical_clusters: True
     clustering_threshold: 0.7
-    scaling_method: "StandardScaler"
+    scaling_method: "MinMaxScaler"
     scaling_params: {}
     var_threshold: 0.0
     root_path: "../"
@@ -13,7 +13,7 @@ cnv:
     is_cluster_genes: False
     is_hierarchical_clusters: False
     clustering_threshold: 0.7
-    scaling_method: "StandardScaler"
+    scaling_method: "MinMaxScaler"
     scaling_params: {}
     var_threshold: 0.0
     root_path: "../"
@@ -28,7 +28,7 @@ mri:
 dnam:
     is_cluster_genes: False
     is_hierarchical_clusters: True
-    scaling_method: "StandardScaler"
+    scaling_method: "MinMaxScaler"
     scaling_params: {}
     clustering_threshold: 0.7
     var_threshold: 0.0
