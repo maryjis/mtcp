@@ -1,0 +1,62 @@
+experiment_name: "multimodal_rna_dnam_wsi_boosting_test"
+n_epochs: 10
+n_intervals: 20
+random_seed: 1380
+
+optimizers:
+    - name: "Adam"
+      params:
+          lr: 1e-4 # 1e-3
+          weight_decay: 1e-2
+    - name: "Adam"
+      params:
+          lr: 1e-4 # 1e-3
+          weight_decay: 1e-2
+    - name: "Adam"
+      params:
+          lr: 1e-4 # 1e-3
+          weight_decay: 1e-2
+    
+schedulers: 
+    - name: "CosineAnnealingLR"
+      params:
+        eta_min: 5e-6
+    - name: "CosineAnnealingLR"
+      params:
+        eta_min: 5e-6
+    - name: "CosineAnnealingLR"
+      params:
+        eta_min: 5e-6
+
+type: "multimodal"
+strategy: "boosting_survival" # mae, survival, boosting_survival
+
+modalities: ["rna", "dnam", "wsi"]
+lambdas: [1.0, 0.0, 0.0]
+
+multimodal_intersection_test: true
+architecture: "MAE"
+splits: 5
+# max_samples_per_split: 1000
+save_path : "outputs/models/"
+project_ids: ["GBM", "LGG"]
+data_path: "src/data/dataset_full_tcga_all_balanced.csv"
+# rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
+device: "cuda:0"
+#available_gpus:  [0]  # Указываем, какие GPU можно использовать
+remove_nan_column: 'RNA'
+batch_size: 24
+
+log:
+    logging: True
+    wandb_project: "cancer_mtcp"
+    wandb_run_name: "survival_boosting_wsi_dna_rna"
+
+# early_stopping:
+#     early_stopper:
+#         patience: 7
+#         eps: 0
+#         smoothing: "running_average"
+#         smoothing_period: 5
+#         direction: "min"
+#     value_to_track: "task_loss"

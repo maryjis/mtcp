@@ -1,4 +1,4 @@
-experiment_name: "multimodal_rna_dna_wsi_minmax1e3_bigset_balanced_200_mae_20p_may"
+experiment_name: "multimodal_rna_dna_wsi_1e3_bigset_balanced_200_mae_29_may"
 n_epochs: 200
 n_intervals: 20
 random_seed: 1380

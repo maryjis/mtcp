@@ -383,7 +383,8 @@ def load_splits(data_path: Path, fold_ind : int, remove_nan_column : str,
             dataset_val = dataset_val.sample(max_samples_per_split)
             dataset_test = dataset_test.sample(max_samples_per_split)
             print(f"WARNING: max_samples_per_split={max_samples_per_split} is set.")
-        
+            
+        print('Apply max_samples_per_test', dataset_train.shape)
         if multimodal_intersection_test:
             dataset_intersection_test = dataset_test.copy()
             for modality in modalities:

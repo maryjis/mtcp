@@ -5,6 +5,7 @@ from src.unimodal.trainer import UnimodalSurvivalTrainer,  UnimodalMAETrainer
 from pathlib import Path
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.multimodal.trainer import MultiModalMAETrainer, MultiModalSurvivalTrainer
+from src.multimodal.ensemble_train import MultimodalBoostingSurvivalTrainer
 
 @hydra.main(version_base=None, config_path="src/configs", config_name="multimodal_config")
 def run(cfg : DictConfig) -> None:
@@ -22,7 +23,7 @@ def run(cfg : DictConfig) -> None:
                 print("Model path", f"outputs/models/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth")
                 cfg.model.pretrained_model_path = f"outputs/models/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth"
         
-             
+        print("Define splits: ")     
         splits = load_splits(
             Path(cfg.base.data_path), 
             fold_ind, 
@@ -48,6 +49,8 @@ def run(cfg : DictConfig) -> None:
                 trainer = MultiModalMAETrainer(splits, cfg)
             elif cfg.base.strategy == "survival":
                   trainer = MultiModalSurvivalTrainer(splits, cfg)
+            elif cfg.base.strategy == "boosting_survival":
+                trainer = MultimodalBoostingSurvivalTrainer(splits, cfg)
             else:
                 raise NotImplementedError(f"Such strategy - {cfg.base.strategy} isn't implemented in multimodal approach.")
         else:

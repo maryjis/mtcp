@@ -253,7 +253,7 @@ class UnimodalSurvivalTrainer(Trainer):
                                               num_workers=self.cfg.base.get("num_workers", 0), drop_last=True if split == "train" else False)
                             for split in splits.keys()}
 
-        self.model =self.initialise_models().to(cfg.base.device)
+        self.model =self.initialise_models(self.cfg.base.modalities[0], self.cfg.model).to(cfg.base.device)
         self.initialise_loss()
 
         print(self.model)
@@ -335,42 +335,42 @@ class UnimodalSurvivalTrainer(Trainer):
         
         return datasets
  
-    def initialise_models(self):
+    def initialise_models(self, modality, model_cfg):
         # TODO check that is ok for multimodal
-        if self.cfg.base.modalities[0]=="rna": 
+        if modality=="rna": 
                 if self.cfg.base.architecture=="MAE":
-                    return initialise_rna_mae_model(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+                    return initialise_rna_mae_model(ViTMAEConfig(**OmegaConf.to_container(model_cfg)))
                 elif self.cfg.base.architecture=="CNN":
-                    return initialise_rna_model(self.cfg.model)
+                    return initialise_rna_model(model_cfg)
                 else:
                     raise NotImplementedError("Exist only for rna. Initialising datasets for other modalities aren't declared")
-        elif self.cfg.base.modalities[0]=="mri":
+        elif modality=="mri":
                 if self.cfg.base.architecture=="MAE":
-                    return MriMaeSurvivalModel(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+                    return MriMaeSurvivalModel(ViTMAEConfig(**OmegaConf.to_container(model_cfg)))
                 elif self.cfg.base.architecture=="CNN":
-                    return MRIEmbeddingEncoder(self.cfg.model.input_embedding_dim, self.cfg.model.dropout, self.cfg.base.n_intervals)
+                    return MRIEmbeddingEncoder(model_cfg.input_embedding_dim, model_cfg.dropout, self.cfg.base.n_intervals)
                 else:
                     raise NotImplementedError("Exist only MAE and CNN architectures for mri modality")
-        elif self.cfg.base.modalities[0]=="dnam":
+        elif modality=="dnam":
                 if self.cfg.base.architecture=="MAE":
-                    return initialise_dnam_mae_model(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+                    return initialise_dnam_mae_model(ViTMAEConfig(**OmegaConf.to_container(model_cfg)))
                 elif self.cfg.base.architecture=="CNN":
-                    return initialise_dnam_model(self.cfg.model)
+                    return initialise_dnam_model(model_cfg)
                 else:
                     raise NotImplementedError("Exist only for rna. Initialising datasets for other modalities aren't declared")
-        elif self.cfg.base.modalities[0]=="cnv":
+        elif modality=="cnv":
                 if self.cfg.base.architecture=="MAE":
-                    return initialise_cnv_mae_model(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+                    return initialise_cnv_mae_model(ViTMAEConfig(**OmegaConf.to_container(model_cfg)))
                 else:
                     raise NotImplementedError("Exist only MAE for cnv. Initialising datasets for other modalities aren't declared")
-        elif self.cfg.base.modalities[0]=="wsi":
+        elif modality=="wsi":
                 if self.cfg.base.architecture=="MAE":
-                    return WsiMaeSurvivalModel(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+                    return WsiMaeSurvivalModel(ViTMAEConfig(**OmegaConf.to_container(model_cfg)))
                 elif self.cfg.base.architecture=="CNN":
-                     return WSIEncoder(embedding_dim=self.cfg.model.input_embedding_dim, depth=self.cfg.model.depth,
-                                      heads=self.cfg.model.heads, dim=self.cfg.model.dim, pool=self.cfg.model.pool,
-                                      dim_head=self.cfg.model.dim_head, mlp_dim=self.cfg.model.mlp_dim, dropout=self.cfg.model.dropout,
-                                      emb_dropout=self.cfg.model.emb_dropout, n_outputs=self.cfg.model.n_outputs)
+                     return WSIEncoder(embedding_dim=model_cfg.input_embedding_dim, depth=model_cfg.depth,
+                                      heads=model_cfg.heads, dim=model_cfg.dim, pool=model_cfg.pool,
+                                      dim_head=model_cfg.dim_head, mlp_dim=model_cfg.mlp_dim, dropout=model_cfg.dropout,
+                                      emb_dropout=model_cfg.emb_dropout, n_outputs=model_cfg.n_outputs)
                 else:
                     raise NotImplementedError("Exist only MAE and CNN architectures for mri modality")    
         else:
