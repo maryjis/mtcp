@@ -171,7 +171,7 @@ class WsiMAEModel(ViTMAEModel):
         # patches = patches.flatten(2)
         return patches
     
-    def unpatchify(self, imgs):
+    def unpatchify(self, imgs, original_wsi_size: int=None):
         batch_size = imgs.shape[0]
         patch_size = self.config.patch_size
         channels = self.config.num_channels
@@ -187,7 +187,7 @@ class WsiMAEModel(ViTMAEModel):
             c=channels,
             p1=patch_size,
             p2=patch_size
-        )
+        ).unsqueeze(1)
 
     def forward(self, imgs, is_multimodal: bool = False, **kwargs):
  

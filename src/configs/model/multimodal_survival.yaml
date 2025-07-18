@@ -1,5 +1,5 @@
 
-modalities: ["rna", "dnam"]
+modalities: ["rna", "dnam", "wsi"]
 
 defaults: 
   - rna_model: survival
@@ -37,7 +37,7 @@ pretrained_model_name: "multimodal_rna_dna_wsi_minmax1e3_bigset_balanced_200_mae
 pretrained_model_path: ""
 freezing_strategy: True
 
-missing_modalities_strategy: ""
+missing_modalities_strategy: "decoder"
 mm_pretrained_model_name:  "multimodal_rna_dna_wsi_minmax1e3_bigset_balanced_200_mae_20p_may"
 # "multimodal_rna_dna_smallset_800_mae_29_march"
 mm_pretrained_model_path: ""
