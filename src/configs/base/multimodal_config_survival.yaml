@@ -1,12 +1,12 @@
-experiment_name: "multimodal_rna_dnam_wsi_minmax1e3_balanced_pretrained_survival"
-n_epochs: 20
+experiment_name: "multimodal_rna_dnam_wsi_balanced_survival"
+n_epochs: 50
 n_intervals: 20
 random_seed: 1380
 
 optimizer:
     name: "Adam"
     params:
-        lr: 1e-4 # 1e-3
+        lr: 1e-3 # 1e-3
         weight_decay: 1e-2
     
 scheduler: 
@@ -23,7 +23,7 @@ multimodal_intersection_test: true
 architecture: "MAE"
 splits: 5
 save_path : "outputs/models/"
-project_ids: ["KIRC"]
+project_ids: ["LGG", "GBM"]
 data_path: "src/data/dataset_full_tcga_all_balanced.csv"
 rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
 device: "cuda:0"
@@ -34,7 +34,7 @@ batch_size: 24
 log:
     logging: True
     wandb_project: "cancer_mtcp"
-    wandb_run_name: "survival_pretrained_wsi_dna_rna"
+    wandb_run_name: "survival_wsi_dna_rna"
 
 # early_stopping:
 #     early_stopper:
