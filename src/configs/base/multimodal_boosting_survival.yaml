@@ -1,5 +1,6 @@
 experiment_name: "multimodal_rna_dnam_wsi_boosting_test"
-n_epochs: 10
+n_epochs: 5
+n_epochs_boosting: 10
 n_intervals: 20
 random_seed: 1380
 
@@ -10,11 +11,11 @@ optimizers:
           weight_decay: 1e-2
     - name: "Adam"
       params:
-          lr: 1e-4 # 1e-3
+          lr: 1e-3 # 1e-3
           weight_decay: 1e-2
     - name: "Adam"
       params:
-          lr: 1e-4 # 1e-3
+          lr: 1e-3 # 1e-3
           weight_decay: 1e-2
     
 schedulers: 
@@ -31,8 +32,8 @@ schedulers:
 type: "multimodal"
 strategy: "boosting_survival" # mae, survival, boosting_survival
 
-modalities: ["rna", "dnam", "wsi"]
-lambdas: [1.0, 0.0, 0.0]
+modalities: ["wsi", "dnam", "rna"]
+lambdas: [1.0, 1.0, 1.0]
 
 multimodal_intersection_test: true
 architecture: "MAE"

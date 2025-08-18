@@ -71,7 +71,7 @@ class MultimodalBoostingSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrain
         for i in range(1,len(self.modalities)):
             self.criterions.append(nn.MSELoss())
             self.optimizers.append(AdamW(self.models[i][1].parameters(), **self.cfg.base.optimizers[i].params))
-            self.schedulers.append(CosineAnnealingLR(self.optimizers[i], T_max=self.cfg.base.n_epochs,**self.cfg.base.schedulers[i].params))
+            self.schedulers.append(CosineAnnealingLR(self.optimizers[i], T_max=self.cfg.base.n_epochs_boosting,**self.cfg.base.schedulers[i].params))
       
     def _forward_all(self, data, mask , max_i = None):
         """
@@ -145,9 +145,7 @@ class MultimodalBoostingSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrain
     def __boosting_step__(self,split,fold_ind, dataloader, i, device):
         total_task_loss =0
         num_samples = 0
-        print("Boosting step")
         for batch in dataloader:
-            print("bs batch")
             data, mask,  time, event = batch
             data = {modality :value.to(device) for modality, value in data.items()}
             logits = self._forward_all(data, mask,  max_i=i)
@@ -213,37 +211,29 @@ class MultimodalBoostingSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrain
                     train_metrics_fm.update({"epoch": epoch})
                     if self.cfg.base.log.logging:
                         wandb.log({f"train_first_model/fold_{fold_ind}/{key}" : value for key, value in train_metrics_fm.items()})
-                        
+                    with torch.no_grad():    
+                        val_metrics = self.__loop__("val",fold_ind, self.dataloaders['val'], self.cfg.base.device)
+                        val_metrics.update({"epoch": epoch})    
+                        if self.cfg.base.log.logging:
+                            wandb.log({f"val_first_model/fold_{fold_ind}/{key}" : value for key, value in val_metrics.items()})        
 
             else:
-                self.models[i][1].train()
-                print("Run boosting training: ")
-                train_metrics_boost = self.__boosting_step__("train", fold_ind, self.dataloaders['train'], i, self.cfg.base.device)
-                train_metrics_boost.update({"epoch": epoch})
-                if self.cfg.base.log.logging:
-                        wandb.log({f"train_bosting_model_{i}/fold_{fold_ind}/{key}" : value for key, value in train_metrics_boost.items()})
-
-            print("Val...")
-            if i == 0:
-                self.models[i][1].eval()
-                with torch.no_grad():    
-                    val_metrics = self.__loop__("val",fold_ind, self.dataloaders['val'], self.cfg.base.device)
-                    val_metrics.update({"epoch": epoch})    
+                print("Run boosting training : ")
+                for epoch in tqdm(range(self.cfg.base.n_epochs_boosting)):
+                    self.models[i][1].train()
+                    train_metrics_boost = self.__boosting_step__("train", fold_ind, self.dataloaders['train'], i, self.cfg.base.device)
+                    train_metrics_boost.update({"epoch": epoch})
                     if self.cfg.base.log.logging:
-                        wandb.log({f"val_first_model/fold_{fold_ind}/{key}" : value for key, value in val_metrics.items()})
-            else:
-                for i in range(i+1):
-                    self.models[i][1].eval()
-                with torch.no_grad(): 
-                    # val_mse = self.__boosting_step__("test", fold_ind, self.dataloaders['val'], i, self.cfg.base.device)
-                    # val_mse.update({"epoch": epoch})
-                    # if self.cfg.base.log.logging:
-                    #         wandb.log({f"val_mse_{i}/fold_{fold_ind}/{key}" : value for key, value in val_mse.items()})
-
-                    val_metrics = self.enssemble_evaluate(fold_ind, self.dataloaders['val'], self.cfg.base.device, max_i=i)
-                    val_metrics.update({"epoch": epoch})    
-                    if self.cfg.base.log.logging:
-                        wandb.log({f"val_boosting_enssemble_model_{i}/fold_{fold_ind}/{key}" : value for key, value in val_metrics.items()})
+                            wandb.log({f"train_bosting_model_{i}/fold_{fold_ind}/{key}" : value for key, value in train_metrics_boost.items()})
+                    with torch.no_grad():
+                        # val_metrics_boost = self.__boosting_step__("val", fold_ind, self.dataloaders['val'], i, self.cfg.base.device)
+                        # val_metrics_boost.update({"epoch": epoch})    
+                        # if self.cfg.base.log.logging:
+                        #     wandb.log({f"val_boosting_model_{i}/fold_{fold_ind}/{key}" : value for key, value in val_metrics_boost.items()})
+                        val_metrics_ens = self.enssemble_evaluate(fold_ind, self.dataloaders['val'], self.cfg.base.device, max_i=i)
+                        val_metrics_ens.update({"epoch": epoch})    
+                        if self.cfg.base.log.logging:
+                            wandb.log({f"val_boosting_enssemble_model_{i}/fold_{fold_ind}/{key}" : value for key, value in val_metrics_ens.items()})
                     
         return val_metrics
         
@@ -257,8 +247,8 @@ class MultimodalBoostingSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrain
                 test_metrics_intersection = self.enssemble_evaluate(fold_ind, self.dataloaders['test_intersection'], self.cfg.base.device)
             if self.cfg.base.log.logging:
                 wandb.log({f"test/fold_{fold_ind}/{key}" : value for key, value in test_metrics.items()})
-            if "test_intersection" in self.dataloaders:
-                wandb.log({f"test_intersection/fold_{fold_ind}/{key}" : value for key, value in test_metrics_intersection.items()})
+                if "test_intersection" in self.dataloaders:
+                    wandb.log({f"test_intersection/fold_{fold_ind}/{key}" : value for key, value in test_metrics_intersection.items()})
 
         return test_metrics, test_metrics_intersection 
 
