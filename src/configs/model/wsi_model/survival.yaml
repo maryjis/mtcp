@@ -22,7 +22,7 @@ patch_size: 16
 qkv_bias: true
 is_load_pretrained: True
 pretrained_model_name: "unimodal_wsi_800_mae_2conv_all_data_balanced/unimodal_wsi_800_mae_2conv_all_data_balanced"
-# pretrained_model_path: ""
+pretrained_model_path: ""
 output_dim: 20
 max_patches_per_sample: 10
 num_patches: 10

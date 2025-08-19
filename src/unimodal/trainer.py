@@ -49,11 +49,13 @@ from src.early_stopper import EarlyStopper
 
 from src.unimodal.cnv.models import CNVMAEForPreTraining
 import math
+from src.utils import ExperimentTracker
 
 class Trainer(object):
-    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
+    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker):
         self.cfg = cfg
         self.preproc = self.initialise_preprocessing(splits, self.cfg.base.modalities[0])
+        self.tracker = tracker
  
     def initialise_preprocessing(self, splits, modality):
         
@@ -152,7 +154,7 @@ class Trainer(object):
                 train_metrics = self.__loop__("train",fold_ind, self.dataloaders['train'], self.cfg.base.device)
                 train_metrics.update({"epoch": epoch})
                 if self.cfg.base.log.logging:
-                    wandb.log({f"train/fold_{fold_ind}/{key}" : value for key, value in train_metrics.items()})
+                    self.tracker.log_metrics({f"train/fold_{fold_ind}/{key}" : value for key, value in train_metrics.items()}, steps=epoch)
 
                 prof.step()
                 
@@ -162,13 +164,13 @@ class Trainer(object):
                     val_metrics = self.__loop__("val",fold_ind, self.dataloaders['val'], self.cfg.base.device)
                 val_metrics.update({"epoch": epoch})    
                 if self.cfg.base.log.logging:
-                    wandb.log({f"val/fold_{fold_ind}/{key}" : value for key, value in val_metrics.items()})
+                    self.tracker.log_metrics({f"val/fold_{fold_ind}/{key}" : value for key, value in val_metrics.items()}, steps=epoch)
 
                 with torch.no_grad():    
                     test_metrics = self.__loop__("test",fold_ind, self.dataloaders['test'], self.cfg.base.device)
                 test_metrics.update({"epoch": epoch})    
                 if self.cfg.base.log.logging:
-                    wandb.log({f"test/fold_{fold_ind}/{key}" : value for key, value in test_metrics.items()})
+                    self.tracker.log_metrics({f"test/fold_{fold_ind}/{key}" : value for key, value in test_metrics.items()}, steps=epoch)
                     
                 prof.step()
   
@@ -218,18 +220,18 @@ class Trainer(object):
                 if "test_intersection" in self.dataloaders:
                     test_metrics_intersection = self.__loop__("test",fold_ind, self.dataloaders['test_intersection'], self.cfg.base.device)
                 if self.cfg.base.log.logging:
-                    wandb.log({f"test/fold_{fold_ind}/{key}" : value for key, value in test_metrics.items()})
+                    self.tracker.log_metrics({f"test/fold_{fold_ind}/{key}" : value for key, value in test_metrics.items()}, steps =1)
                     if "test_intersection" in self.dataloaders:
-                        wandb.log({f"test_intersection/fold_{fold_ind}/{key}" : value for key, value in test_metrics_intersection.items()})
+                        self.tracker.log_metrics({f"test_intersection/fold_{fold_ind}/{key}" : value for key, value in test_metrics_intersection.items()}, steps=1)
 
             return test_metrics, test_metrics_intersection   
         
 
 class UnimodalSurvivalTrainer(Trainer):
     
-    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
+    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker):
         
-        super().__init__(splits, cfg)
+        super().__init__(splits, cfg, tracker)
         
         transforms = None
         if cfg.base.modalities[0]=="rna":
