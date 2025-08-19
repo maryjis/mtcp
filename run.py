@@ -13,7 +13,13 @@ def run(cfg : DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))
     seed_everything(cfg.base.random_seed)
     if cfg.base.log.logging:
-        init_wandb_logging(cfg)
+        if cfg.base.log.logging_platform == "wandb":
+            tracker = WandbExperimentTracker(cfg)
+        elif cfg.base.log.logging_platform == "neptune":
+            tracker = NeptuneExperimentTracker(cfg)
+        else:
+            raise NotImplementedError(f"Such logging platform - {cfg.base.log.logging_platform} isn't implemented")
+        
     all_valid_metrics, all_test_metrics , all_test_metrics_in_intersection =[], [], []
     for fold_ind in range(cfg.base.splits):
         print(f"Fold #{fold_ind}")
@@ -37,20 +43,20 @@ def run(cfg : DictConfig) -> None:
         if cfg.base.type == 'unimodal':
 
             if cfg.base.strategy == "survival":
-                trainer = UnimodalSurvivalTrainer(splits, cfg)
+                trainer = UnimodalSurvivalTrainer(splits, cfg, tracker)
             elif cfg.base.strategy == "mae": 
-                trainer = UnimodalMAETrainer(splits, cfg)
+                trainer = UnimodalMAETrainer(splits, cfg, tracker)
             else:
                 raise NotImplementedError(f"Such strategy - {cfg.base.strategy} isn't implemented in unimodal approach.")
         elif cfg.base.type == 'multimodal':
               
             cfg = add_model_paths_to_config(cfg,fold_ind)                      
             if cfg.base.strategy == "mae": 
-                trainer = MultiModalMAETrainer(splits, cfg)
+                trainer = MultiModalMAETrainer(splits, cfg, tracker)
             elif cfg.base.strategy == "survival":
-                  trainer = MultiModalSurvivalTrainer(splits, cfg)
+                  trainer = MultiModalSurvivalTrainer(splits, cfg, tracker)
             elif cfg.base.strategy == "boosting_survival":
-                trainer = MultimodalBoostingSurvivalTrainer(splits, cfg)
+                trainer = MultimodalBoostingSurvivalTrainer(splits, cfg, tracker)
             else:
                 raise NotImplementedError(f"Such strategy - {cfg.base.strategy} isn't implemented in multimodal approach.")
         else:
@@ -73,8 +79,8 @@ def run(cfg : DictConfig) -> None:
         final_metrics = {"valid": final_valid_metrics, "test": final_test_metrics}
         if cfg.base.get("multimodal_intersection_test", None):
             final_metrics.update({"test_in_intersection": final_test_metrics_intersection})
-        wandb.summary["final"] =final_metrics
-        wandb.finish()
+        tracker.log_summary(final_metrics)
+        tracker.finish()
 
     return final_test_metrics
 

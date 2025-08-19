@@ -16,12 +16,14 @@ from src.unimodal.trainer import Trainer, UnimodalSurvivalTrainer, UnimodalMAETr
 from src.multimodal.models import MultiMaeForPretraining, MultiMaeForSurvival
 import torch
 from src.utils import check_dir_exists, count_parameters, print_vit_sizes
+from src.utils import ExperimentTracker
 
 class MultiModalTrainer(Trainer):
-    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
+    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker):
         self.cfg =cfg
         self.preproc = self.initialise_preprocessing(splits, self.cfg.base.modalities)
         print(self.preproc)
+        self.tracker = tracker
  
     def initialise_preprocessing(self, splits, modalities):
         preproc_dict = {}
@@ -44,8 +46,8 @@ class MultiModalTrainer(Trainer):
 
 class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
     
-    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
-        super().__init__(splits, cfg)
+    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker):
+        super().__init__(splits, cfg, tracker)
         # TODO MRI - done preprocess! 
         cfg.model.rna_model.size = cfg.model.rna_model.size if cfg.model.rna_model.get("size", None) else math.ceil(len(self.preproc["rna"].get_column_order()) /cfg.model.rna_model.patch_size)* cfg.model.rna_model.patch_size
         transforms = {"rna": padded_transforms_with_scaling(self.preproc["rna"].get_scaling(), cfg.model.rna_model.size), 
@@ -126,8 +128,8 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
     
     
 class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
-    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
-        super().__init__(splits, cfg)
+    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker):
+        super().__init__(splits, cfg, tracker)
         ## TODO MRI add transforms!!
         cfg.model.rna_model.size = cfg.model.rna_model.size if cfg.model.rna_model.get("size", None) else math.ceil(len(self.preproc["rna"].get_column_order()) /cfg.model.rna_model.patch_size)* cfg.model.rna_model.patch_size
         transforms = {"rna": padded_transforms_with_scaling(self.preproc["rna"].get_scaling(), cfg.model.rna_model.size),
