@@ -6,7 +6,7 @@ random_seed: 1380
 optimizer:
     name: "AdamW"
     params:
-        lr: 2e-5
+        lr: 1.5e-5
         weight_decay: 1e-2
 
 scheduler: 
@@ -20,14 +20,18 @@ strategy: "survival" # mae, survival
 modalities: ["wsi"] #rna, mri
 architecture: "CNN"
 splits: 5
-data_path: "/home/a.beliaeva/mtcp/updated_utf8.csv"
+project_ids: ["LGG", "GBM"]
+data_path: "src/data/dataset_full_tcga_all_balanced.csv"
 root_path: "../"
-save_path : "/home/a.beliaeva/mtcp/src/outputs/models/main_base/"
+save_path : "outputs/models/"
 device: "cuda:2"
 remove_nan_column: 'WSI'
 batch_size: 24
 
 log:
     logging: True
-    wandb_project: "cancer_mtcp"
-    wandb_run_name: ${base.experiment_name}
+    logging_platform: "neptune"
+    project_name: "almachan2358/cancer-mtcp"
+    run_name: "survival1"
+    api_token: "eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiI1Nzg4MGQxNS0zMjM1LTQ4NTUtYTViYy01ZjExNWU4N2JiOTYifQ=="
+

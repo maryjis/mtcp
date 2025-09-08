@@ -1,13 +1,13 @@
 
-modalities: ["rna", "dnam", "wsi"]
+modalities: ["wsi"]
 
 defaults: 
-  - rna_model: survival
-  - mri_model: survival
-  - dnam_model: survival
+  # - rna_model: survival
+  # - mri_model: survival
+  # - dnam_model: survival
   - wsi_model: survival
-  - cnv_model: survival
-  - mm_decoder_config: multimodal_mae
+  # - cnv_model: survival
+  # - mm_decoder_config: multimodal_mae
 
 
 hidden_size: 256
@@ -48,7 +48,7 @@ return_order: true
 
 contrastive_loss: false
 
-encoder_fusion_strategy: "masked_attention"
+encoder_fusion_strategy: ""
 
 encoder_fusion_depth: 1
 encoder_fusion_dim: 256

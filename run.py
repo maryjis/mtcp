@@ -6,11 +6,23 @@ from pathlib import Path
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.multimodal.trainer import MultiModalMAETrainer, MultiModalSurvivalTrainer
 from src.multimodal.ensemble_train import MultimodalBoostingSurvivalTrainer
+import logging
 
-@hydra.main(version_base=None, config_path="src/configs", config_name="multimodal_config")
+logging.basicConfig(
+    level=logging.DEBUG,  # Включаем подробный уровень
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.FileHandler("train_debug.log"),  # лог в файл
+        logging.StreamHandler()  # лог в stdout
+    ]
+)
+
+logger = logging.getLogger(__name__)
+
+@hydra.main(version_base=None, config_path="src/configs", config_name="unimodal_config")
 def run(cfg : DictConfig) -> None:
     if not OmegaConf.has_resolver("eval"): OmegaConf.register_new_resolver("eval", eval) #arithmetic in config params
-    print(OmegaConf.to_yaml(cfg))
+    logger.info(OmegaConf.to_yaml(cfg))
     seed_everything(cfg.base.random_seed)
     if cfg.base.log.logging:
         if cfg.base.log.logging_platform == "wandb":
@@ -21,15 +33,15 @@ def run(cfg : DictConfig) -> None:
             raise NotImplementedError(f"Such logging platform - {cfg.base.log.logging_platform} isn't implemented")
         
     all_valid_metrics, all_test_metrics , all_test_metrics_in_intersection =[], [], []
-    for fold_ind in range(cfg.base.splits):
-        print(f"Fold #{fold_ind}")
+    for fold_ind in range(0, 2):
+        logger.info(f"Fold #{fold_ind}")
         cfg.base.save_path = f"outputs/models/{cfg.base.experiment_name}_split_{fold_ind}.pth"
         if cfg.model.get("is_load_pretrained", False):
             with open_dict(cfg):
-                print("Model path", f"outputs/models/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth")
+                logger.info(f"Model path outputs/models/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth")
                 cfg.model.pretrained_model_path = f"outputs/models/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth"
         
-        print("Define splits: ")     
+        logger.info("Define splits: ")     
         splits = load_splits(
             Path(cfg.base.data_path), 
             fold_ind, 
@@ -81,7 +93,7 @@ def run(cfg : DictConfig) -> None:
             final_metrics.update({"test_in_intersection": final_test_metrics_intersection})
         tracker.log_summary(final_metrics)
         tracker.finish()
-
+    logger.info(f"Final_test_metrics: {final_test_metrics}")
     return final_test_metrics
 
 if __name__ == "__main__":
