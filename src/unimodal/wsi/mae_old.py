@@ -49,6 +49,23 @@ class WsiMAEPatchEmbeddings(nn.Module):
         else:
             self.projection = nn.Conv2d(self.num_channels, self.hidden_size, kernel_size=self.patch_size, stride=self.patch_size)
 
+    def _split_patches(self, wsi_tensor):
+        """
+        Splits the input patches into subpatches.
+        Expected input: [batch_size, max_patches_per_sample, 3, 256, 256]
+        """
+        b, n, c, h, w = wsi_tensor.shape
+        p = self.patch_size
+
+        if h % p != 0 or w % p != 0:
+            raise ValueError(f"Image size ({h}, {w}) is not evenly divisible by ({p}, {p}).")
+
+        # unfold + permute + view
+        patches = wsi_tensor.unfold(3, p, p).unfold(4, p, p)  # -> [b, n, c, h//p, p, w//p, p]
+        patches = patches.permute(0, 1, 3, 5, 2, 4, 6).contiguous()
+        patches = patches.view(b, n * self.num_patches, c, p, p)
+
+        return patches
 
     def forward(self, wsi_tensor):
         # Splitting into subpatches
@@ -57,8 +74,10 @@ class WsiMAEPatchEmbeddings(nn.Module):
         b, n, c, h, w = patches.shape
         # Reshape to (batch_size * num_patches, c, h, w)
         patches = rearrange(patches, 'b n c h w -> (b n) c h w')
-        x = self.projection(patches).flatten(2).transpose(1, 2)  # [b*n,n_tokens, hidden_size]
-        print("x.shape: ", x.shape)
+
+        x = self.projection(patches).flatten(2).transpose(1, 2)  # [b*n, hidden_size]
+
+
         return x
 
 class WsiMAEEmbeddings(nn.Module):
@@ -143,6 +162,50 @@ class WsiMAEModel(ViTMAEModel):
         self.embeddings = WsiMAEEmbeddings(config)
         self.post_init()
 
+    def patchify(self, imgs, interpolate_pos_encoding: bool = False):
+        p = self.config.patch_size
+        b, n, c, h, w = imgs.shape
+        assert h == w == self.config.image_size 
+        assert h % p == 0 and w % p == 0 
+        patches = rearrange(imgs, 'b n c (h p1) (w p2) -> (b n) (h w) (c p1 p2)', p1=p, p2=p)
+        # patches = patches.flatten(2)
+        return patches
+    
+    def unpatchify(self, imgs, original_wsi_size: int=None):
+        batch_size = imgs.shape[0]
+        patch_size = self.config.patch_size
+        channels = self.config.num_channels
+        image_size = self.config.image_size
+        
+        h = w = image_size // patch_size
+
+        return rearrange(
+            imgs,
+            'b (h w) (c p1 p2) -> b c (h p1) (w p2)',
+            h=h,
+            w=w,
+            c=channels,
+            p1=patch_size,
+            p2=patch_size
+        ).unsqueeze(1)
+
+    def forward(self, imgs, is_multimodal: bool = False, **kwargs):
+ 
+        out = super().forward(imgs)
+  
+        
+        if not self.config.random_patch_selection:
+            N = self.config.max_patches_per_sample
+            B_new = out.last_hidden_state.shape[0]
+            B = B_new // N
+            seq_length = out.last_hidden_state.shape[1]
+
+            
+            out.last_hidden_state = out.last_hidden_state.view(B, N, seq_length, -1).mean(dim=1)
+            out.mask = out.mask.view(B, N, -1).mean(dim=1)
+            out.ids_restore = torch.arange(seq_length-1, device=out.ids_restore.device).repeat(B, 1)
+
+        return out
 
 
 class WsiMAEDecoderPred(nn.Module):
@@ -172,6 +235,18 @@ class WsiMAEDecoderPred(nn.Module):
 class WsiMAEDecoder(ViTMAEDecoder):
     def __init__(self, config, num_patches):
         super().__init__(config, num_patches)
+        self.decoder_pred = WsiMAEDecoderPred(config)
+        self.initialize_weights(num_patches)
+        
+    def initialize_weights(self, num_patches):
+        decoder_pos_embed = get_1d_sincos_pos_embed_from_grid(
+            self.decoder_pos_embed.shape[-1], np.arange(int(num_patches), dtype=np.float32))
+        decoder_pos_embed = np.concatenate([
+            np.zeros([1, self.decoder_pos_embed.shape[-1]]),
+            decoder_pos_embed
+        ], axis=0)
+        self.decoder_pos_embed.data.copy_(torch.from_numpy(decoder_pos_embed).float().unsqueeze(0))
+        torch.nn.init.normal_(self.mask_token, std=self.config.initializer_range)
 
 
 class WsiMAEForPreTraining(ViTMAEForPreTraining):
@@ -187,8 +262,7 @@ class WsiMAEForPreTraining(ViTMAEForPreTraining):
         b, n, c, h, w = imgs.shape
         assert h == w == self.config.image_size 
         assert h % p == 0 and w % p == 0
-        patches = rearrange(imgs, 'b n c h w -> (b n) c h w')
-        patches = super().patchify(patches, interpolate_pos_encoding=interpolate_pos_encoding)
+        patches = rearrange(imgs, 'b n c (h p1) (w p2) -> (b n) (h w) (c p1 p2)', p1=p, p2=p)
         # patches = patches.flatten(2)
         return patches
 
