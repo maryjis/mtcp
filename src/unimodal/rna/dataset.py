@@ -30,7 +30,7 @@ class OmicsDataset(BaseDataset):
             print("Preprocess Dataset.shape before ", self.rna_dataset.shape)
             self.rna_dataset =self.rna_dataset.loc[self.rna_dataset.project_id.isin(project_ids)]
             print(" Preprocess Dataset.shape after ", self.rna_dataset.shape)
-            self.rna_dataset =self.rna_dataset.iloc[:, :-2]
+        self.rna_dataset =self.rna_dataset.iloc[:, :-2]
             
         self.column_order = column_order
         self.column_name = column_name

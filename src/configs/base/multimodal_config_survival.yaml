@@ -17,7 +17,7 @@ scheduler:
 type: "multimodal"
 strategy: "survival" # mae, survival
 
-modalities: ["rna", "dnam", "wsi"]
+modalities: ["wsi"]
 
 multimodal_intersection_test: true
 architecture: "MAE"

@@ -152,11 +152,13 @@ class MultiMAEModel(PreTrainedModel):
             elif modality == "wsi":
                 cfg_wsi_model = ViTMAEConfig(**self.cfg.wsi_model)
                 encoder = None
+                print("cfg_wsi_model.is_load_pretrained: ", cfg_wsi_model.is_load_pretrained)
                 if cfg_wsi_model.is_load_pretrained:
+                    print("cfg_wsi_model.pretrained_model_path: ", cfg_wsi_model.pretrained_model_path)
                     # encoder = WSIEmbeddingMAEModel.from_pretrained(cfg_wsi_model.pretrained_model_path, config=cfg_wsi_model)
                     encoder = WsiMAEModel.from_pretrained(cfg_wsi_model.pretrained_model_path, config=cfg_wsi_model)
-                    for param in encoder.parameters():
-                        param.requires_grad = False
+                    # for param in encoder.parameters():
+                    #     param.requires_grad = False
                 else:
                     #encoder = WSIEmbeddingMAEModel(config =cfg_wsi_model)
                     encoder = WsiMAEModel(config =cfg_wsi_model)
