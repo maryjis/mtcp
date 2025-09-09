@@ -11,4 +11,5 @@ multirun/
 src/configs/optuna_unimodal_config.yaml
 src/configs/multistage_optuna_unimodal_config.yaml
 src/configs/schedule
+.neptune/
 

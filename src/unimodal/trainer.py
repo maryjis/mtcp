@@ -49,11 +49,34 @@ from src.early_stopper import EarlyStopper
 
 from src.unimodal.cnv.models import CNVMAEForPreTraining
 import math
+from src.utils import ExperimentTracker
+from transformers import get_cosine_schedule_with_warmup
+import psutil
+import torch
+import logging
+
+logging.basicConfig(
+    level=logging.DEBUG,  # Включаем подробный уровень
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.FileHandler("train_debug.log"),  # лог в файл
+        logging.StreamHandler()  # лог в stdout
+    ]
+)
+
+logger = logging.getLogger(__name__)
+
+
+def log_memory():
+    logger.info(f"[RAM] {psutil.virtual_memory().percent}% used")
+    logger.info(f"[GPU] Allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
+
 
 class Trainer(object):
-    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
+    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker):
         self.cfg = cfg
         self.preproc = self.initialise_preprocessing(splits, self.cfg.base.modalities[0])
+        self.tracker = tracker
  
     def initialise_preprocessing(self, splits, modality):
         
@@ -65,8 +88,8 @@ class Trainer(object):
                  scaling_method = UpperQuartileNormalizer 
             else:
                  scaling_method = None
-            print("Scaling method: ", scaling_method)
-            print("self.cfg.base.get(project_ids):", self.cfg.base.get("project_ids", None))
+            logger.debug(f"Scaling method: {scaling_method}")
+            logger.debug(f"project_ids: {self.cfg.base.get('project_ids', None)}")
             preproc = RNAPreprocessor(splits["train"], self.cfg.data.rna.rna_dataset_path, self.cfg.base.n_intervals, scaling_method, 
                                           self.cfg.data.rna.scaling_params, self.cfg.data.rna.var_threshold,
                                           self.cfg.data.rna.is_cluster_genes , self.cfg.data.rna.clustering_threshold, self.cfg.data.rna.get("is_hierarchical_clusters", False), project_ids = self.cfg.base.get("project_ids", None))
@@ -146,49 +169,51 @@ class Trainer(object):
         ) as prof:
             min_val = 1000000
             for epoch in tqdm(range(self.cfg.base.n_epochs)):
-                print("Train...")
-                
+                logger.info(f"Epoch {epoch}/{self.cfg.base.n_epochs} started")
+
                 self.model.train()
                 train_metrics = self.__loop__("train",fold_ind, self.dataloaders['train'], self.cfg.base.device)
                 train_metrics.update({"epoch": epoch})
                 if self.cfg.base.log.logging:
-                    wandb.log({f"train/fold_{fold_ind}/{key}" : value for key, value in train_metrics.items()})
+                    self.tracker.log_metrics({f"train/fold_{fold_ind}/{key}" : value for key, value in train_metrics.items()}, steps=epoch)
 
                 prof.step()
                 
-                print("Val...")
+                logger.debug(f"Val {epoch}")
                 self.model.eval()
                 with torch.no_grad():    
                     val_metrics = self.__loop__("val",fold_ind, self.dataloaders['val'], self.cfg.base.device)
                 val_metrics.update({"epoch": epoch})    
                 if self.cfg.base.log.logging:
-                    wandb.log({f"val/fold_{fold_ind}/{key}" : value for key, value in val_metrics.items()})
+                    self.tracker.log_metrics({f"val/fold_{fold_ind}/{key}" : value for key, value in val_metrics.items()}, steps=epoch)
 
                 with torch.no_grad():    
                     test_metrics = self.__loop__("test",fold_ind, self.dataloaders['test'], self.cfg.base.device)
                 test_metrics.update({"epoch": epoch})    
                 if self.cfg.base.log.logging:
-                    wandb.log({f"test/fold_{fold_ind}/{key}" : value for key, value in test_metrics.items()})
+                    self.tracker.log_metrics({f"test/fold_{fold_ind}/{key}" : value for key, value in test_metrics.items()}, steps=epoch)
                     
                 prof.step()
   
                 if self.cfg.base.get("early_stopping", None) is not None:
-                    print("Early stopping: ")
+                    logger.info("Early stopping: ")
                     if self.early_stopper.early_stop(val_metrics[self.cfg.base.early_stopping.value_to_track]):
                         break
                     if val_metrics[self.cfg.base.early_stopping.value_to_track]<= min_val:
-                        print(f"Archive min error on validation  {val_metrics[self.cfg.base.early_stopping.value_to_track]} , saving model...")
+                        logger.info(f"Archive min error on validation  {val_metrics[self.cfg.base.early_stopping.value_to_track]} , saving model...")
                         min_val = val_metrics[self.cfg.base.early_stopping.value_to_track]
                         check_dir_exists(self.cfg.base.save_path)
                         torch.save(self.model.state_dict(), self.cfg.base.save_path)
                 else:
                     check_dir_exists(self.cfg.base.save_path)
+                    logger.info(f'For {epoch} Saving model......: {self.cfg.base.save_path}')
                     torch.save(self.model.state_dict(), self.cfg.base.save_path)
+                log_memory()
 
         return val_metrics
     
     def evaluate(self, fold_ind : int):
-        print("Test...")
+        logger.debug(f"Test ..")
 
         with profile(
             activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
@@ -218,18 +243,18 @@ class Trainer(object):
                 if "test_intersection" in self.dataloaders:
                     test_metrics_intersection = self.__loop__("test",fold_ind, self.dataloaders['test_intersection'], self.cfg.base.device)
                 if self.cfg.base.log.logging:
-                    wandb.log({f"test/fold_{fold_ind}/{key}" : value for key, value in test_metrics.items()})
+                    self.tracker.log_metrics({f"test/fold_{fold_ind}/{key}" : value for key, value in test_metrics.items()}, steps =1)
                     if "test_intersection" in self.dataloaders:
-                        wandb.log({f"test_intersection/fold_{fold_ind}/{key}" : value for key, value in test_metrics_intersection.items()})
+                        self.tracker.log_metrics({f"test_intersection/fold_{fold_ind}/{key}" : value for key, value in test_metrics_intersection.items()}, steps=1)
 
             return test_metrics, test_metrics_intersection   
         
 
 class UnimodalSurvivalTrainer(Trainer):
     
-    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
+    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker):
         
-        super().__init__(splits, cfg)
+        super().__init__(splits, cfg, tracker)
         
         transforms = None
         if cfg.base.modalities[0]=="rna":
@@ -253,7 +278,7 @@ class UnimodalSurvivalTrainer(Trainer):
                                               num_workers=self.cfg.base.get("num_workers", 0), drop_last=True if split == "train" else False)
                             for split in splits.keys()}
 
-        self.model =self.initialise_models().to(cfg.base.device)
+        self.model =self.initialise_models(self.cfg.base.modalities[0], self.cfg.model).to(cfg.base.device)
         self.initialise_loss()
 
         print(self.model)
@@ -335,42 +360,42 @@ class UnimodalSurvivalTrainer(Trainer):
         
         return datasets
  
-    def initialise_models(self):
+    def initialise_models(self, modality, model_cfg):
         # TODO check that is ok for multimodal
-        if self.cfg.base.modalities[0]=="rna": 
+        if modality=="rna": 
                 if self.cfg.base.architecture=="MAE":
-                    return initialise_rna_mae_model(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+                    return initialise_rna_mae_model(ViTMAEConfig(**OmegaConf.to_container(model_cfg)))
                 elif self.cfg.base.architecture=="CNN":
-                    return initialise_rna_model(self.cfg.model)
+                    return initialise_rna_model(model_cfg)
                 else:
                     raise NotImplementedError("Exist only for rna. Initialising datasets for other modalities aren't declared")
-        elif self.cfg.base.modalities[0]=="mri":
+        elif modality=="mri":
                 if self.cfg.base.architecture=="MAE":
-                    return MriMaeSurvivalModel(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+                    return MriMaeSurvivalModel(ViTMAEConfig(**OmegaConf.to_container(model_cfg)))
                 elif self.cfg.base.architecture=="CNN":
-                    return MRIEmbeddingEncoder(self.cfg.model.input_embedding_dim, self.cfg.model.dropout, self.cfg.base.n_intervals)
+                    return MRIEmbeddingEncoder(model_cfg.input_embedding_dim, model_cfg.dropout, self.cfg.base.n_intervals)
                 else:
                     raise NotImplementedError("Exist only MAE and CNN architectures for mri modality")
-        elif self.cfg.base.modalities[0]=="dnam":
+        elif modality=="dnam":
                 if self.cfg.base.architecture=="MAE":
-                    return initialise_dnam_mae_model(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+                    return initialise_dnam_mae_model(ViTMAEConfig(**OmegaConf.to_container(model_cfg)))
                 elif self.cfg.base.architecture=="CNN":
-                    return initialise_dnam_model(self.cfg.model)
+                    return initialise_dnam_model(model_cfg)
                 else:
                     raise NotImplementedError("Exist only for rna. Initialising datasets for other modalities aren't declared")
-        elif self.cfg.base.modalities[0]=="cnv":
+        elif modality=="cnv":
                 if self.cfg.base.architecture=="MAE":
-                    return initialise_cnv_mae_model(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+                    return initialise_cnv_mae_model(ViTMAEConfig(**OmegaConf.to_container(model_cfg)))
                 else:
                     raise NotImplementedError("Exist only MAE for cnv. Initialising datasets for other modalities aren't declared")
-        elif self.cfg.base.modalities[0]=="wsi":
+        elif modality=="wsi":
                 if self.cfg.base.architecture=="MAE":
-                    return WsiMaeSurvivalModel(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+                    return WsiMaeSurvivalModel(ViTMAEConfig(**OmegaConf.to_container(model_cfg)))
                 elif self.cfg.base.architecture=="CNN":
-                     return WSIEncoder(embedding_dim=self.cfg.model.input_embedding_dim, depth=self.cfg.model.depth,
-                                      heads=self.cfg.model.heads, dim=self.cfg.model.dim, pool=self.cfg.model.pool,
-                                      dim_head=self.cfg.model.dim_head, mlp_dim=self.cfg.model.mlp_dim, dropout=self.cfg.model.dropout,
-                                      emb_dropout=self.cfg.model.emb_dropout, n_outputs=self.cfg.model.n_outputs)
+                     return WSIEncoder(embedding_dim=model_cfg.input_embedding_dim, depth=model_cfg.depth,
+                                      heads=model_cfg.heads, dim=model_cfg.dim, pool=model_cfg.pool,
+                                      dim_head=model_cfg.dim_head, mlp_dim=model_cfg.mlp_dim, dropout=model_cfg.dropout,
+                                      emb_dropout=model_cfg.emb_dropout, n_outputs=model_cfg.n_outputs)
                 else:
                     raise NotImplementedError("Exist only MAE and CNN architectures for mri modality")    
         else:
@@ -380,7 +405,10 @@ class UnimodalSurvivalTrainer(Trainer):
     def initialise_loss(self):    
         self.criterion = NLLLogistiHazardLoss()
         self.optimizer = AdamW(self.model.parameters(), **self.cfg.base.optimizer.params)
-        self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
+        # self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
+        self.scheduler = get_cosine_schedule_with_warmup(self.optimizer,
+                                                         num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"]),     # warmup = 40 epochs
+                                                         num_training_steps= self.cfg.base.n_epochs * len(self.dataloaders["train"]))  # cosine decay
         
     def __loop__(self,split, fold_ind, dataloader, device):
         total_task_loss =0
@@ -419,15 +447,15 @@ class UnimodalSurvivalTrainer(Trainer):
         
 class UnimodalMAETrainer(Trainer):
     
-    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
-        super().__init__(splits, cfg)
+    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker):
+        super().__init__(splits, cfg,  tracker)
         transforms = None
         if self.cfg.base.modalities[0]=="rna":
             OmegaConf.set_struct(cfg, False)
-            print("math.ceil(len(self.preproc.get_column_order()) /cfg.model.patch_size)* cfg.model.patch_size", math.ceil(len(self.preproc.get_column_order()) /cfg.model.patch_size)* cfg.model.patch_size)
+            logger.debug(f'math.ceil(len(self.preproc.get_column_order()) /cfg.model.patch_size)* cfg.model.patch_size: {math.ceil(len(self.preproc.get_column_order()) /cfg.model.patch_size)* cfg.model.patch_size}')
             #cfg.model["size"] = cfg.model.size if cfg.model.get("size", None) else math.ceil(len(self.preproc.get_column_order()) /cfg.model.patch_size)* cfg.model.patch_size
             transforms = padded_transforms_with_scaling(self.preproc.get_scaling(), cfg.model.get("size", None))
-            print("transforms: ", transforms)
+            logger.debug(f"transforms:{transforms} ")
         elif self.cfg.base.modalities[0]=="dnam":
             transforms = padded_transforms_scaling(self.preproc.get_scaling(), cfg.model.get("size", None))
         elif self.cfg.base.modalities[0]=="cnv":
@@ -439,22 +467,24 @@ class UnimodalMAETrainer(Trainer):
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
-        self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False, batch_size=cfg.base.batch_size  
-                                              if split == "train" else 1, num_workers=self.cfg.base.get("num_workers", 0), drop_last=True if split == "train" else False)
+        self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False, batch_size=cfg.base.batch_size, num_workers=self.cfg.base.get("num_workers", 0), drop_last=True if split == "train" else False)
                             for split in splits.keys()}
 
         self.model =self.initialise_models().to(cfg.base.device)
-        print(self.model)
+        logger.debug(f"Model: {self.model}")
         print_vit_sizes(self.model)
         torch.cuda.reset_peak_memory_stats(device=cfg.base.device)
-        print(f"gpu used {torch.cuda.max_memory_allocated(device=cfg.base.device)/1024/1024} Mb memory")
+        logger.debug(f"gpu used {torch.cuda.max_memory_allocated(device=cfg.base.device)/1024/1024} Mb memory")
         
         self.initialise_loss()
 
     
     def initialise_loss(self):
         self.optimizer = AdamW(self.model.parameters(), **self.cfg.base.optimizer.params)
-        self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
+        # self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
+        self.scheduler = get_cosine_schedule_with_warmup(self.optimizer,
+                                                         num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"]),     # warmup = 40 epochs
+                                                         num_training_steps= self.cfg.base.n_epochs * len(self.dataloaders["train"]))  # cosine decay
         
     def initialise_models(self):
         if self.cfg.base.modalities[0]=="rna":
@@ -485,7 +515,6 @@ class UnimodalMAETrainer(Trainer):
 
         elif modality == "mri":
             for split_name, split in splits.items():
-                print(self.cfg.data)
                 datasets[split_name] = MRIDataset(
                     split, 
                     self.cfg.data.mri.root_path,
@@ -535,18 +564,20 @@ class UnimodalMAETrainer(Trainer):
             if isinstance(batch, tuple) or isinstance(batch, list): data, mask = batch 
             elif isinstance(batch, dict): data = batch["image"]
             else: data = batch
-
             outputs =self.model(data.to(device))
-            
+            if torch.isnan(outputs.loss) or torch.isinf(outputs.loss):
+                logger.error(f"Invalid loss detected at batch {batch_idx}: {outputs.loss.item()}")
+                raise ValueError("Loss became NaN or Inf")
+
             if split=="train":
                 self.optimizer.zero_grad()
                 outputs.loss.backward()
                 self.optimizer.step()
             
-            total_loss+=outputs.loss*len(batch) #outputs.loss - mean loss across batch
+            total_loss+=outputs.loss.detach().item()*len(batch) #outputs.loss - mean loss across batch
             num_samples+=len(batch)
         
-        metrics = {"mse_loss": total_loss.cpu().detach().numpy() / num_samples}
+        metrics = {"mse_loss": total_loss / num_samples}
         
         if split=="train":
             self.scheduler.step()

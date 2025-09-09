@@ -1,38 +1,44 @@
 defaults: 
     - model: wsi_mae_model_pretrain
-    - base: wsi_mae_model
     - data: wsi_mae
 base:
-    experiment_name: "unimodal_wsi_800_mae_2conv_surv_1e_2_with_pyramid"
+    experiment_name: "unimodal_wsi_800_mae_macha_bigvit_pretrained_surv1"
     n_epochs: 50
+    warmup_epochs: 10 
     n_intervals: 20
     random_seed: 1380
 
     optimizer:
         name: "AdamW"
         params:
-            lr: 1e-2 #1e-3
-            weight_decay: 1e-2
+            lr: 1e-4
+            weight_decay: 0.05
+            # betas: [0.9, 0.99]
+            # eps: 1e-08
     
     scheduler: 
         name: "CosineAnnealingLR"
         params:
-            eta_min: 5e-6
+            eta_min: 5e-10
 
 
     type: "unimodal"
+    project_ids: ["LGG", "GBM"]
     strategy: "survival" # mae, survival
+    architecture: "MAE"
     modalities: ["wsi"] #rna, mri
     splits: 5
-    data_path: "/home/a.beliaeva/mtcp/src/data/dataset_glioma_with_treatment.csv"
+    data_path: "src/data/dataset_full_tcga_all_balanced.csv"
     root_path: "../"
-    save_path : "/home/a.beliaeva/mtcp/src/outputs/models/unimodal_wsi_800_mae_2conv_surv/"
-    device: "cuda:3"  # Указываем, что основное устройство - GPU 2
-    available_gpus: [3]  # Указываем, какие GPU можно использовать
+    save_path : "outputs/models/wsi-pretrained_macha_surv"
+    device: "cuda:1"  # Указываем, что основное устройство - GPU 2
+    available_gpus:  [1]  # Указываем, какие GPU можно использовать
     remove_nan_column: 'WSI_initial'
-    batch_size: 16
+    batch_size: 24
 
     log:
         logging: True
-        wandb_project: "cancer_mtcp"
-        wandb_run_name: ${base.experiment_name}
+        logging_platform: "neptune"
+        project_name: "almachan2358/cancer-mtcp"
+        run_name: "mae_wsi_macha_100"
+        api_token: "eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiI1Nzg4MGQxNS0zMjM1LTQ4NTUtYTViYy01ZjExNWU4N2JiOTYifQ=="

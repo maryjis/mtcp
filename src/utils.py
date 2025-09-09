@@ -11,7 +11,8 @@ from torch import nn
 import math
 from math import ceil
 from einops import rearrange, reduce
-
+import neptune
+from abc import ABC, abstractmethod
 
 MODALITY_TO_COLUMN_MAP ={"rna" : "RNA", "mri" : "MRI", "dnam" : "DNAm", "wsi": "WSI_initial", "cnv": "CNV"}
 
@@ -383,7 +384,8 @@ def load_splits(data_path: Path, fold_ind : int, remove_nan_column : str,
             dataset_val = dataset_val.sample(max_samples_per_split)
             dataset_test = dataset_test.sample(max_samples_per_split)
             print(f"WARNING: max_samples_per_split={max_samples_per_split} is set.")
-        
+            
+        print('Apply max_samples_per_test', dataset_train.shape)
         if multimodal_intersection_test:
             dataset_intersection_test = dataset_test.copy()
             for modality in modalities:
@@ -401,18 +403,88 @@ def load_splits(data_path: Path, fold_ind : int, remove_nan_column : str,
                     "test" : dataset_test.reset_index(drop=True)}
     else:
         raise Exception(f"Dataset file {data_path} didn't found.")
+ 
+class ExperimentTracker(ABC):   
+    def __init__(self, cfg : DictConfig):
+        self.cfg = cfg
+        self.run = None
+        
+    @abstractmethod    
+    def init_run(self):
+        pass
+    @abstractmethod
+    def log_metrics(self, metrics : dict,steps: float =None):
+        pass
+    @abstractmethod
+    def log_config(self, config : DictConfig):
+        pass
+    @abstractmethod
+    def log_summary(self, metrics : dict):
+        pass
+    @abstractmethod
+    def finish(self):
+        pass
+
+class WandbExperimentTracker(ExperimentTracker):
+    def __init__(self, cfg : DictConfig):
+        super().__init__(cfg)
+        self.run = self.init_run()
     
-def init_wandb_logging(cfg : DictConfig):
-    print(cfg)
-    cfg_dict = OmegaConf.to_container(cfg)
-    wandb.init(
-        project=cfg.base.log.wandb_project,
-        config=cfg_dict,
-        name=cfg.base.log.wandb_run_name
-    )
-      
-    #   wandb.define_metric("train/*", step_metric="epoch")
-    #   wandb.define_metric("valid/*", step_metric="epoch")
+    def init_run(self):
+        self.run = self.init_wandb_logging(self.cfg)
+        
+    def log_metrics(self, metrics : dict, steps: float =None):
+        self.run.log(metrics)
+
+    def init_wandb_logging(self, cfg : DictConfig):
+        print(cfg)
+        cfg_dict = OmegaConf.to_container(cfg)
+        return wandb.init(
+            project=cfg.base.log.project_name,
+            config=cfg_dict,
+            name=cfg.base.log.run_name
+        )
+    def log_summary(self, metrics : dict):
+         self.run.summary["final"] = metrics
+         
+    def finish(self):
+        self.run.finish()
+         
+class NeptuneExperimentTracker(ExperimentTracker):
+    def __init__(self, cfg : DictConfig):
+        super().__init__(cfg)
+        self.run = self.init_run()
+        cfg_dict = OmegaConf.to_container(cfg, resolve=True)
+        self.log_config(cfg_dict)
+        
+    def log_metrics(self, metrics : dict, steps: float =None):
+        for key, value in metrics.items():
+            self.run[key].append(value)
+        
+        
+    def log_config(self, config : DictConfig):
+        self.run['config'] =config
+        
+    def init_run(self):
+        return self.init_neptune_logging(self.cfg)
+        
+        
+    def init_neptune_logging(self,cfg : DictConfig):
+        print(cfg)
+        run =  neptune.init_run(
+            api_token=cfg.base.log.api_token,      # not needed if using environment variable
+            project=cfg.base.log.project_name           # not needed if using environment variable
+        )
+        return run
+    
+    def log_summary(self, metrics : dict):
+        new_metrics = {}
+        for key, value in metrics.items():
+            self.run[f"summary/{key}"] = value
+        
+    
+    def finish(self):
+        self.run.stop()
       
 def agg_fold_metrics(lst: list[dict[str, float]]):
     """Compute mean, min, max, std from cross validation metrics"""
@@ -445,6 +517,11 @@ def add_model_paths_to_config(cfg : DictConfig, fold_ind: int):
                     print("Model path", f"outputs/models/{cfg.model.dnam_model.pretrained_model_name}_split_{fold_ind}.pth")
                     cfg.model.dnam_model.pretrained_model_path = f"outputs/models/{cfg.model.dnam_model.pretrained_model_name}_split_{fold_ind}.pth"
             
+            if cfg.model.get("wsi_model", False):
+                with open_dict(cfg):
+                    print("Model path", f"outputs/models/{cfg.model.wsi_model.pretrained_model_name}_split_{fold_ind}.pth")
+                    cfg.model.wsi_model.pretrained_model_path = f"outputs/models/{cfg.model.wsi_model.pretrained_model_name}_split_{fold_ind}.pth"
+                    
             if cfg.model.get("missing_modalities_strategy", False)=="decoder":
                 with open_dict(cfg):
                     print("Model path", f"outputs/models/{cfg.model.mm_pretrained_model_name}_split_{fold_ind}.pth")
