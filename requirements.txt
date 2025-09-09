@@ -18,3 +18,7 @@ pyvips==2.2.1
 pillow
 flamingo_pytorch
 hydra-optuna-sweeper
+pyqtwebengine
+pyqt5
+neptune-scale
+timm

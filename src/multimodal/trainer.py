@@ -16,12 +16,14 @@ from src.unimodal.trainer import Trainer, UnimodalSurvivalTrainer, UnimodalMAETr
 from src.multimodal.models import MultiMaeForPretraining, MultiMaeForSurvival
 import torch
 from src.utils import check_dir_exists, count_parameters, print_vit_sizes
+from src.utils import ExperimentTracker
 
 class MultiModalTrainer(Trainer):
-    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
+    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker):
         self.cfg =cfg
         self.preproc = self.initialise_preprocessing(splits, self.cfg.base.modalities)
         print(self.preproc)
+        self.tracker = tracker
  
     def initialise_preprocessing(self, splits, modalities):
         preproc_dict = {}
@@ -44,8 +46,8 @@ class MultiModalTrainer(Trainer):
 
 class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
     
-    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
-        super().__init__(splits, cfg)
+    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker):
+        super().__init__(splits, cfg, tracker)
         # TODO MRI - done preprocess! 
         cfg.model.rna_model.size = cfg.model.rna_model.size if cfg.model.rna_model.get("size", None) else math.ceil(len(self.preproc["rna"].get_column_order()) /cfg.model.rna_model.patch_size)* cfg.model.rna_model.patch_size
         transforms = {"rna": padded_transforms_with_scaling(self.preproc["rna"].get_scaling(), cfg.model.rna_model.size), 
@@ -53,8 +55,7 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
                       "cnv" : padded_transforms_cnv_scaling(self.preproc["cnv"].get_scaling(), cfg.model.cnv_model.get("size", None)) if "cnv" in self.preproc.keys() else None,
                       "mri" : None, "wsi" : None }
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities, self.preproc, transforms)
-        self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False, batch_size=cfg.base.batch_size 
-                                              if split == "train" else 1, drop_last=True if split == "train" else False)
+        self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False, batch_size=cfg.base.batch_size, drop_last=True if split == "train" else False)
                             for split in splits.keys()}
         print("Device from config: ", cfg.base.device)
         self.model =self.initialise_models().to(cfg.base.device)
@@ -126,11 +127,12 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
     
     
 class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
-    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig):
-        super().__init__(splits, cfg)
+    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker):
+        super().__init__(splits, cfg, tracker)
         ## TODO MRI add transforms!!
-        cfg.model.rna_model.size = cfg.model.rna_model.size if cfg.model.rna_model.get("size", None) else math.ceil(len(self.preproc["rna"].get_column_order()) /cfg.model.rna_model.patch_size)* cfg.model.rna_model.patch_size
-        transforms = {"rna": padded_transforms_with_scaling(self.preproc["rna"].get_scaling(), cfg.model.rna_model.size),
+        if cfg.model.get("rna_model", None):
+            cfg.model.rna_model.size = cfg.model.rna_model.size if cfg.model.rna_model.get("size", None) else math.ceil(len(self.preproc["rna"].get_column_order()) /cfg.model.rna_model.patch_size)* cfg.model.rna_model.patch_size
+        transforms = {"rna": padded_transforms_with_scaling(self.preproc["rna"].get_scaling(), cfg.model.rna_model.size) if cfg.model.get("rna_model", None) else None,
                       "dnam" : padded_transforms_scaling(self.preproc["dnam"].get_scaling(), cfg.model.dnam_model.get("size", None)) if cfg.model.get("dnam_model", None) else None,
                       "mri" : None, "wsi" : None,
                       "cnv" : padded_transforms_cnv_scaling(self.preproc["cnv"].get_scaling(), cfg.model.cnv_model.get("size", None)) if "cnv" in self.preproc.keys() else None,

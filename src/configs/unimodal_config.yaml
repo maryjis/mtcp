@@ -1,4 +1,4 @@
 defaults: 
-    - model: cnv_mae
-    - base: cnv_base
-    - data: multimodal_data
+    - model: rna_mae
+    - base: unimodal_config_rna_mae
+    - data: rna_base

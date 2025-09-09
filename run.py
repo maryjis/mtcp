@@ -5,24 +5,43 @@ from src.unimodal.trainer import UnimodalSurvivalTrainer,  UnimodalMAETrainer
 from pathlib import Path
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
 from src.multimodal.trainer import MultiModalMAETrainer, MultiModalSurvivalTrainer
+from src.multimodal.ensemble_train import MultimodalBoostingSurvivalTrainer
+import logging
 
-@hydra.main(version_base=None, config_path="src/configs", config_name="multimodal_config")
+logging.basicConfig(
+    level=logging.DEBUG,  # Включаем подробный уровень
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.FileHandler("train_debug.log"),  # лог в файл
+        logging.StreamHandler()  # лог в stdout
+    ]
+)
+
+logger = logging.getLogger(__name__)
+
+@hydra.main(version_base=None, config_path="src/configs", config_name="unimodal_config")
 def run(cfg : DictConfig) -> None:
     if not OmegaConf.has_resolver("eval"): OmegaConf.register_new_resolver("eval", eval) #arithmetic in config params
-    print(OmegaConf.to_yaml(cfg))
+    logger.info(OmegaConf.to_yaml(cfg))
     seed_everything(cfg.base.random_seed)
     if cfg.base.log.logging:
-        init_wandb_logging(cfg)
+        if cfg.base.log.logging_platform == "wandb":
+            tracker = WandbExperimentTracker(cfg)
+        elif cfg.base.log.logging_platform == "neptune":
+            tracker = NeptuneExperimentTracker(cfg)
+        else:
+            raise NotImplementedError(f"Such logging platform - {cfg.base.log.logging_platform} isn't implemented")
+        
     all_valid_metrics, all_test_metrics , all_test_metrics_in_intersection =[], [], []
-    for fold_ind in range(cfg.base.splits):
-        print(f"Fold #{fold_ind}")
+    for fold_ind in range(0, 2):
+        logger.info(f"Fold #{fold_ind}")
         cfg.base.save_path = f"outputs/models/{cfg.base.experiment_name}_split_{fold_ind}.pth"
         if cfg.model.get("is_load_pretrained", False):
             with open_dict(cfg):
-                print("Model path", f"outputs/models/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth")
+                logger.info(f"Model path outputs/models/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth")
                 cfg.model.pretrained_model_path = f"outputs/models/{cfg.model.pretrained_model_name}_split_{fold_ind}.pth"
         
-             
+        logger.info("Define splits: ")     
         splits = load_splits(
             Path(cfg.base.data_path), 
             fold_ind, 
@@ -36,18 +55,20 @@ def run(cfg : DictConfig) -> None:
         if cfg.base.type == 'unimodal':
 
             if cfg.base.strategy == "survival":
-                trainer = UnimodalSurvivalTrainer(splits, cfg)
+                trainer = UnimodalSurvivalTrainer(splits, cfg, tracker)
             elif cfg.base.strategy == "mae": 
-                trainer = UnimodalMAETrainer(splits, cfg)
+                trainer = UnimodalMAETrainer(splits, cfg, tracker)
             else:
                 raise NotImplementedError(f"Such strategy - {cfg.base.strategy} isn't implemented in unimodal approach.")
         elif cfg.base.type == 'multimodal':
               
             cfg = add_model_paths_to_config(cfg,fold_ind)                      
             if cfg.base.strategy == "mae": 
-                trainer = MultiModalMAETrainer(splits, cfg)
+                trainer = MultiModalMAETrainer(splits, cfg, tracker)
             elif cfg.base.strategy == "survival":
-                  trainer = MultiModalSurvivalTrainer(splits, cfg)
+                  trainer = MultiModalSurvivalTrainer(splits, cfg, tracker)
+            elif cfg.base.strategy == "boosting_survival":
+                trainer = MultimodalBoostingSurvivalTrainer(splits, cfg, tracker)
             else:
                 raise NotImplementedError(f"Such strategy - {cfg.base.strategy} isn't implemented in multimodal approach.")
         else:
@@ -70,9 +91,9 @@ def run(cfg : DictConfig) -> None:
         final_metrics = {"valid": final_valid_metrics, "test": final_test_metrics}
         if cfg.base.get("multimodal_intersection_test", None):
             final_metrics.update({"test_in_intersection": final_test_metrics_intersection})
-        wandb.summary["final"] =final_metrics
-        wandb.finish()
-
+        tracker.log_summary(final_metrics)
+        tracker.finish()
+    logger.info(f"Final_test_metrics: {final_test_metrics}")
     return final_test_metrics
 
 if __name__ == "__main__":

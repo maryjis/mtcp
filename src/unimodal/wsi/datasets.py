@@ -67,11 +67,14 @@ class WSIDataset(BaseDataset):
 
 
 import os
-import torch
+import time
+import logging
 import pandas as pd
-from torchvision.transforms import functional as F
+import torch
 from PIL import Image
+from torchvision.transforms import functional as F
 
+logger = logging.getLogger(__name__)
 
 class WSIDataset_patches(BaseDataset):
     def __init__(
@@ -80,7 +83,7 @@ class WSIDataset_patches(BaseDataset):
         transform: "torchvision.transforms" = None,
         return_mask: bool = False,
         is_hazard_logits: bool = False,
-        resize_to: tuple = (256, 256),
+        resize_to: tuple = (224, 224),
         max_patches_per_sample: int = 10,
         random_patch_selection: bool = False
     ) -> None:
@@ -94,54 +97,95 @@ class WSIDataset_patches(BaseDataset):
         self.max_patches_per_sample = max_patches_per_sample
         self.random_patch_selection = random_patch_selection
 
+        logger.info(
+            f"WSIDataset_patches initialized: n_samples={len(self.data)}, "
+            f"resize_to={self.resize_to}, max_patches_per_sample={self.max_patches_per_sample}, "
+            f"random_patch_selection={self.random_patch_selection}, return_mask={self.return_mask}"
+        )
+        if "WSI_initial" in self.data.columns:
+            missing = self.data["WSI_initial"].isna().sum()
+            logger.info(f"Missing WSI_initial paths: {missing} of {len(self.data)}")
+
     def _load_patches(self, patch_dir: str) -> torch.Tensor:
         """Загружает патчи из директории `patch_dir`, масштабирует и конвертирует в тензоры"""
+        t0 = time.perf_counter()
+        expected_patches = 1 if self.random_patch_selection else self.max_patches_per_sample
 
         if not os.path.exists(patch_dir):
-            return torch.zeros(
-                (1 if self.random_patch_selection else self.max_patches_per_sample, 3, *self.resize_to),
-                dtype=torch.float32
-            )
+            logger.warning(f"Patch directory not found: {patch_dir}")
+            return torch.zeros((expected_patches, 3, *self.resize_to), dtype=torch.float32)
 
-        patch_files = sorted([f for f in os.listdir(patch_dir) if f.endswith(".png")])
+        try:
+            patch_files = sorted([f for f in os.listdir(patch_dir) if f.endswith(".png")])
+        except Exception as e:
+            logger.exception(f"Failed to list files in {patch_dir}")
+            return torch.zeros((expected_patches, 3, *self.resize_to), dtype=torch.float32)
+
         if not patch_files:
-            return torch.zeros(
-                (1 if self.random_patch_selection else self.max_patches_per_sample, 3, *self.resize_to),
-                dtype=torch.float32
-            )
+            logger.warning(f"No patch files found in {patch_dir}")
+            return torch.zeros((expected_patches, 3, *self.resize_to), dtype=torch.float32)
+
+        # Выбор одного случайного патча
+        if self.random_patch_selection:
+            if len(patch_files) == 0:
+                logger.warning(f"No patch files to select randomly in {patch_dir}")
+                return torch.zeros((1, 3, *self.resize_to), dtype=torch.float32)
+            idx_patch = torch.randint(0, len(patch_files), (1,)).item()
+            patch_files = [patch_files[idx_patch]]
+            logger.debug(f"Randomly selected patch: {patch_files[0]} from {patch_dir}")
 
         patches = []
-        if self.random_patch_selection:
-            max_idx = min(len(patch_files), self.max_patches_per_sample)
-            idx_patch = torch.randint(0, max_idx, (1,)).item()
-            patch_files = [patch_files[idx_patch]]
-
         for patch_file in patch_files[:self.max_patches_per_sample]:
             patch_path = os.path.join(patch_dir, patch_file)
-            patch = Image.open(patch_path).convert("RGB")
-            patch = F.resize(patch, self.resize_to)
-            patch = F.pil_to_tensor(patch).float()
-            min_val = patch.min()
-            max_val = patch.max()
-            patch = (patch - min_val) / (max_val - min_val + 1e-8) 
-            patches.append(patch)
+            try:
+                patch = Image.open(patch_path).convert("RGB")
+                patch = F.resize(patch, self.resize_to)
+                patch = F.pil_to_tensor(patch).float()
+
+                # Нормализация
+                patch = torch.nan_to_num(patch, nan=0.0, posinf=1.0, neginf=0.0)
+                min_val, max_val = patch.min(), patch.max()
+                if (max_val - min_val).abs() < 1e-8:
+                    logger.warning(f"Flat patch (zero variance) in {patch_path}")
+                    patch = torch.zeros_like(patch)
+                else:
+                    patch = (patch - min_val) / (max_val - min_val + 1e-8)
+
+                # Применение transform
+                if self.transform:
+                    patch = self.transform(patch)
+
+                patches.append(patch)
+            except Exception:
+                logger.exception(f"Failed to load or process patch: {patch_path}")
+                continue
 
         if not patches:
-            return torch.zeros(
-                (1 if self.random_patch_selection else self.max_patches_per_sample, 3, *self.resize_to),
-                dtype=torch.float32
-            )
+            logger.warning(f"All patch loads failed for {patch_dir}, returning zeros.")
+            return torch.zeros((expected_patches, 3, *self.resize_to), dtype=torch.float32)
 
+        # Паддинг, если не хватает патчей
         while not self.random_patch_selection and len(patches) < self.max_patches_per_sample:
             patches.append(torch.zeros((3, *self.resize_to), dtype=torch.float32))
+            logger.debug(f"Added zero-padding patch. Total now: {len(patches)}")
 
-        return torch.stack(patches)
+        tensor = torch.stack(patches)
+
+        # Финальная проверка
+        if torch.isnan(tensor).any() or torch.isinf(tensor).any():
+            logger.warning(f"NaN or Inf detected in tensor from {patch_dir}")
+
+        elapsed = (time.perf_counter() - t0) * 1000
+        logger.debug(f"Loaded {len(patches)} patches from {patch_dir} in {elapsed:.1f} ms. Shape: {tensor.shape}")
+
+        return tensor
 
     def __getitem__(self, idx: int):
+        t0 = time.perf_counter()
         sample = self.data.iloc[idx]
+        patch_dir = sample.WSI_initial if not pd.isna(sample.WSI_initial) else None
 
-        if not pd.isna(sample.WSI_initial):
-            patch_dir = sample.WSI_initial  # теперь это ПОЛНЫЙ путь к папке `patches/`
+        if patch_dir:
             patches = self._load_patches(patch_dir)
             mask = True
         else:
@@ -150,11 +194,12 @@ class WSIDataset_patches(BaseDataset):
                 dtype=torch.float32
             )
             mask = False
+            logger.warning(f"Sample at idx={idx} has no WSI_initial. Returning zero patches.")
 
-        if self.return_mask:
-            return patches, mask
-        else:
-            return patches
+        elapsed = (time.perf_counter() - t0) * 1000
+        logger.debug(f"__getitem__ idx={idx} | path={patch_dir} | shape={patches.shape} | time={elapsed:.1f} ms")
+
+        return (patches, mask) if self.return_mask else patches
 
     def __len__(self):
         return len(self.data)

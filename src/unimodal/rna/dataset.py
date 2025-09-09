@@ -24,13 +24,14 @@ class OmicsDataset(BaseDataset):
         """
         super().__init__(data_split, dataset_file, transform, is_hazard_logits, return_mask)
         self.rna_dataset = pd.read_csv(dataset_file)
-        
-        print("Omics dataset, project_ids ", project_ids)
+        print(self.rna_dataset.columns)
+        print("Preprocess Omics dataset, project_ids ", project_ids)
         if project_ids:
-            print("Dataset.shape before ", self.rna_dataset.shape)
+            print("Preprocess Dataset.shape before ", self.rna_dataset.shape)
             self.rna_dataset =self.rna_dataset.loc[self.rna_dataset.project_id.isin(project_ids)]
-            print("Dataset.shape after ", self.rna_dataset.shape)
+            print(" Preprocess Dataset.shape after ", self.rna_dataset.shape)
         self.rna_dataset =self.rna_dataset.iloc[:, :-2]
+            
         self.column_order = column_order
         self.column_name = column_name
         self.debug_mode = debug_mode
