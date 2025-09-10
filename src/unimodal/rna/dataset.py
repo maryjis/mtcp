@@ -60,7 +60,7 @@ class OmicsDataset(BaseDataset):
 
             name =sample[self.column_name]
             sample =self.rna_dataset.loc[self.rna_dataset["file_id"]==name]
-
+            print("SAMPLE:", sample)
             if sample.empty:
                 sample = np.zeros((1, self.rna_dataset.shape[1]-1))
             else:

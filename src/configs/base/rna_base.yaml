@@ -26,7 +26,7 @@ save_path : "outputs/models/"
 rna_dataset_path: "src/data/rna_dataset.csv"
 device: "cuda:2"
 remove_nan_column: 'RNA'
-batch_size: 24
+batch_size: 128
 
 log:
     logging: True

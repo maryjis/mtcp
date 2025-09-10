@@ -21,6 +21,7 @@ from src.utils import ExperimentTracker
 class MultiModalTrainer(Trainer):
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker):
         self.cfg =cfg
+        print("self.cfg: ", self.cfg)
         self.preproc = self.initialise_preprocessing(splits, self.cfg.base.modalities)
         print(self.preproc)
         self.tracker = tracker
@@ -78,11 +79,12 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
         total_loss =0
         modality_losses = {}
         contrastive_losses ={}
+        modality_count ={modality: 0 for modality in self.cfg.base.modalities}
         for batch in dataloader:
             data, masks = batch 
             data = {modality :value.to(device) for modality, value in data.items()} 
             outputs =self.model(data,masks)
-            
+    
             if split=="train":
                 self.optimizer.zero_grad()
                 outputs.loss[0].backward()
@@ -93,6 +95,7 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
                 if modality not in modality_losses:
                     modality_losses[modality] = 0
                 modality_losses[modality] += outputs.loss[1][modality]
+                modality_count[modality] += torch.sum(masks[modality])
             contrastive_loss = outputs.loss[2]
             if  contrastive_loss:
                 for name, loss_value in contrastive_loss.items():
@@ -103,7 +106,7 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
         metrics = {"mse_loss": total_loss.cpu().detach().numpy() / len(dataloader.dataset)}
         modalities = self.cfg.base.modalities
         for modality in modalities:
-            metrics[f"mse_{modality}_loss"] = modality_losses[modality].cpu().detach().numpy() / len(dataloader.dataset)
+            metrics[f"mse_{modality}_loss"] = modality_losses[modality].cpu().detach().numpy() / modality_count[modality]
         for contrastive_name, contrastive_value in contrastive_losses.items():
             metrics[f"clip_{contrastive_name}_loss"] =contrastive_value.cpu().detach().numpy() / len(dataloader.dataset)
         if split=="train":
