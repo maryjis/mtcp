@@ -150,13 +150,17 @@ class MultiMAEModel(PreTrainedModel):
                     modality
                 )
             elif modality == "wsi":
+                print("self.cfg.wsi_model: ", self.cfg.wsi_model)
                 cfg_wsi_model = ViTMAEConfig(**self.cfg.wsi_model)
                 encoder = None
-                print("cfg_wsi_model.is_load_pretrained: ", cfg_wsi_model.is_load_pretrained)
+                
+                print("cfg_wsi_model.is_load_pretrained: ", cfg_wsi_model)
                 if cfg_wsi_model.is_load_pretrained:
                     print("cfg_wsi_model.pretrained_model_path: ", cfg_wsi_model.pretrained_model_path)
                     # encoder = WSIEmbeddingMAEModel.from_pretrained(cfg_wsi_model.pretrained_model_path, config=cfg_wsi_model)
-                    encoder = WsiMAEModel.from_pretrained(cfg_wsi_model.pretrained_model_path, config=cfg_wsi_model)
+                    if cfg_wsi_model.pretrained_model_name == "":
+                        cfg_wsi_model.pretrained_model_path = "facebook/vit-mae-base"
+                    encoder = WsiMAEModel(config=cfg_wsi_model).from_pretrained(cfg_wsi_model.pretrained_model_path)
                     # for param in encoder.parameters():
                     #     param.requires_grad = False
                 else:
@@ -463,8 +467,11 @@ class MultiMaeForPretraining(nn.Module):
             torch.FloatTensor: Mean reconstruction loss on masked patches.
         """
         # Convert input to patches
+        if encoder.modality == "wsi":
+            values = values.squeeze(1)
         target = encoder.encoder.patchify(values, interpolate_pos_encoding=interpolate_pos_encoding)
-
+        if encoder.modality == "wsi":
+            target = target.unsqueeze(1)
        
         # Masked loss for all zero subjects (missing ones)
         modality_mask = modality_mask.unsqueeze(1).to(mask.device)
