@@ -1,4 +1,4 @@
-experiment_name: "rsna_mae_survival_800_august"
+experiment_name: "rsna_mae_survival_800_september"
 n_epochs: 800
 n_intervals: 20
 random_seed: 1380
@@ -24,7 +24,7 @@ root_path: "../"
 save_path : "outputs/models/"
 data_path: "src/data/dataset_full_tcga_all_balanced.csv"
 rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
-device: "cuda:4"
+device: "cuda:0"
 remove_nan_column: 'RNA'
 batch_size: 256
 

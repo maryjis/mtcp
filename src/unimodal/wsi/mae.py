@@ -12,6 +12,43 @@ class WsiMAEModel(ViTMAEModel):
     def __init__(self, config):
         super().__init__(config)
         
+    def patchify(self, pixel_values, interpolate_pos_encoding: bool = False):
+        """
+        Args:
+            pixel_values (`torch.FloatTensor` of shape `(batch_size, num_channels, height, width)`):
+                Pixel values.
+            interpolate_pos_encoding (`bool`, *optional*, default `False`):
+                interpolation flag passed during the forward pass.
+
+        Returns:
+            `torch.FloatTensor` of shape `(batch_size, num_patches, patch_size**2 * num_channels)`:
+                Patchified pixel values.
+        """
+
+        patch_size, num_channels = self.config.patch_size, self.config.num_channels
+        # sanity checks
+        if not interpolate_pos_encoding and (
+            pixel_values.shape[2] != pixel_values.shape[3] or pixel_values.shape[2] % patch_size != 0
+        ):
+            raise ValueError("Make sure the pixel values have a squared size that is divisible by the patch size")
+        if pixel_values.shape[1] != num_channels:
+            raise ValueError(
+                "Make sure the number of channels of the pixel values is equal to the one set in the configuration"
+            )
+
+        # patchify
+        batch_size = pixel_values.shape[0]
+        num_patches_h = pixel_values.shape[2] // patch_size
+        num_patches_w = pixel_values.shape[3] // patch_size
+        patchified_pixel_values = pixel_values.reshape(
+            batch_size, num_channels, num_patches_h, patch_size, num_patches_w, patch_size
+        )
+        patchified_pixel_values = torch.einsum("nchpwq->nhwpqc", patchified_pixel_values)
+        patchified_pixel_values = patchified_pixel_values.reshape(
+            batch_size, num_patches_h * num_patches_w, patch_size**2 * num_channels
+        )
+        return patchified_pixel_values
+        
     def forward(
         self,
         pixel_values: Optional[torch.FloatTensor] = None,
@@ -23,8 +60,9 @@ class WsiMAEModel(ViTMAEModel):
         interpolate_pos_encoding: bool = False,
     ) -> Union[tuple, ViTMAEModelOutput]:
         pixel_values = rearrange(pixel_values, 'b n c h w -> (b n) c h w')
+
         encoded = super().forward(pixel_values=pixel_values,
-                                  noise=noise,
+                                  noise=None,
                                   head_mask=head_mask,
                                   output_attentions=output_attentions,
                                   output_hidden_states =output_hidden_states,
