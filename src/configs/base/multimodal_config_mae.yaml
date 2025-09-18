@@ -1,4 +1,4 @@
-experiment_name: "multimodal_rna_dna_wsi_1e5_bigset_balanced_800_september_09"
+experiment_name: "multimodal_wsi_1e5_bigset_balanced_800_september_09"
 n_epochs: 800
 warmup_epochs: 50 
 n_intervals: 20

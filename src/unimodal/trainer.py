@@ -41,6 +41,7 @@ from sklearn.preprocessing import QuantileTransformer, StandardScaler, MinMaxSca
 from src.unimodal.rna.transforms import UpperQuartileNormalizer
 from src.unimodal.mri.transforms import get_basic_tumor_transforms
 from src.unimodal.wsi.transforms import contrastive_wsi_transforms
+from src.unimodal.dna.transforms import padded_transforms_scaling
 from torch.profiler import profile, record_function, ProfilerActivity, schedule
 from src.utils import trace_handler
 from functools import partial
@@ -262,7 +263,7 @@ class UnimodalSurvivalTrainer(Trainer):
                  OmegaConf.set_struct(cfg, False) 
                  cfg.model["size"] = cfg.model.size if cfg.model.get("size", None) else math.ceil(len(self.preproc.get_column_order()) /cfg.model.patch_size)* cfg.model.patch_size
                  transforms = padded_transforms_with_scaling(self.preproc.get_scaling(), cfg.model.size)
-                 print("transforms: ", transforms)
+                 
             elif self.cfg.base.architecture=="CNN":    
                 transforms = base_transforms(self.preproc.get_scaling())
         elif self.cfg.base.modalities[0]=="dnam":

@@ -15,6 +15,7 @@ from src.unimodal.mri.mae import MriMAEDecoderPred
 from flamingo_pytorch import PerceiverResampler
 from src.multimodal.losses import CLIPAlignmentLoss
 import random 
+import os
 
 class UnimodalEncoder(nn.Module):
     def __init__(self, encoder, unimodal_hidden_size, multimodal_hidden_size = None, is_projection = False, modality =None):
@@ -58,8 +59,36 @@ class MultiMAEDecoder(RnaMAEDecoder):
                  
         self.initialize_weights(num_patches)
         
-   
- 
+class AttentionPooling(nn.Module):
+    """Пулинг токенов внутри модальности с помощью attention."""
+    def __init__(self, embed_dim):
+        super().__init__()
+        self.att_vector = nn.Parameter(torch.randn(embed_dim))
+
+    def forward(self, x):
+        # x: [B, T, D]
+        # вычисляем веса внимания для каждого токена
+        attn_scores = torch.matmul(x, self.att_vector)  # [B, T]
+        attn_weights = F.softmax(attn_scores, dim=1)    # [B, T]
+        # агрегируем токены
+        pooled = torch.sum(x * attn_weights.unsqueeze(-1), dim=1)  # [B, D]
+        return pooled
+    
+class TopKPooling(nn.Module):
+    def __init__(self, embed_dim, k=20):
+        super().__init__()
+        self.k = k
+        self.scorer = nn.Linear(embed_dim, 1)
+
+    def forward(self, x):
+        # x: [B, T, D]
+        scores = self.scorer(x).squeeze(-1)       # [B, T]
+        topk = torch.topk(scores, self.k, dim=1).indices
+        B = x.size(0)
+        out = torch.stack([x[b, idx] for b, idx in enumerate(topk)], dim=0)
+        return out  # [B, k, D] 
+    
+    
 class MultiMAEModel(PreTrainedModel):
      
     def __init__(self, cfg):
@@ -71,6 +100,9 @@ class MultiMAEModel(PreTrainedModel):
         self.encoders = nn.ModuleDict(self.encoders)
         self.cls_token = nn.Parameter(torch.zeros(1, 1, cfg.hidden_size))
         self.encoder_fusion_strategy = None
+        self.polings = nn.ModuleDict({modality: AttentionPooling(cfg.hidden_size) for modality in  cfg.modalities})
+   
+        
         if self.cfg.encoder_fusion_strategy =="masked_attention":
             self.encoder_fusion_strategy = MaskAttentionFusion(cfg.encoder_fusion_depth, cfg.encoder_fusion_dim,
                                                                 cfg.encoder_fusion_nhead,
@@ -160,8 +192,20 @@ class MultiMAEModel(PreTrainedModel):
                     # encoder = WSIEmbeddingMAEModel.from_pretrained(cfg_wsi_model.pretrained_model_path, config=cfg_wsi_model)
                     if cfg_wsi_model.pretrained_model_name == "":
                         cfg_wsi_model.pretrained_model_path = "facebook/vit-mae-base"
-                    encoder = WsiMAEModel(config=cfg_wsi_model).from_pretrained(cfg_wsi_model.pretrained_model_path)
-                    # for param in encoder.parameters():
+                        
+                    encoder = WsiMAEModel.from_pretrained(cfg_wsi_model.pretrained_model_path, config=cfg_wsi_model)
+                    
+                    for param in encoder.parameters():
+                        print("Freezing: ")
+                        param.requires_grad = False
+                    # else:
+                    #     print(os.getcwd())
+                    #     print(cfg_wsi_model.pretrained_model_path)
+                    #     state_dict = torch.load(cfg_wsi_model.pretrained_model_path)
+                    #     print("State dict:", state_dict)
+                    #     encoder = WsiMAEModel(config=cfg_wsi_model)
+                    #     encoder.load_state_dict(state_dict)
+                    # # for param in encoder.parameters():
                     #     param.requires_grad = False
                 else:
                     #encoder = WSIEmbeddingMAEModel(config =cfg_wsi_model)
@@ -344,8 +388,13 @@ class MultiMAEModel(PreTrainedModel):
 
             multimodal_length += seq_length
             
+            last_hidden_state = embedded_sample.last_hidden_state[:,1:, :]
+            if cfg.per_modality_pooling[modality]:
+                print("cfg.per_modality_pooling[modality]: ", cfg.per_modality_pooling[modality])
+                last_hidden_state =self.polings[modality](embedded_sample.last_hidden_state[:,1:, :])
+                
             embedded_sample = ViTMAEModelOutput(
-                    last_hidden_state=embedded_sample.last_hidden_state[:,1:, :],
+                    last_hidden_state=last_hidden_state,
                     mask=embedded_sample.mask,
                     ids_restore=embedded_sample.ids_restore,
                     hidden_states=embedded_sample.hidden_states,
@@ -367,13 +416,14 @@ class MultiMAEModel(PreTrainedModel):
         
         last_hidden_states = torch.cat((cls_tokens, last_hidden_states), dim=1)
         
-        
+        # print("masks: ", masks)
+
         if self.encoder_fusion_strategy is not None:
             if last_hidden_states.shape[1] == masks.shape[1]:
                 last_hidden_states = self.encoder_fusion_strategy(last_hidden_states, masks)
             else:
                 last_hidden_states = self.encoder_fusion_strategy(last_hidden_states, None) 
-         
+        
         concat_embedding = ViTMAEModelOutput(
             last_hidden_state=last_hidden_states,
             mask=masks,
@@ -621,10 +671,6 @@ class MultiMaeForPretraining(nn.Module):
         """
             
         concat_embedding = self.model(x, modality_masks, interpolate_pos_encoding)
-        concat_embedding = self.model(x, modality_masks, interpolate_pos_encoding)
-            
-        concat_embedding = self.model(x, modality_masks, interpolate_pos_encoding)  
-            
         latent = concat_embedding.last_hidden_state
         ids_restore = concat_embedding.ids_restore
         mask = concat_embedding.mask
@@ -667,12 +713,11 @@ class MaskAttentionFusion(nn.Module):
             self.fusion_layers = nn.ModuleList([nn.MultiheadAttention(fusion_dim, fusion_nhead, dropout=fusion_dropout, batch_first=True) for _ in range(fusion_depth)])
         
     def forward(self, x, mask):
-        
         for layer in self.fusion_layers:
             if self.fusion_dim_feedforward > 0:
-                x = layer(x, src_key_padding_mask= mask if mask is not None else None)
+                x = layer(x, src_key_padding_mask= mask)
             else:
-               x = layer(x,x,x, key_padding_mask  = mask if mask is not None else None)          
+               x = layer(x,x,x, key_padding_mask  = mask)        
         return x
 
 class PerceiverMultiResampler(nn.Module):
@@ -691,7 +736,6 @@ class PerceiverMultiResampler(nn.Module):
             if mask is not None:
                 concat_mask = [mask[:,:1]]
             for modality in self.modalities:
-                print(modality_intervals[modality])
                 if mask is not None:
                     mask_modality =mask[:, modality_intervals[modality][0]:modality_intervals[modality][1]]
                 x_perceived =self.perceivers[modality](x[:,modality_intervals[modality][0]:modality_intervals[modality][1],:])
