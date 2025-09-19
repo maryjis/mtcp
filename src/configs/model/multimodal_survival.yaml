@@ -43,8 +43,8 @@ mm_pretrained_model_path: ""
 
 per_modality_pooling:
   rna: false
-  dna: false
-  hist: true
+  dnam: false
+  wsi: true
 
 output_dim: 20
 return_order: true

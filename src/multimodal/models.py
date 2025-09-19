@@ -8,7 +8,7 @@ from src.unimodal.mri.mae import MriMAEModel
 from src.unimodal.dna.models import DNAmSurvivalModel, DNAmMAEModel
 from src.unimodal.wsi.mae import WsiMAEModel
 from src.unimodal.cnv.models import CNVMAEModel
-
+import torch.nn.functional as F
 from omegaconf import DictConfig, OmegaConf
 from transformers import PreTrainedModel
 from src.unimodal.mri.mae import MriMAEDecoderPred
@@ -72,7 +72,7 @@ class AttentionPooling(nn.Module):
         attn_weights = F.softmax(attn_scores, dim=1)    # [B, T]
         # агрегируем токены
         pooled = torch.sum(x * attn_weights.unsqueeze(-1), dim=1)  # [B, D]
-        return pooled
+        return pooled.unsqueeze(1)
     
 class TopKPooling(nn.Module):
     def __init__(self, embed_dim, k=20):
@@ -389,10 +389,13 @@ class MultiMAEModel(PreTrainedModel):
             multimodal_length += seq_length
             
             last_hidden_state = embedded_sample.last_hidden_state[:,1:, :]
-            if cfg.per_modality_pooling[modality]:
-                print("cfg.per_modality_pooling[modality]: ", cfg.per_modality_pooling[modality])
+            # print("last_hidden_state.shape: ", last_hidden_state.shape)
+            if self.cfg.per_modality_pooling[modality]:
+                print("cfg.per_modality_pooling[modality]: ", self.cfg.per_modality_pooling[modality])
                 last_hidden_state =self.polings[modality](embedded_sample.last_hidden_state[:,1:, :])
-                
+     
+            # last_hidden_state = F.normalize(last_hidden_state, dim=-1) 
+            # print("After normalize last_hidden_state.mean", torch.mean(last_hidden_state, dim=[0,1]))     
             embedded_sample = ViTMAEModelOutput(
                     last_hidden_state=last_hidden_state,
                     mask=embedded_sample.mask,
