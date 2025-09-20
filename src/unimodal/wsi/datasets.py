@@ -184,7 +184,7 @@ class WSIDataset_patches(BaseDataset):
         t0 = time.perf_counter()
         sample = self.data.iloc[idx]
         patch_dir = sample.WSI_initial if not pd.isna(sample.WSI_initial) else None
-        patch_dir ="/data/TCGA_all_wsi/" +patch_dir +"/patches"
+        # patch_dir ="/data/TCGA_all_wsi/" +patch_dir +"/patches"
         if patch_dir:
             patches = self._load_patches(patch_dir)
             mask = True

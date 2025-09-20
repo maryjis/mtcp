@@ -100,7 +100,8 @@ class MultiMAEModel(PreTrainedModel):
         self.encoders = nn.ModuleDict(self.encoders)
         self.cls_token = nn.Parameter(torch.zeros(1, 1, cfg.hidden_size))
         self.encoder_fusion_strategy = None
-        self.polings = nn.ModuleDict({modality: AttentionPooling(cfg.hidden_size) for modality in  cfg.modalities})
+        self.polings = nn.ModuleDict({modality: TopKPooling(cfg.hidden_size, k=20) for modality in  cfg.modalities})
+        self.normalizers = nn.ModuleDict({modality: nn.LayerNorm(cfg.hidden_size) for modality in  cfg.modalities})
    
         
         if self.cfg.encoder_fusion_strategy =="masked_attention":
@@ -390,12 +391,14 @@ class MultiMAEModel(PreTrainedModel):
             
             last_hidden_state = embedded_sample.last_hidden_state[:,1:, :]
             # print("last_hidden_state.shape: ", last_hidden_state.shape)
-            if self.cfg.per_modality_pooling[modality]:
-                print("cfg.per_modality_pooling[modality]: ", self.cfg.per_modality_pooling[modality])
-                last_hidden_state =self.polings[modality](embedded_sample.last_hidden_state[:,1:, :])
-     
-            # last_hidden_state = F.normalize(last_hidden_state, dim=-1) 
-            # print("After normalize last_hidden_state.mean", torch.mean(last_hidden_state, dim=[0,1]))     
+            # if self.cfg.per_modality_pooling[modality]:
+            #     print("cfg.per_modality_pooling[modality]: ", self.cfg.per_modality_pooling[modality])
+            #     last_hidden_state =self.polings[modality](embedded_sample.last_hidden_state[:,1:, :])
+                
+             
+            # print("After normalize last_hidden_state.mean", torch.mean(last_hidden_state, dim=[0,1,2]))
+            # last_hidden_state =self.normalizers[modality](last_hidden_state)
+            # print("Before normalize last_hidden_state.mean", torch.mean(last_hidden_state, dim=[0,1,2]))  
             embedded_sample = ViTMAEModelOutput(
                     last_hidden_state=last_hidden_state,
                     mask=embedded_sample.mask,

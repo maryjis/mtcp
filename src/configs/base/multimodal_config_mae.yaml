@@ -1,5 +1,5 @@
-experiment_name: "multimodal_wsi_1e5_bigset_balanced_800_september_09"
-n_epochs: 800
+experiment_name: "multimodal_rna_dna_wsi_1e5_bigset_balanced_800_16_09_fixed"
+n_epochs: 400
 warmup_epochs: 50 
 n_intervals: 20
 random_seed: 1380
@@ -28,7 +28,7 @@ data_path: "src/data/dataset_full_tcga_all_balanced.csv"
 save_path : "outputs/models/"
 #rna_dataset_path: "src/data/rna_dataset.csv"
 rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
-device: "cuda:3"  # Указываем, что основное устройство - GPU 2
+device: "cuda:2"  # Указываем, что основное устройство - GPU 2
 available_gpus:  [1, 2, 0, 4]  # Указываем, какие GPU можно использовать
 
 remove_nan_column: 'RNA'

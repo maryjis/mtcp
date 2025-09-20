@@ -71,7 +71,7 @@ fusion_depth: 1
 fusion_dim: 768
 fusion_nhead: 4
 fusion_dim_feedforward: 0
-fusion_dropout: 0.1
+fusion_dropout: 0.5
 fusion_logits: "mean"
 fusion_masking: false
 fusion_strategy_is_pretrained: false

@@ -1,13 +1,13 @@
 experiment_name: "multimodal_rna_dnam_wsi_pretrained_warmup_balanced_survival"
 n_epochs: 50
-# warmup_epochs: 10 
+warmup_epochs: 10 
 n_intervals: 20
 random_seed: 1380
 
 optimizer:
     name: "AdamW"
     params:
-        lr: 1e-3
+        lr: 1e-4
         weight_decay: 1e-2
     
 scheduler: 
