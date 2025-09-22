@@ -41,6 +41,7 @@ from sklearn.preprocessing import QuantileTransformer, StandardScaler, MinMaxSca
 from src.unimodal.rna.transforms import UpperQuartileNormalizer
 from src.unimodal.mri.transforms import get_basic_tumor_transforms
 from src.unimodal.wsi.transforms import contrastive_wsi_transforms
+from src.unimodal.dna.transforms import padded_transforms_scaling
 from torch.profiler import profile, record_function, ProfilerActivity, schedule
 from src.utils import trace_handler
 from functools import partial
@@ -432,8 +433,8 @@ class UnimodalSurvivalTrainer(Trainer):
             preds.append(outputs)
             times.append(time)
             events.append(event)
-            total_task_loss+=loss*len(batch)
-            num_samples+=len(batch)
+            total_task_loss+=loss*batch.shape[0]
+            num_samples+=batch.shape[0]
             
         metrics = {"task_loss": total_task_loss.cpu().detach().numpy() / num_samples}
         if split!="train":
@@ -472,6 +473,7 @@ class UnimodalMAETrainer(Trainer):
 
         self.model =self.initialise_models().to(cfg.base.device)
         logger.debug(f"Model: {self.model}")
+        print((f"Model: {self.model}"))
         print_vit_sizes(self.model)
         torch.cuda.reset_peak_memory_stats(device=cfg.base.device)
         logger.debug(f"gpu used {torch.cuda.max_memory_allocated(device=cfg.base.device)/1024/1024} Mb memory")
@@ -573,9 +575,8 @@ class UnimodalMAETrainer(Trainer):
                 self.optimizer.zero_grad()
                 outputs.loss.backward()
                 self.optimizer.step()
-            
-            total_loss+=outputs.loss.detach().item()*len(batch) #outputs.loss - mean loss across batch
-            num_samples+=len(batch)
+            total_loss+=outputs.loss.detach().item()*data.shape[0] #outputs.loss - mean loss across batch
+            num_samples+=data.shape[0]
         
         metrics = {"mse_loss": total_loss / num_samples}
         

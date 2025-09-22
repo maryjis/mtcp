@@ -30,10 +30,8 @@ class UnimodalEncoder(nn.Module):
             
     def forward(self, x):
         # Remove debug print statement
-        if self.modality =="wsi":
-            x = self.encoder(x, True)
-        else:    
-            x = self.encoder(x)
+
+        x = self.encoder(x)
         
         if self.is_projection:
             # Create new object instead of modifying in place
@@ -399,7 +397,8 @@ class MultiMaeForPretraining(nn.Module):
         self.contrastive_loss = None
         if self.cfg.contrastive_loss:
             print("CLIP loss: ")
-            self.contrastive_loss =  CLIPAlignmentLoss()  
+            self.contrastive_loss =  CLIPAlignmentLoss()
+
 
     def get_postprocessor(self, modality):
         patch_size = self.get_patch_size(modality)
@@ -469,14 +468,24 @@ class MultiMaeForPretraining(nn.Module):
         # Convert input to patches
         if encoder.modality == "wsi":
             values = values.squeeze(1)
+        
+
         target = encoder.encoder.patchify(values, interpolate_pos_encoding=interpolate_pos_encoding)
-        if encoder.modality == "wsi":
-            target = target.unsqueeze(1)
+        
+        # print("pixel_values: ", values.shape)
+        # print("target: ", target.shape)
+        # print("pred", pred.shape)
+        # print("target: ", target.mean())
+        # print("self.config.norm_pix_loss:", self.cfg.norm_pix_loss)
+        # if encoder.modality == "wsi":
+        #     target = target.unsqueeze(1)
        
+        # print("mask: ", mask)
+        # print("modality_mask: ", modality_mask)
         # Masked loss for all zero subjects (missing ones)
         modality_mask = modality_mask.unsqueeze(1).to(mask.device)
         mask =  mask * modality_mask
- 
+        # print("after mask: ", mask)
         
         # Normalize target values if configured
         if self.cfg.norm_pix_loss:
@@ -486,22 +495,24 @@ class MultiMaeForPretraining(nn.Module):
             target = (target - mean) / (var + 1.0e-6).sqrt()
     
         # Calculate mean squared error
-        loss = (pred - target).pow(2)
-
+        loss = (pred - target) ** 2
+        # print("loss.shape", loss.shape)
         loss = loss.mean(dim=-1)  # Mean loss per patch [batch_size, num_patches]
-
+        # print("loss.shape", loss.shape)
         # Calculate mean loss on masked patches only
-  
+       
         if (loss * mask).sum() >0:
             loss = (loss * mask).sum() / (mask.sum())
         else:
-            loss = (loss * mask).sum() 
+            loss = (loss * mask).sum()
+        # print('Loss', loss)
         return loss
     
     def split_modalities(self, pred: torch.FloatTensor):
         start_idx = 0
         splitted_x = {}
         for modality in self.modalities:
+            # print("modality interval",modality, start_idx, end_idx)
             # Get number of patches for current modality
             num_patches = self.get_patches_number(modality)
             end_idx = start_idx + num_patches
@@ -554,7 +565,9 @@ class MultiMaeForPretraining(nn.Module):
             if self.cfg.postprocessing:
                 pred_modality = self.postprocessors[f"postprocessor_{modality}"](pred_modality)
 
-
+            # print("modality: ", modality)
+            # print("x[modality]: ",x[modality].mean(), "+-", x[modality].std())
+            # print("pred_modality: ", pred_modality.mean(), "+-", pred_modality.std())
             # Calculate loss for current modality
             modality_loss = self.__forward_loss(
                 x[modality],
@@ -564,7 +577,7 @@ class MultiMaeForPretraining(nn.Module):
                 mask_modality,
                 interpolate_pos_encoding
             )
-
+            # print("-------------")
             modality_losses[modality] += modality_loss
             total_loss += modality_loss
             start_idx = end_idx
