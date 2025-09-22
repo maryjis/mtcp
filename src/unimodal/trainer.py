@@ -420,7 +420,7 @@ class UnimodalSurvivalTrainer(Trainer):
             
             data, mask,  time, event = batch 
             data = {modality :value.to(device) for modality, value in data.items()} if isinstance(data, dict) else data.to(device)
-
+            batch_size = (next(iter(data.values())).shape[0] if isinstance(data, dict) else data.shape[0])
             outputs =self.model(data, masks = mask)
 
             loss = self.criterion(outputs, time.to(device), event.to(dtype=torch.float32,device=device))
@@ -433,8 +433,8 @@ class UnimodalSurvivalTrainer(Trainer):
             preds.append(outputs)
             times.append(time)
             events.append(event)
-            total_task_loss+=loss*data.shape[0]
-            num_samples+=data.shape[0]
+            total_task_loss+=loss*batch_size
+            num_samples+=batch_size
             
         metrics = {"task_loss": total_task_loss.cpu().detach().numpy() / num_samples}
         if split!="train":
