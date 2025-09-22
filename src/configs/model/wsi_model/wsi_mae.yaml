@@ -22,9 +22,6 @@ random_patch_selection: True
 max_patches_per_sample: 10
 return_dict: True
 is_load_pretrained: True
-<<<<<<< HEAD
-pretrained_model_name: ""
-=======
 pretrained_model_name: "unimodal_wsi_800_mae_macha_bigvit_pretrained"
->>>>>>> clean-main
+
 noise: None

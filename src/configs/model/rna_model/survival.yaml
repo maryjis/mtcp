@@ -1,26 +1,14 @@
 attention_probs_dropout_prob: 0.0
-<<<<<<< HEAD
-decoder_hidden_size: 256
-decoder_intermediate_size: 512
-=======
 decoder_hidden_size: 512
 decoder_intermediate_size: 2048
->>>>>>> clean-main
 decoder_num_attention_heads: 4
 decoder_num_hidden_layers: 2
 hidden_act: "gelu"
 hidden_dropout_prob: 0.0
-<<<<<<< HEAD
-hidden_size: 256 # maybe 384?
-size: 18432
-initializer_range: 0.02
-intermediate_size: 1024
-=======
 hidden_size: 768 # maybe 384?
 size: 18432
 initializer_range: 0.02
 intermediate_size: 3072
->>>>>>> clean-main
 layer_norm_eps: 1e-12
 mask_ratio: 0.0
 model_type: "vit_mae"
@@ -30,12 +18,7 @@ num_channels: 1
 num_hidden_layers: 6
 patch_size: 512
 qkv_bias: true
-<<<<<<< HEAD
-is_load_pretrained: false
-pretrained_model_name: ""
-=======
 is_load_pretrained: true
 pretrained_model_name: "rsna_mae_survival_800_september"
->>>>>>> clean-main
 pretrained_model_path: ""
 output_dim: 20
