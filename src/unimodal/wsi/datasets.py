@@ -177,14 +177,12 @@ class WSIDataset_patches(BaseDataset):
 
         elapsed = (time.perf_counter() - t0) * 1000
         logger.debug(f"Loaded {len(patches)} patches from {patch_dir} in {elapsed:.1f} ms. Shape: {tensor.shape}")
-
         return tensor
 
     def __getitem__(self, idx: int):
         t0 = time.perf_counter()
         sample = self.data.iloc[idx]
         patch_dir = sample.WSI_initial if not pd.isna(sample.WSI_initial) else None
-        # patch_dir ="/data/TCGA_all_wsi/" +patch_dir +"/patches"
         if patch_dir:
             patches = self._load_patches(patch_dir)
             mask = True

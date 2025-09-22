@@ -72,7 +72,7 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
         
     def initialise_models(self):
-        return MultiMaeForPretraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+        return MultiMaeForPretraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)), tracker = self.tracker)
  
         
     def __loop__(self,split, fold_ind, dataloader, device):
@@ -154,7 +154,7 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
         
     def initialise_models(self):
-        return MultiMaeForSurvival(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+        return MultiMaeForSurvival(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)), tracker = self.tracker)
     
     def initialise_datasets(self, splits, modalities, preprocs, transforms=None):
         datasets = defaultdict(list)

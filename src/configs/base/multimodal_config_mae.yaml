@@ -1,6 +1,6 @@
-experiment_name: "multimodal_rna_dna_wsi_1e5_bigset_balanced_800_16_09_fixed"
-n_epochs: 400
-warmup_epochs: 50 
+experiment_name: "multimodal_rna_dna_wsi_freezing_1e5_bigset_balanced_100_21_09_fixed"
+n_epochs: 100
+warmup_epochs: 10 
 n_intervals: 20
 random_seed: 1380
 
