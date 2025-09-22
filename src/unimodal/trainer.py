@@ -433,8 +433,8 @@ class UnimodalSurvivalTrainer(Trainer):
             preds.append(outputs)
             times.append(time)
             events.append(event)
-            total_task_loss+=loss*batch.shape[0]
-            num_samples+=batch.shape[0]
+            total_task_loss+=loss*data.shape[0]
+            num_samples+=data.shape[0]
             
         metrics = {"task_loss": total_task_loss.cpu().detach().numpy() / num_samples}
         if split!="train":
