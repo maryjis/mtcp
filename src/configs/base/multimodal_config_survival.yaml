@@ -1,12 +1,14 @@
-experiment_name: "multimodal_rna_dnam_wsi_balanced_survival"
+
+experiment_name: "multimodal_rna_dnam_wsi_pretrained_warmup_balanced_survival"
 n_epochs: 50
+warmup_epochs: 10 
 n_intervals: 20
 random_seed: 1380
 
 optimizer:
-    name: "Adam"
+    name: "AdamW"
     params:
-        lr: 1e-3 # 1e-3
+        lr: 1e-4
         weight_decay: 1e-2
     
 scheduler: 
@@ -17,7 +19,8 @@ scheduler:
 type: "multimodal"
 strategy: "survival" # mae, survival
 
-modalities: ["wsi"]
+
+modalities: ["rna", "dnam", "wsi"]
 
 multimodal_intersection_test: true
 architecture: "MAE"
@@ -25,9 +28,11 @@ splits: 5
 save_path : "outputs/models/"
 project_ids: ["GBM", "LGG"]
 
-data_path: "src/data/dataset_full_tcga_all_balanced.csv"
+
+data_path: "src/data/dataset_inetrsection_all.csv"
 rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
-device: "cuda:0"
+device: "cuda:1"
+
 #available_gpus:  [0]  # Указываем, какие GPU можно использовать
 remove_nan_column: 'RNA'
 batch_size: 24

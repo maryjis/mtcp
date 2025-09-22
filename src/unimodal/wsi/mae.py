@@ -133,11 +133,6 @@ class WsiMAEForPreTraining(ViTMAEForPreTraining):
             `torch.FloatTensor`: Pixel reconstruction loss.
         """
         target = self.patchify(pixel_values, interpolate_pos_encoding=interpolate_pos_encoding)
-        
-        print("pixel_values: ", pixel_values.shape)
-        print("target: ", target.shape)
-        print("pred", pred.shape)
-        print("target: ", target.mean())
     
         print("self.config.norm_pix_loss:", self.config.norm_pix_loss)
         if self.config.norm_pix_loss:
@@ -146,11 +141,10 @@ class WsiMAEForPreTraining(ViTMAEForPreTraining):
             target = (target - mean) / (var + 1.0e-6) ** 0.5
 
         loss = (pred - target) ** 2
-        print("Loss shape", loss.shape)
+  
         loss = loss.mean(dim=-1)  # [N, L], mean loss per patch
         loss = (loss * mask).sum() / mask.sum()  # mean loss on removed patches
         
-        print("Loss: ", loss)
         return loss
     
 class WsiMaeSurvivalModel(nn.Module):

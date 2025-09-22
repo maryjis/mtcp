@@ -11,7 +11,7 @@ base:
     optimizer:
         name: "AdamW"
         params:
-            lr: 1e-4
+            lr: 1e-3
             weight_decay: 1e-2
     
     scheduler: 

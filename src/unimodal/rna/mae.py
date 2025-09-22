@@ -273,13 +273,8 @@ class RnaMAEForPreTraining(ViTMAEForPreTraining):
             var = target.var(dim=-1, keepdim=True)
             target = (target - mean) / (var + 1.0e-6) ** 0.5
 
-        print("pixel_values: ", values.shape)
-        print("target: ", target.shape)
-        print("pred", pred.shape)
-        print("target: ", target.mean())
-        
         loss = (pred - target) ** 2
-        print("loss.shape", loss.shape)
+
         loss = loss.mean(dim=-1)  # [N, L], mean loss per patch
         loss = (loss * mask).sum() / mask.sum()  # mean loss on removed patches
         return loss

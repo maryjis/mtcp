@@ -106,7 +106,8 @@ class WSIDataset_patches(BaseDataset):
             missing = self.data["WSI_initial"].isna().sum()
             logger.info(f"Missing WSI_initial paths: {missing} of {len(self.data)}")
 
-    def _load_patches(self, patch_dir: str) -> Tuple[torch.Tensor, torch.Tensor]:
+
+    def _load_patches(self, patch_dir: str) -> torch.Tensor:
         """Загружает патчи из директории `patch_dir`, масштабирует и конвертирует в тензоры"""
 
         t0 = time.perf_counter()
@@ -115,6 +116,7 @@ class WSIDataset_patches(BaseDataset):
         if not os.path.exists(patch_dir):
             logger.warning(f"Patch directory not found: {patch_dir}")
             return torch.zeros((expected_patches, 3, *self.resize_to), dtype=torch.float32), False
+
 
         try:
             patch_files = sorted([f for f in os.listdir(patch_dir) if f.endswith(".png")])
@@ -142,6 +144,7 @@ class WSIDataset_patches(BaseDataset):
                 patch = Image.open(patch_path).convert("RGB")
                 patch = F.resize(patch, self.resize_to)
                 patch = F.pil_to_tensor(patch).float()
+
                 # Нормализация
                 patch = torch.nan_to_num(patch, nan=0.0, posinf=1.0, neginf=0.0)
                 min_val, max_val = patch.min(), patch.max()

@@ -18,7 +18,12 @@ num_channels: 1
 num_hidden_layers: 6
 patch_size: 512
 qkv_bias: true
+<<<<<<< HEAD
 is_load_pretrained: false
 pretrained_model_name: ""
+=======
+is_load_pretrained: true
+pretrained_model_name: "rsna_mae_survival_800_september"
+>>>>>>> clean-main
 pretrained_model_path: ""
 output_dim: 20

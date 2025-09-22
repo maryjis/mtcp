@@ -18,7 +18,12 @@ num_channels: 1
 num_hidden_layers: 6
 patch_size: 1024
 qkv_bias: true
+<<<<<<< HEAD
 is_load_pretrained: false
 pretrained_model_name: "dna_without_clusters_mae_survival"
+=======
+is_load_pretrained: true
+pretrained_model_name: "dna_pretraining_big_september"
+>>>>>>> clean-main
 pretrained_model_path: ""
 output_dim: 20

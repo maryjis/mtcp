@@ -482,7 +482,10 @@ class NeptuneExperimentTracker(ExperimentTracker):
         for key, value in metrics.items():
             self.run[f"summary/{key}"] = value
         
-    
+    def log_image(self, key, image):
+        self.run[f"visualisations/{key}"].upload(
+                neptune.types.File.as_image(image))
+        
     def finish(self):
         self.run.stop()
       

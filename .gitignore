@@ -13,3 +13,4 @@ src/configs/multistage_optuna_unimodal_config.yaml
 src/configs/schedule
 .neptune/
 
+nohup.out

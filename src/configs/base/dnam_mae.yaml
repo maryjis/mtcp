@@ -25,7 +25,11 @@ save_path : "outputs/models/"
 data_path: "src/data/dataset_full_tcga_all_balanced.csv"
 rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
 
+<<<<<<< HEAD
 device: "cuda:4"
+=======
+device: "cuda:2"
+>>>>>>> clean-main
 remove_nan_column: 'DNAm'
 batch_size: 256
 
