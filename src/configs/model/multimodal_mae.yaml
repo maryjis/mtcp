@@ -47,3 +47,8 @@ fusion_dim: 768
 fusion_nhead: 4
 fusion_dim_feedforward: 2048
 fusion_dropout: 0.1
+
+make_modality_pooling: false
+make_modality_normalizers: false
+make_modality_dropout: false
+make_modality_clipper: true
