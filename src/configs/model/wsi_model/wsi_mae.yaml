@@ -23,5 +23,4 @@ max_patches_per_sample: 10
 return_dict: True
 is_load_pretrained: True
 pretrained_model_name: "unimodal_wsi_800_mae_macha_bigvit_pretrained"
-
 noise: None

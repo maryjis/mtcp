@@ -1,7 +1,6 @@
-
-experiment_name: "multimodal_rna_dnam_wsi___all_pretrained_warmup_balanced_survival"
-n_epochs: 50
-warmup_epochs: 10 
+experiment_name: "multimodal_rna_dnam_wsi_multimodal_pretrained_warmup_bagration_dropout5_survival"
+n_epochs: 20
+warmup_epochs: 5 
 n_intervals: 20
 random_seed: 1380
 
@@ -31,7 +30,7 @@ project_ids: ["GBM", "LGG"]
 
 data_path: "src/data/dataset_inetrsection_all_v2.csv"
 rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
-device: "cuda:3"
+device: "cuda:2"
 
 #available_gpus:  [0]  # Указываем, какие GPU можно использовать
 remove_nan_column: 'RNA'
