@@ -134,8 +134,8 @@ class MultiMAEModel(PreTrainedModel):
         self.encoders = nn.ModuleDict(self.encoders)
         self.cls_token = nn.Parameter(torch.zeros(1, 1, cfg.hidden_size))
         self.encoder_fusion_strategy = None
-        self.polings = nn.ModuleDict({modality: TopKPooling(cfg.hidden_size, k=20) for modality in  cfg.modalities})
-        self.normalizers = nn.ModuleDict({modality: nn.LayerNorm(cfg.hidden_size) for modality in  cfg.modalities})
+        # self.polings = nn.ModuleDict({modality: TopKPooling(cfg.hidden_size, k=20) for modality in  cfg.modalities})
+        # self.normalizers = nn.ModuleDict({modality: nn.LayerNorm(cfg.hidden_size) for modality in  cfg.modalities})
         self.cliper = BatchSigmaClipper(k=3.0)
         self.dropout =nn.Dropout(p=0.5)
         
@@ -457,10 +457,10 @@ class MultiMAEModel(PreTrainedModel):
                     last_hidden_state = last_hidden_state.mean(dim=1)
                     embedded_sample.mask =embedded_sample.mask[:n,:]
                     embedded_sample.ids_restore =embedded_sample.ids_restore[:n,:]
-                    print("Make dropout on wsi")
-                    last_hidden_state =self.dropout(last_hidden_state)
+                    # print("Make dropout on wsi")
+                    # last_hidden_state =self.dropout(last_hidden_state)
 
-            last_hidden_state =self.cliper(last_hidden_state)
+            # last_hidden_state =self.cliper(last_hidden_state)
             # self.save_token_visualisation(modality=modality,
             #             last_hidden_state=last_hidden_state)
             # print("last_hidden_state.shape: ", last_hidden_state.shape)
@@ -858,7 +858,7 @@ class MultiMaeForSurvival(nn.Module):
             if cfg.freezing_strategy:
                 print("Freezing!")
                 for name, param in self.model.named_parameters():
-                    if ("cls_token" in name) or ("layer.5" in name) or ('encoders.wsi.encoder.encoder.layer.3' in name):
+                    if ("cls_token" in name) or ("encoder_fusion_strategy" in name):
                         print("chozen", name)
                         param.requires_grad = True
                     else: 
