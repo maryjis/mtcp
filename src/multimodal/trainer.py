@@ -50,11 +50,14 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker):
         super().__init__(splits, cfg, tracker)
         # TODO MRI - done preprocess! 
-        cfg.model.rna_model.size = cfg.model.rna_model.size if cfg.model.rna_model.get("size", None) else math.ceil(len(self.preproc["rna"].get_column_order()) /cfg.model.rna_model.patch_size)* cfg.model.rna_model.patch_size
-        transforms = {"rna": padded_transforms_with_scaling(self.preproc["rna"].get_scaling(), cfg.model.rna_model.size), 
-                      "dnam" : padded_transforms_scaling(self.preproc["dnam"].get_scaling(), cfg.model.dnam_model.get("size", None)) if cfg.model.get("dnam_model", None) else None,
-                      "cnv" : padded_transforms_cnv_scaling(self.preproc["cnv"].get_scaling(), cfg.model.cnv_model.get("size", None)) if "cnv" in self.preproc.keys() else None,
-                      "mri" : None, "wsi" : None }
+
+        if cfg.model.get("rna_model", None):
+            cfg.model.rna_model.size = cfg.model.rna_model.size if cfg.model.rna_model.get("size", None) else math.ceil(len(self.preproc["rna"].get_column_order()) /cfg.model.rna_model.patch_size)* cfg.model.rna_model.patch_size
+        transforms = {"rna": padded_transforms_with_scaling(self.preproc["rna"].get_scaling(), cfg.model.rna_model.size) if cfg.model.get("rna_model", None) else None, 
+                        "dnam" : padded_transforms_scaling(self.preproc["dnam"].get_scaling(), cfg.model.dnam_model.get("size", None)) if cfg.model.get("dnam_model", None) else None,
+                        "cnv" : padded_transforms_cnv_scaling(self.preproc["cnv"].get_scaling(), cfg.model.cnv_model.get("size", None)) if "cnv" in self.preproc.keys() else None,
+                        "mri" : None, "wsi" : None }
+
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities, self.preproc, transforms)
         self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False, batch_size=cfg.base.batch_size, drop_last=True if split == "train" else False)
                             for split in splits.keys()}
@@ -72,7 +75,9 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
         
     def initialise_models(self):
-        return MultiMaeForPretraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+
+        return MultiMaeForPretraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)), tracker = self.tracker)
+
  
         
     def __loop__(self,split, fold_ind, dataloader, device):
@@ -84,19 +89,23 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
             data, masks = batch 
             data = {modality :value.to(device) for modality, value in data.items()} 
             outputs =self.model(data,masks)
-    
+
             if split=="train":
                 self.optimizer.zero_grad()
                 outputs.loss[0].backward()
                 self.optimizer.step()
             
-            total_loss+=outputs.loss[0]
             for modality, _ in data.items():
                 if modality not in modality_losses:
                     modality_losses[modality] = 0
-                modality_losses[modality] += outputs.loss[1][modality]
-                modality_count[modality] += torch.sum(masks[modality])
+                modality_losses[modality] += outputs.loss[1][modality] * torch.sum(masks[modality])
+                modality_count[modality] +=torch.sum(masks[modality])
             contrastive_loss = outputs.loss[2]
+
+            total_loss+=outputs.loss[0]*masks[modality].shape[0]
+            # print("masks sum: ",modality,  torch.sum(masks[modality]))
+            # print("Batch lenth: ",data[modality].shape[0])
+
             if  contrastive_loss:
                 for name, loss_value in contrastive_loss.items():
                     if name not in contrastive_losses:
@@ -154,7 +163,9 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
         
     def initialise_models(self):
-        return MultiMaeForSurvival(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+
+        return MultiMaeForSurvival(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)), tracker = self.tracker)
+
     
     def initialise_datasets(self, splits, modalities, preprocs, transforms=None):
         datasets = defaultdict(list)

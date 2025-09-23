@@ -106,30 +106,33 @@ class WSIDataset_patches(BaseDataset):
             missing = self.data["WSI_initial"].isna().sum()
             logger.info(f"Missing WSI_initial paths: {missing} of {len(self.data)}")
 
+
     def _load_patches(self, patch_dir: str) -> torch.Tensor:
         """Загружает патчи из директории `patch_dir`, масштабирует и конвертирует в тензоры"""
+
         t0 = time.perf_counter()
         expected_patches = 1 if self.random_patch_selection else self.max_patches_per_sample
 
         if not os.path.exists(patch_dir):
             logger.warning(f"Patch directory not found: {patch_dir}")
-            return torch.zeros((expected_patches, 3, *self.resize_to), dtype=torch.float32)
+            return torch.zeros((expected_patches, 3, *self.resize_to), dtype=torch.float32), False
+
 
         try:
             patch_files = sorted([f for f in os.listdir(patch_dir) if f.endswith(".png")])
         except Exception as e:
             logger.exception(f"Failed to list files in {patch_dir}")
-            return torch.zeros((expected_patches, 3, *self.resize_to), dtype=torch.float32)
+            return torch.zeros((expected_patches, 3, *self.resize_to), dtype=torch.float32) , False
 
         if not patch_files:
             logger.warning(f"No patch files found in {patch_dir}")
-            return torch.zeros((expected_patches, 3, *self.resize_to), dtype=torch.float32)
+            return torch.zeros((expected_patches, 3, *self.resize_to), dtype=torch.float32), False
 
         # Выбор одного случайного патча
         if self.random_patch_selection:
             if len(patch_files) == 0:
                 logger.warning(f"No patch files to select randomly in {patch_dir}")
-                return torch.zeros((1, 3, *self.resize_to), dtype=torch.float32)
+                return torch.zeros((1, 3, *self.resize_to), dtype=torch.float32), False
             idx_patch = torch.randint(0, len(patch_files), (1,)).item()
             patch_files = [patch_files[idx_patch]]
             logger.debug(f"Randomly selected patch: {patch_files[0]} from {patch_dir}")
@@ -150,7 +153,7 @@ class WSIDataset_patches(BaseDataset):
                     patch = torch.zeros_like(patch)
                 else:
                     patch = (patch - min_val) / (max_val - min_val + 1e-8)
-          
+
                 # Применение transform
                 if self.transform:
                     patch = self.transform(patch)
@@ -162,7 +165,7 @@ class WSIDataset_patches(BaseDataset):
 
         if not patches:
             logger.warning(f"All patch loads failed for {patch_dir}, returning zeros.")
-            return torch.zeros((expected_patches, 3, *self.resize_to), dtype=torch.float32)
+            return torch.zeros((expected_patches, 3, *self.resize_to), dtype=torch.float32), False
 
         # Паддинг, если не хватает патчей
         while not self.random_patch_selection and len(patches) < self.max_patches_per_sample:
@@ -178,16 +181,15 @@ class WSIDataset_patches(BaseDataset):
         elapsed = (time.perf_counter() - t0) * 1000
         logger.debug(f"Loaded {len(patches)} patches from {patch_dir} in {elapsed:.1f} ms. Shape: {tensor.shape}")
 
-        return tensor
+        return tensor, True
 
     def __getitem__(self, idx: int):
         t0 = time.perf_counter()
         sample = self.data.iloc[idx]
         patch_dir = sample.WSI_initial if not pd.isna(sample.WSI_initial) else None
-        patch_dir ="/data/TCGA_all_wsi/" +patch_dir +"/patches"
+
         if patch_dir:
-            patches = self._load_patches(patch_dir)
-            mask = True
+            patches,mask = self._load_patches(patch_dir)
         else:
             patches = torch.zeros(
                 (1 if self.random_patch_selection else self.max_patches_per_sample, 3, *self.resize_to),

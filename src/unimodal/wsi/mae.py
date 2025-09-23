@@ -62,7 +62,7 @@ class WsiMAEModel(ViTMAEModel):
         pixel_values = rearrange(pixel_values, 'b n c h w -> (b n) c h w')
 
         encoded = super().forward(pixel_values=pixel_values,
-                                  noise=None,
+                                  noise=noise,
                                   head_mask=head_mask,
                                   output_attentions=output_attentions,
                                   output_hidden_states =output_hidden_states,
@@ -86,16 +86,19 @@ class WsiMAEForPreTraining(ViTMAEForPreTraining):
         if getattr(self.config, "is_load_pretrained", False):
             print("Load weights....: ")
             try:
-                print("Loading pretrained MAE weights from 'facebook/vit-mae-base'...")
-                base = ViTMAEForPreTraining.from_pretrained(
+                self.vit =self.vit.from_pretrained(
                     "facebook/vit-mae-base"  # полезно, если размеры отличаются
                 )
-                missing, unexpected = self.load_state_dict(base.state_dict(), strict=False)
-                if missing:
-                    print(f"Missing keys (first 10): {missing[:10]}{' ...' if len(missing)>10 else ''}")
-                if unexpected:
-                    print(f"Unexpected keys (first 10): {unexpected[:10]}{' ...' if len(unexpected)>10 else ''}")
-                print("Pretrained weights loaded into WsiMAEForPreTraining.")
+                # print("Loading pretrained MAE weights from 'facebook/vit-mae-base'...")
+                # base = ViTMAEForPreTraining.from_pretrained(
+                #     "facebook/vit-mae-base"  # полезно, если размеры отличаются
+                # )
+                # missing, unexpected = self.load_state_dict(base.state_dict(), strict=False)
+                # if missing:
+                #     print(f"Missing keys (first 10): {missing[:10]}{' ...' if len(missing)>10 else ''}")
+                # if unexpected:
+                #     print(f"Unexpected keys (first 10): {unexpected[:10]}{' ...' if len(unexpected)>10 else ''}")
+                # print("Pretrained weights loaded into WsiMAEForPreTraining.")
             except Exception as e:
                raise(f"Failed to load pretrained weights: {e}")
                
@@ -112,11 +115,37 @@ class WsiMAEForPreTraining(ViTMAEForPreTraining):
         patches = super().patchify(patches, interpolate_pos_encoding=interpolate_pos_encoding)
         return patches
     
-    def unpatchify(self, patchified_pixel_values, original_image_size: Optional[tuple[int, int]] = None, batch_size: int =1):
-        unpatchified = super().unpatchify(patchified_pixel_values, original_image_size)
-        patches = rearrange(unpatchified, '(b n) c h w -> b n c h w', b=batch_size)
-        return patches
+
     
+    def forward_loss(self, pixel_values, pred, mask, interpolate_pos_encoding: bool = False):
+        """
+        Args:
+            pixel_values (`torch.FloatTensor` of shape `(batch_size, num_channels, height, width)`):
+                Pixel values.
+            pred (`torch.FloatTensor` of shape `(batch_size, num_patches, patch_size**2 * num_channels)`:
+                Predicted pixel values.
+            mask (`torch.FloatTensor` of shape `(batch_size, sequence_length)`):
+                Tensor indicating which patches are masked (1) and which are not (0).
+            interpolate_pos_encoding (`bool`, *optional*, default `False`):
+                interpolation flag passed during the forward pass.
+
+        Returns:
+            `torch.FloatTensor`: Pixel reconstruction loss.
+        """
+        target = self.patchify(pixel_values, interpolate_pos_encoding=interpolate_pos_encoding)
+    
+        print("self.config.norm_pix_loss:", self.config.norm_pix_loss)
+        if self.config.norm_pix_loss:
+            mean = target.mean(dim=-1, keepdim=True)
+            var = target.var(dim=-1, keepdim=True)
+            target = (target - mean) / (var + 1.0e-6) ** 0.5
+
+        loss = (pred - target) ** 2
+  
+        loss = loss.mean(dim=-1)  # [N, L], mean loss per patch
+        loss = (loss * mask).sum() / mask.sum()  # mean loss on removed patches
+        
+        return loss
     
 class WsiMaeSurvivalModel(nn.Module):
     def __init__(self, config):

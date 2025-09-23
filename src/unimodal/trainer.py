@@ -420,7 +420,7 @@ class UnimodalSurvivalTrainer(Trainer):
             
             data, mask,  time, event = batch 
             data = {modality :value.to(device) for modality, value in data.items()} if isinstance(data, dict) else data.to(device)
-
+            batch_size = (next(iter(data.values())).shape[0] if isinstance(data, dict) else data.shape[0])
             outputs =self.model(data, masks = mask)
 
             loss = self.criterion(outputs, time.to(device), event.to(dtype=torch.float32,device=device))
@@ -433,8 +433,8 @@ class UnimodalSurvivalTrainer(Trainer):
             preds.append(outputs)
             times.append(time)
             events.append(event)
-            total_task_loss+=loss*len(batch)
-            num_samples+=len(batch)
+            total_task_loss+=loss*batch_size
+            num_samples+=batch_size
             
         metrics = {"task_loss": total_task_loss.cpu().detach().numpy() / num_samples}
         if split!="train":
@@ -473,6 +473,7 @@ class UnimodalMAETrainer(Trainer):
 
         self.model =self.initialise_models().to(cfg.base.device)
         logger.debug(f"Model: {self.model}")
+        print((f"Model: {self.model}"))
         print_vit_sizes(self.model)
         torch.cuda.reset_peak_memory_stats(device=cfg.base.device)
         logger.debug(f"gpu used {torch.cuda.max_memory_allocated(device=cfg.base.device)/1024/1024} Mb memory")
@@ -574,9 +575,8 @@ class UnimodalMAETrainer(Trainer):
                 self.optimizer.zero_grad()
                 outputs.loss.backward()
                 self.optimizer.step()
-            
-            total_loss+=outputs.loss.detach().item()*len(batch) #outputs.loss - mean loss across batch
-            num_samples+=len(batch)
+            total_loss+=outputs.loss.detach().item()*data.shape[0] #outputs.loss - mean loss across batch
+            num_samples+=data.shape[0]
         
         metrics = {"mse_loss": total_loss / num_samples}
         

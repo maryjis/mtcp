@@ -18,7 +18,7 @@ num_channels: 1
 num_hidden_layers: 6
 patch_size: 1024
 qkv_bias: true
-is_load_pretrained: true
+is_load_pretrained: False
 pretrained_model_name: "dna_pretraining_big_september"
 pretrained_model_path: ""
 output_dim: 20
