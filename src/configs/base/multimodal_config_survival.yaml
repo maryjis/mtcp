@@ -1,4 +1,4 @@
-experiment_name: "multimodal_rna_dnam_wsi_multimodal_pretrained_warmup_bagration_dropout5_survival"
+experiment_name: "multimodal_rna_dnam_wsi_multimodal_pretrained_warmup_bagration_dropout5_early_stoping_survival"
 n_epochs: 20
 warmup_epochs: 5 
 n_intervals: 20
@@ -30,7 +30,7 @@ project_ids: ["GBM", "LGG"]
 
 data_path: "src/data/dataset_inetrsection_all_v2.csv"
 rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
-device: "cuda:2"
+device: "cuda:0"
 
 #available_gpus:  [0]  # Указываем, какие GPU можно использовать
 remove_nan_column: 'RNA'
@@ -51,3 +51,12 @@ log:
 #         smoothing_period: 5
 #         direction: "min"
 #     value_to_track: "task_loss"
+
+early_stopping:
+    early_stopper:
+        patience: 5
+        eps: 0
+        smoothing: "no_smoothing"
+        smoothing_period: 1
+        direction: "max"
+    value_to_track: "c_index"

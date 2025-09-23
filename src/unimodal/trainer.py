@@ -55,6 +55,7 @@ from transformers import get_cosine_schedule_with_warmup
 import psutil
 import torch
 import logging
+import copy
 
 logging.basicConfig(
     level=logging.DEBUG,  # Включаем подробный уровень
@@ -78,6 +79,7 @@ class Trainer(object):
         self.cfg = cfg
         self.preproc = self.initialise_preprocessing(splits, self.cfg.base.modalities[0])
         self.tracker = tracker
+        self.best_model = None
  
     def initialise_preprocessing(self, splits, modality):
         
@@ -169,6 +171,7 @@ class Trainer(object):
             )
         ) as prof:
             min_val = 1000000
+            max_val = 0
             for epoch in tqdm(range(self.cfg.base.n_epochs)):
                 logger.info(f"Epoch {epoch}/{self.cfg.base.n_epochs} started")
 
@@ -200,15 +203,23 @@ class Trainer(object):
                     logger.info("Early stopping: ")
                     if self.early_stopper.early_stop(val_metrics[self.cfg.base.early_stopping.value_to_track]):
                         break
-                    if val_metrics[self.cfg.base.early_stopping.value_to_track]<= min_val:
+                    if self.cfg.base.early_stopping.early_stopper.direction =="min" and val_metrics[self.cfg.base.early_stopping.value_to_track]<= min_val:
                         logger.info(f"Archive min error on validation  {val_metrics[self.cfg.base.early_stopping.value_to_track]} , saving model...")
                         min_val = val_metrics[self.cfg.base.early_stopping.value_to_track]
                         check_dir_exists(self.cfg.base.save_path)
                         torch.save(self.model.state_dict(), self.cfg.base.save_path)
+                        self.best_model = copy.deepcopy(self.model.state_dict())
+                    if self.cfg.base.early_stopping.early_stopper.direction =="max" and val_metrics[self.cfg.base.early_stopping.value_to_track]>= max_val:
+                        logger.info(f"Archive max metric on validation  {val_metrics[self.cfg.base.early_stopping.value_to_track]} , saving model...")
+                        max_val = val_metrics[self.cfg.base.early_stopping.value_to_track]
+                        check_dir_exists(self.cfg.base.save_path)
+                        torch.save(self.model.state_dict(), self.cfg.base.save_path)
+                        self.best_model = copy.deepcopy(self.model.state_dict())
                 else:
                     check_dir_exists(self.cfg.base.save_path)
                     logger.info(f'For {epoch} Saving model......: {self.cfg.base.save_path}')
                     torch.save(self.model.state_dict(), self.cfg.base.save_path)
+                    
                 log_memory()
 
         return val_metrics
@@ -236,7 +247,9 @@ class Trainer(object):
             )
         ) as prof:
             prof.step() #just to skip warmup and do not see warning
-
+            if self.best_model:
+                print("Load our best model: ")
+                self.model.load_state_dict(self.best_model)
             self.model.eval()
             with torch.no_grad():    
                 test_metrics_intersection = None
