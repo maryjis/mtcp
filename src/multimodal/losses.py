@@ -53,3 +53,23 @@ class CLIPAlignmentLoss(nn.Module):
                 F.normalize(emb_a, p=2, dim=-1),
                 F.normalize(emb_b, p=2, dim=-1).T
             )
+            
+import torch
+import torch.nn as nn
+
+class PairwiseRankingLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, risk, durations, events):
+        loss = []
+        for i in range(len(risk)):
+            if events[i] == 1:                # только те, где событие
+                t_i = durations[i]
+                r_i = risk[i]
+                mask = durations > t_i        # кто жив к моменту t_i
+                if mask.any():
+                    diff = r_i - risk[mask]
+                    loss.append(torch.log1p(torch.exp(-diff)).mean())
+        return torch.stack(loss).mean() if loss else torch.tensor(0.0, device=risk.device)
+

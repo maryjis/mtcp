@@ -6,19 +6,19 @@ decoder_num_hidden_layers: 2
 hidden_act: "gelu"
 hidden_dropout_prob: 0.0
 hidden_size: 768 # maybe 384?
-size: 26624
+size: 18432
 initializer_range: 0.02
 intermediate_size: 3072
 layer_norm_eps: 1e-12
-mask_ratio: 0.5
+mask_ratio: 0.0
 model_type: "vit_mae"
 norm_pix_loss: false
 num_attention_heads: 4
 num_channels: 1
 num_hidden_layers: 6
-patch_size: 1024
+patch_size: 512
 qkv_bias: true
 is_load_pretrained: False
-pretrained_model_name: "dna_pretraining_big_september"
+pretrained_model_name: "rsna_mae_survival_800_september"
 pretrained_model_path: ""
 output_dim: 20

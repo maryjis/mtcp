@@ -1,4 +1,4 @@
-experiment_name: "multimodal_rna_dnam_wsi_multimodal_pretrained_warmup_bagration_dropout5_early_stoping_survival"
+experiment_name: "multimodal_blca_rna_dnam_wsi_unimodal_pretrained_warmup_bagration_dropout5_early_stoping_survival"
 n_epochs: 20
 warmup_epochs: 5 
 n_intervals: 20
@@ -14,9 +14,6 @@ scheduler:
     name: "CosineAnnealingLR"
     params:
         eta_min: 5e-6
-loss:
-    additional_loss: "CoxPHLoss"
-    alpha: 0.5
 
 type: "multimodal"
 strategy: "survival" # mae, survival
@@ -33,7 +30,7 @@ project_ids: ["BLCA"]
 
 data_path: "src/data/dataset_inetrsection_all_v2.csv"
 rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
-device: "cuda:0"
+device: "cuda:1"
 
 #available_gpus:  [0]  # Указываем, какие GPU можно использовать
 remove_nan_column: 'RNA'
@@ -57,7 +54,7 @@ log:
 
 # early_stopping:
 #     early_stopper:
-#         patience: 5
+#         patience: 7
 #         eps: 0
 #         smoothing: "no_smoothing"
 #         smoothing_period: 1

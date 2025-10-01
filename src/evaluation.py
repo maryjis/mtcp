@@ -5,6 +5,8 @@ from pycox.evaluation import EvalSurv
 import numpy as np
 from typing import List
 
+from sksurv.metrics import concordance_index_censored
+
 def create_nan_dataframe(
     num_row: int, num_col: int, name_col: List[str]
 ) -> pd.DataFrame:
@@ -34,6 +36,8 @@ def compute_survival_metrics(outputs, time, event, cuts):
         """
         hazard = torch.cat(outputs, dim=0)
         survival = (1 - hazard.sigmoid()).add(1e-7).log().cumsum(1).exp().cpu().numpy()
+        print("survival: ", survival.shape)
+        risk = -survival[:, -1]
         survival =pd.DataFrame(survival.transpose())
         # TODO check why we use inteprolation here! 
         #survival = interpolate_dataframe(pd.DataFrame(survival.transpose(), cuts))
@@ -44,7 +48,8 @@ def compute_survival_metrics(outputs, time, event, cuts):
         ibs = evaluator.integrated_brier_score(np.linspace(0, time.cpu().numpy().max()))
         inbll = evaluator.integrated_nbll(np.linspace(0, time.cpu().numpy().max()))
         cs_score = (c_index + (1 - ibs)) / 2
-        return {"c_index": c_index, "ibs": ibs, "inbll": inbll,"cs_score": cs_score}
+        c_index_v2 = concordance_index_censored(event.cpu().numpy().astype(bool), time.cpu().numpy(), risk , tied_tol=1e-08)[0]
+        return {"c_index": c_index, "ibs": ibs, "inbll": inbll,"cs_score": cs_score, "c_index_v2": c_index_v2}
     
 def agg_fold_metrics(lst: list[dict[str, float]]):
     """Compute mean, min, max, std from cross validation metrics"""

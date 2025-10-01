@@ -17,6 +17,9 @@ from src.multimodal.models import MultiMaeForPretraining, MultiMaeForSurvival
 import torch
 from src.utils import check_dir_exists, count_parameters, print_vit_sizes
 from src.utils import ExperimentTracker
+from pycox.models.loss import CoxPHLoss
+from src.multimodal.losses import PairwiseRankingLoss
+
 
 class MultiModalTrainer(Trainer):
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker):
@@ -25,6 +28,7 @@ class MultiModalTrainer(Trainer):
         self.preproc = self.initialise_preprocessing(splits, self.cfg.base.modalities)
         print(self.preproc)
         self.tracker = tracker
+        self.best_model = None
  
     def initialise_preprocessing(self, splits, modalities):
         preproc_dict = {}
@@ -157,8 +161,14 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
         self.initialise_loss()
         print(self.model)
     
-    def initialise_loss(self):    
-        self.criterion = NLLLogistiHazardLoss()
+    def initialise_loss(self):
+        self.criterion_logistic = NLLLogistiHazardLoss()    
+        if self.cfg.base.loss.additional_loss =="PairwiseRankLoss":
+            self.criterion_additional = PairwiseRankingLoss()
+        elif self.cfg.base.loss.additional_loss =="CoxPHLoss":
+            self.criterion_additional = CoxPHLoss()
+        else:
+            raise NotImplementedError(f"Such loss isn't implemented {self.cfg.base.loss.additional_loss}")
         self.optimizer = AdamW(self.model.parameters(), **self.cfg.base.optimizer.params)
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
         

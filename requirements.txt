@@ -22,3 +22,5 @@ pyqtwebengine
 pyqt5
 neptune-scale
 timm
+scikit-survival
+neptune

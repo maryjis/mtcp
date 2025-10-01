@@ -142,7 +142,7 @@ class MultiMAEModel(PreTrainedModel):
         if self.cfg.make_modality_normalizers:
             self.normalizers = nn.ModuleDict({modality: nn.LayerNorm(cfg.hidden_size) for modality in  cfg.modalities})
         if self.cfg.make_modality_clipper:
-            self.cliper = BatchSigmaClipper(k=3.0)
+            self.cliper = BatchSigmaClipper(k=4.0)
         if self.cfg.make_modality_dropout:
             self.dropout =nn.Dropout(p=0.5)
         
@@ -475,8 +475,13 @@ class MultiMAEModel(PreTrainedModel):
                         last_hidden_state =self.dropout(last_hidden_state)
             if self.cfg.make_modality_clipper:
                 last_hidden_state =self.cliper(last_hidden_state)
+                
+            if self.cfg.make_simple_normalizer:
+                last_hidden_state = F.normalize(last_hidden_state, p=2, dim=-1, eps=1e-8)
+                    
             # self.save_token_visualisation(modality=modality,
             #             last_hidden_state=last_hidden_state)
+
             # print("last_hidden_state.shape: ", last_hidden_state.shape)
             # if self.cfg.per_modality_pooling[modality]:
             #     print("cfg.per_modality_pooling[modality]: ", self.cfg.per_modality_pooling[modality])
@@ -884,7 +889,7 @@ class MultiMaeForSurvival(nn.Module):
             if cfg.freezing_strategy:
                 print("Freezing!")
                 for name, param in self.model.named_parameters():
-                    if ("cls_token" in name) or ("encoder_fusion_strategy" in name):
+                    if ("cls_token" in name) or ("encoder_fusion_strategy" in name) or ("layer.11" in name) or ('encoders.dnam.encoder.encoder.layer.5' in name):
                         print("chozen", name)
                         param.requires_grad = True
                     else: 

@@ -47,7 +47,8 @@ from src.utils import trace_handler
 from functools import partial
 from src.unimodal.dna.transforms import padded_transforms_simple
 from src.early_stopper import EarlyStopper
-
+from pycox.models.loss import CoxPHLoss
+from src.multimodal.losses import PairwiseRankingLoss
 from src.unimodal.cnv.models import CNVMAEForPreTraining
 import math
 from src.utils import ExperimentTracker
@@ -366,7 +367,9 @@ class UnimodalSurvivalTrainer(Trainer):
                         # Создаем SurvivalMRIDataset с нужными параметрами
                         datasets[split_name] = SurvivalWSIDataset(split, dataset, is_hazard_logits=True)
                     elif self.cfg.base.architecture=="MAE":
-                        dataset = WSIDataset_patches(split, random_patch_selection = self.cfg.data.wsi.random_patch_selection, return_mask=True)
+                        dataset = WSIDataset_patches(split, random_patch_selection = self.cfg.data.wsi.random_patch_selection,
+                                                     max_patches_per_sample =self.cfg.data.wsi.max_patches_per_sample,
+                                                     return_mask=True)
                         # Создаем SurvivalMRIDataset с нужными параметрами
                         datasets[split_name] = SurvivalWSIDataset(split, dataset, is_hazard_logits=True)
         else:
@@ -417,7 +420,13 @@ class UnimodalSurvivalTrainer(Trainer):
 
             
     def initialise_loss(self):    
-        self.criterion = NLLLogistiHazardLoss()
+        self.criterion_logistic = NLLLogistiHazardLoss()
+        if self.cfg.base.loss.additional_loss =="PairwiseRankLoss":
+            self.criterion_additional = PairwiseRankingLoss()
+        elif self.cfg.base.loss.additional_loss =="CoxPHLoss":
+            self.criterion_additional = CoxPHLoss()
+        else:
+            raise NotImplementedError(f"Such loss isn't implemented {self.cfg.base.loss.additional_loss}")
         self.optimizer = AdamW(self.model.parameters(), **self.cfg.base.optimizer.params)
         # self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
         self.scheduler = get_cosine_schedule_with_warmup(self.optimizer,
@@ -435,9 +444,22 @@ class UnimodalSurvivalTrainer(Trainer):
             data = {modality :value.to(device) for modality, value in data.items()} if isinstance(data, dict) else data.to(device)
             batch_size = (next(iter(data.values())).shape[0] if isinstance(data, dict) else data.shape[0])
             outputs =self.model(data, masks = mask)
-
-            loss = self.criterion(outputs, time.to(device), event.to(dtype=torch.float32,device=device))
-                
+            print("outputs.shape", outputs.shape)
+            print("time.shape", time.shape)
+            print("event.shape", event.shape)
+            
+            loss1 = self.criterion_logistic(outputs, time.to(device), event.to(dtype=torch.float32,device=device))
+            
+            haz = torch.sigmoid(outputs)
+            cum_hazard = -torch.log1p(-haz + 1e-7).cumsum(1)
+            risk = cum_hazard[:, -1]
+            print("risk: ", risk)
+            print("risk.shape", risk.shape)
+            print("time2.shape", time.shape)
+            print("event2.shape", event.shape)
+            
+            loss2 = self.criterion_additional(risk, time.to(device), event.to(dtype=torch.float32,device=device))
+            loss  =  self.cfg.base.loss.alpha *  loss1  + (1- self.cfg.base.loss.alpha) * loss2
             # Backpropagation
             if split=="train":
                 self.optimizer.zero_grad()

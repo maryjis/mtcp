@@ -52,3 +52,4 @@ make_modality_pooling: false
 make_modality_normalizers: false
 make_modality_dropout: false
 make_modality_clipper: true
+make_simple_normalizer: true
