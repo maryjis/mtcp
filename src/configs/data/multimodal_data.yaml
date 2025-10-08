@@ -11,7 +11,7 @@ rna:
 
 cnv:
     is_cluster_genes: False
-    is_hierarchical_clusters: False
+    is_hierarchical_clusters: True
     clustering_threshold: 0.7
     scaling_method: "MinMaxScaler"
     scaling_params: {}

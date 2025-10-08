@@ -91,7 +91,11 @@ class RNAPreprocessor(BaseUnimodalPreprocessor):
         dataset = pd.DataFrame(data = data, columns = self.pipe['var'].get_feature_names_out())
         
         print("Dataset after scaling", dataset)
+        print("self.is_cluster_genes: ", self.is_cluster_genes)
+        print("self.is_hierarchical_cluster: ", self.is_hierarchical_cluster)
+        print("self.threshold: ", self.threshold)
         if self.is_cluster_genes:
+            print("Clustering data.....")
             correlations = dataset.corr()
             dissimilarity = 1 - abs(correlations)
             Z = linkage(squareform(dissimilarity), 'complete')

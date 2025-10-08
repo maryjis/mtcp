@@ -36,8 +36,8 @@ def compute_survival_metrics(outputs, time, event, cuts):
         """
         hazard = torch.cat(outputs, dim=0)
         survival = (1 - hazard.sigmoid()).add(1e-7).log().cumsum(1).exp().cpu().numpy()
-        print("survival: ", survival.shape)
         risk = -survival[:, -1]
+        print("risk: ",risk)
         survival =pd.DataFrame(survival.transpose())
         # TODO check why we use inteprolation here! 
         #survival = interpolate_dataframe(pd.DataFrame(survival.transpose(), cuts))

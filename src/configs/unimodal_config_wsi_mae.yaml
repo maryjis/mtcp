@@ -37,7 +37,7 @@ base:
     remove_nan_column: 'WSI_initial'
     batch_size: 256
     
-   log:
+    log:
         logging: True
         logging_platform: "neptune"
         project_name: "almachan2358/cancer-mtcp"

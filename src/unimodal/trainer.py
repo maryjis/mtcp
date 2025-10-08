@@ -36,6 +36,7 @@ from src.unimodal.clinical.datasets import ClinicalDataset, ClinicalSurvivalData
 from src.unimodal.clinical.preprocessor import ClinicalPreprocessor
 from src.unimodal.clinical.transforms import base_scaling
 
+from src.unimodal.rna.transforms import PosFractionSampler
 from tqdm.auto import tqdm
 from sklearn.preprocessing import QuantileTransformer, StandardScaler, MinMaxScaler
 from src.unimodal.rna.transforms import UpperQuartileNormalizer
@@ -287,12 +288,35 @@ class UnimodalSurvivalTrainer(Trainer):
         elif self.cfg.base.modalities[0]=="cnv": 
             transforms = padded_transforms_cnv_scaling(self.preproc.get_scaling(), cfg.model.get("size", None))          
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities[0], self.preproc, transforms)
+        self.dataloaders = {}
 
-        self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False,
-                                              batch_size=cfg.base.batch_size if split == "train" else 1,
-                                              num_workers=self.cfg.base.get("num_workers", 0), drop_last=True if split == "train" else False)
-                            for split in splits.keys()}
-
+        for split in splits.keys():
+            if split == "train":
+                # берем события напрямую из датасета
+                events = self.datasets["train"].data.event.values  # или .to_numpy(), если это pandas
+                sampler = PosFractionSampler(events, batch_size=self.cfg.base.batch_size, pos_frac=1/10)
+                if self.cfg.base.get("sampler", True):
+                    print("sampler:")
+                    self.dataloaders[split] = DataLoader(
+                        self.datasets[split],
+                        batch_sampler=sampler,
+                        num_workers=self.cfg.base.get("num_workers", 0)
+                    )
+                else:
+                    self.dataloaders[split] = DataLoader(
+                        self.datasets[split],
+                        shuffle=True,
+                        batch_size=self.cfg.base.batch_size,
+                        drop_last=True,
+                        num_workers=self.cfg.base.get("num_workers", 0)
+                    )
+            else:
+                self.dataloaders[split] = DataLoader(
+                    self.datasets[split],
+                    shuffle=False,
+                    batch_size=1,
+                    num_workers=self.cfg.base.get("num_workers", 0)
+                )
         self.model =self.initialise_models(self.cfg.base.modalities[0], self.cfg.model).to(cfg.base.device)
         self.initialise_loss()
 
@@ -383,7 +407,7 @@ class UnimodalSurvivalTrainer(Trainer):
                 if self.cfg.base.architecture=="MAE":
                     return initialise_rna_mae_model(ViTMAEConfig(**OmegaConf.to_container(model_cfg)))
                 elif self.cfg.base.architecture=="CNN":
-                    return initialise_rna_model(model_cfg)
+                    return initialise_rna_model(model_cfg, self.preproc.get_column_order())
                 else:
                     raise NotImplementedError("Exist only for rna. Initialising datasets for other modalities aren't declared")
         elif modality=="mri":
@@ -444,22 +468,17 @@ class UnimodalSurvivalTrainer(Trainer):
             data = {modality :value.to(device) for modality, value in data.items()} if isinstance(data, dict) else data.to(device)
             batch_size = (next(iter(data.values())).shape[0] if isinstance(data, dict) else data.shape[0])
             outputs =self.model(data, masks = mask)
-            print("outputs.shape", outputs.shape)
-            print("time.shape", time.shape)
-            print("event.shape", event.shape)
-            
+            print("event:", event)
             loss1 = self.criterion_logistic(outputs, time.to(device), event.to(dtype=torch.float32,device=device))
-            
+           
             haz = torch.sigmoid(outputs)
             cum_hazard = -torch.log1p(-haz + 1e-7).cumsum(1)
             risk = cum_hazard[:, -1]
-            print("risk: ", risk)
-            print("risk.shape", risk.shape)
-            print("time2.shape", time.shape)
-            print("event2.shape", event.shape)
-            
+       
             loss2 = self.criterion_additional(risk, time.to(device), event.to(dtype=torch.float32,device=device))
+      
             loss  =  self.cfg.base.loss.alpha *  loss1  + (1- self.cfg.base.loss.alpha) * loss2
+            print("Loss:", loss)
             # Backpropagation
             if split=="train":
                 self.optimizer.zero_grad()
@@ -525,7 +544,7 @@ class UnimodalMAETrainer(Trainer):
         
     def initialise_models(self):
         if self.cfg.base.modalities[0]=="rna":
-            return  RnaMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+            return  RnaMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)), columns_order=self.preproc.get_column_order())
         if self.cfg.base.modalities[0]=="cnv":
             return  CNVMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
         elif self.cfg.base.modalities[0]=="mri":

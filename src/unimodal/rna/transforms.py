@@ -7,6 +7,66 @@ from scipy.stats import norm
 import torch
 import numpy as np
 import pandas as pd
+from torch.utils.data import Sampler
+
+import numpy as np
+from torch.utils.data import Sampler
+
+class PosFractionSampler(Sampler):
+    """
+    Каждый батч содержит примерно pos_frac положительных (event=1),
+    остальные случайно из всех данных (без дубликатов в батче).
+    """
+    def __init__(self, events, batch_size, pos_frac=1/3):
+        self.events = np.array(events)
+        self.batch_size = batch_size
+        self.pos_frac = pos_frac
+
+        self.pos_idx = np.where(self.events == 1)[0]
+        self.all_idx = np.arange(len(self.events))
+
+        if len(self.pos_idx) == 0:
+            raise ValueError("Нет ни одного события (event=1) в данных — нельзя сформировать батчи.")
+
+    def __iter__(self):
+        pos_perm = np.random.permutation(self.pos_idx)
+        all_perm = np.random.permutation(self.all_idx)
+        p_ptr, a_ptr = 0, 0
+
+        n_pos = max(1, int(np.floor(self.batch_size * self.pos_frac)))
+
+        while p_ptr < len(pos_perm) or a_ptr < len(all_perm):
+            batch = []
+
+            # --- 1. добавляем положительных ---
+            need_pos = n_pos
+            if p_ptr + need_pos > len(pos_perm):
+                need_pos = len(pos_perm) - p_ptr
+            pos_selected = pos_perm[p_ptr:p_ptr + need_pos]
+            batch.extend(pos_selected)
+            p_ptr += need_pos
+
+            # --- 2. оставшиеся из all_perm, исключая уже выбранные ---
+            remaining_needed = self.batch_size - len(batch)
+            while a_ptr < len(all_perm) and remaining_needed > 0:
+                idx = all_perm[a_ptr]
+                a_ptr += 1
+                if idx not in batch:  # исключаем дубликаты
+                    batch.append(idx)
+                    remaining_needed -= 1
+
+            # --- 3. если закончились all_perm — перетасовываем заново ---
+            if remaining_needed > 0:
+                refill = np.random.permutation(self.all_idx)
+                refill = [x for x in refill if x not in batch]  # исключаем всё уже добавленное
+                add = min(remaining_needed, len(refill))
+                batch.extend(refill[:add])
+            print("sampler batch", batch)
+            if len(batch) > 0:
+                yield batch
+
+    def __len__(self):
+        return int(np.ceil(len(self.events) / self.batch_size))
 
 class TorchQuantileTransformer:
     """

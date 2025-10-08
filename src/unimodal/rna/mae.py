@@ -4,6 +4,7 @@ from transformers.models.vit_mae.modeling_vit_mae import ViTMAEModel,ViTMAEDecod
 import numpy as np
 from typing import Optional, Set, Tuple, Union
 import random
+import json
 
 """
 This classes adopted from  https://github.com/huggingface/transformers/blob/main/src/transformers/models/vit_mae/modeling_vit_mae.py#L323
@@ -15,11 +16,16 @@ class RnaMAEEmbeddings(nn.Module):
 
     """
 
-    def __init__(self, cfg):
+    def __init__(self, cfg, columns_order=None):
         super().__init__()
 
         self.cls_token = nn.Parameter(torch.zeros(1, 1, cfg.hidden_size))
-        self.patch_embeddings = RnaTMAEPatchEmbeddings(cfg)
+        if cfg.patch_embedding.type == "tmae":
+            self.patch_embeddings = RnaTMAEPatchEmbeddings(cfg)
+        elif cfg.patch_embedding.type == "clusterd_go":
+            self.patch_embeddings = RnaClusterdGOPatchEmbeddings(cfg, columns_order)
+        else:
+            raise ValueError(f"Invalid patch embedding type: {cfg.patch_embedding.type}")
         self.num_patches = self.patch_embeddings.num_patches
         # fixed sin-cos embedding
         self.position_embeddings = nn.Parameter(
@@ -137,10 +143,111 @@ class RnaTMAEPatchEmbeddings(nn.Module):
         return x
 
 
+class DeepSetsFromMask(nn.Module):
+    def __init__(self, in_features=1, phi_dim=64, rho_dim=128, out_features=256, pooling="mean"):
+        super().__init__()
+        self.phi = nn.Sequential(
+            nn.Linear(in_features, phi_dim),
+            nn.ReLU(),
+            nn.Linear(phi_dim, phi_dim),
+            nn.ReLU()
+        )
+        self.rho = nn.Sequential(
+            nn.Linear(phi_dim, rho_dim),
+            nn.ReLU(),
+            nn.Linear(rho_dim, out_features)
+        )
+        self.pooling = pooling
+
+    def forward(self, x, cluster_mask):
+        """
+        x:            (B, N, F)
+        cluster_mask: (T, N) или (B, T, N)
+                       True=ген принадлежит кластеру
+        return:       (B, T, out_features)
+        """
+        B, N, F = x.shape
+        if cluster_mask.dim() == 2:
+            # общий для всех батчей
+            cluster_mask = cluster_mask.unsqueeze(0).expand(B, -1, -1)  # (B, T, N)
+
+        B, T, N = cluster_mask.shape
+        # расширим x до (B, 1, N, F)
+        x_exp = x.unsqueeze(1).expand(-1, T, -1, -1)  # (B, T, N, F)
+
+        # делаем маску для broadcast
+        mask = cluster_mask.unsqueeze(-1)            # (B, T, N, 1)
+        h = self.phi(x_exp)                          # (B, T, N, H_phi)
+        h = h * mask                                 # занулим паддинг
+
+        if self.pooling == "mean":
+            summed = h.sum(2)                        # (B, T, H_phi)
+            count = mask.sum(2)                      # (B, T, 1)
+            pooled = summed / count.clamp_min(1.0)   # среднее по реальным генам
+        elif self.pooling == "sum":
+            pooled = h.sum(2)
+        elif self.pooling == "max":
+            pooled = h.masked_fill(~mask, -1e9).max(2).values
+        else:
+            raise ValueError("pooling must be mean/sum/max")
+
+        return self.rho(pooled)                      # (B, T, out_features)
+
+class RnaClusterdGOPatchEmbeddings(nn.Module):
+    def __init__(self, cfg, columns_order):
+        super().__init__()
+        self.cfg = cfg
+        self.clusters= json.load(open(cfg.clusters_path))
+        self.num_clusters = len(self.clusters)
+        self.cluster_indices = self.prepare_cluster_indices(columns_order, self.clusters)
+        self.cluster_mask = self.make_cluster_mask(self.cluster_indices, len(columns_order), device=cfg.device)
+        self.deepsets = DeepSetsFromMask(in_features=self.cfg.patch_embedding.in_features,
+                                         phi_dim=self.cfg.patch_embedding.phi_dim,
+                                         rho_dim=self.cfg.patch_embedding.rho_dim, 
+                                         out_features=self.cfg.patch_embedding.out_features, 
+                                         pooling=self.cfg.patch_embedding.pooling_type)
+        
+    def make_cluster_mask(self,cluster_indices, n_genes, device=None):
+        """
+        cluster_indices : dict[str, torch.LongTensor]  # индексы генов в каждом кластере
+        n_genes         : int = len(columns_order)
+        return          : torch.BoolTensor (T, N)
+        """
+        T = len(cluster_indices)
+        mask = torch.zeros(T, n_genes, dtype=torch.bool, device=device)
+        for t, idxs in enumerate(cluster_indices.values()):
+            mask[t, idxs] = True
+        return mask   
+     
+    def prepare_cluster_indices(self, columns_order, clusters):
+        """
+        columns_order : list[str] — порядок генов в данных
+        clusters      : dict[str, {"genes": set}] — словарь кластеров
+
+        Возвращает: dict {cluster_name: torch.LongTensor(indices)}
+        """
+        # Словарь gene -> index в columns_order
+        gene2idx = {g: i for i, g in enumerate(columns_order)}
+
+        cluster_indices = {}
+        for name, data in clusters.items():
+            genes = data.get("genes", data)
+            idxs = [gene2idx[g] for g in genes if g in gene2idx]
+            if idxs:  # если нашлись индексы
+                cluster_indices[name] = torch.tensor(sorted(idxs), dtype=torch.long)
+        return cluster_indices
+
+    def forward(self, rna_values):
+        
+        batch_size, num_channels, rna_size = rna_values.shape 
+        embeddings = self.deepsets(rna_values, self.cluster_mask)
+        return embeddings
+        
+
 class RnaMAEModel(ViTMAEModel):
-    def __init__(self, config):
+    def __init__(self, config, columns_order=None):
         super().__init__(config)
-        self.embeddings = RnaMAEEmbeddings(config)
+        self.embeddings = RnaMAEEmbeddings(config, columns_order)
         self.mask_token = nn.Parameter(torch.zeros(1, 1, config.hidden_size))
         self.post_init()
     
@@ -239,11 +346,11 @@ class RnaMAEDecoder(ViTMAEDecoder):
 
 
 class RnaMAEForPreTraining(ViTMAEForPreTraining):
-    def __init__(self, config):
+    def __init__(self, config, columns_order=None):
         super().__init__(config)
         self.config = config
 
-        self.vit = RnaMAEModel(config)
+        self.vit = RnaMAEModel(config, columns_order)
         self.decoder = RnaMAEDecoder(config, num_patches=self.vit.embeddings.num_patches)
 
         # Initialize weights and apply final processing
@@ -355,14 +462,14 @@ class RnaMAEForPreTraining(ViTMAEForPreTraining):
 
 
 class RnaSurvivalModel(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, columns_order=None):
         super().__init__()
         self.config =config
         if config.is_load_pretrained:
             print("RnaSurvivalModel", self.config.pretrained_model_path)
             self.vit = RnaMAEModel.from_pretrained(self.config.pretrained_model_path, config = self.config)
         else:
-            self.vit = RnaMAEModel(config)
+            self.vit = RnaMAEModel(config, columns_order)
         self.projection = nn.Linear(self.config.hidden_size, self.config.output_dim)
         
     def forward(self, rna_values, masks=None):
@@ -372,5 +479,5 @@ class RnaSurvivalModel(nn.Module):
     
     
     
-def initialise_rna_mae_model(cfg):
-    return RnaSurvivalModel(cfg)
+def initialise_rna_mae_model(cfg, columns_order=None):
+    return RnaSurvivalModel(cfg, columns_order)

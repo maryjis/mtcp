@@ -35,11 +35,11 @@ contrastive_loss: false
 
 encoder_fusion_strategy: "masked_attention"
 
-encoder_fusion_depth: 1
+encoder_fusion_depth: 2
 encoder_fusion_dim: 768
-encoder_fusion_nhead: 4
+encoder_fusion_nhead: 16
 encoder_fusion_dim_feedforward: 2048
-encoder_fusion_dropout: 0.1
+encoder_fusion_dropout: 0.0
 
 fusion_strategy: "mask_attention"
 fusion_depth: 1
@@ -51,5 +51,5 @@ fusion_dropout: 0.1
 make_modality_pooling: false
 make_modality_normalizers: false
 make_modality_dropout: false
-make_modality_clipper: true
+make_modality_clipper: false
 make_simple_normalizer: true
