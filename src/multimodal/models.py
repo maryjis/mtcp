@@ -126,13 +126,13 @@ class TopKPooling(nn.Module):
     
 class MultiMAEModel(PreTrainedModel):
      
-    def __init__(self, cfg, tracker=None):
+    def __init__(self, cfg, tracker=None, preproc=None):
         super().__init__(cfg)
         self.cfg = cfg
         self.tracker = tracker
 
         self.modalities = cfg.modalities
-        self.__init_encoders__()
+        self.__init_encoders__(preproc)
         self.mask_token = nn.Parameter(torch.zeros(1, 1, cfg.hidden_size))
         self.encoders = nn.ModuleDict(self.encoders)
         self.cls_token = nn.Parameter(torch.zeros(1, 1, cfg.hidden_size))
@@ -153,19 +153,20 @@ class MultiMAEModel(PreTrainedModel):
                                                         cfg.encoder_fusion_dim_feedforward, cfg.encoder_fusion_dropout)
         self.initialize_weights()
 
-    def __init_encoders__(self):
+    def __init_encoders__(self, preproc=None):
         """Initialize encoders for each modality."""
         self.encoders = {}
         for modality in self.modalities:
             if modality == "rna":
                 cfg_rna_model = ViTMAEConfig(**self.cfg.rna_model)
                 encoder = None
+                column_order = preproc["rna"].get_column_order() if preproc else None
                 if cfg_rna_model.is_load_pretrained:
-                    encoder = RnaMAEModel.from_pretrained(cfg_rna_model.pretrained_model_path, config=cfg_rna_model)
+                    encoder = RnaMAEModel.from_pretrained(cfg_rna_model.pretrained_model_path, config=cfg_rna_model, column_order=column_order)
                     for param in encoder.parameters():
                         param.requires_grad = False
                 else:
-                    encoder = RnaMAEModel(cfg_rna_model)
+                    encoder = RnaMAEModel(cfg_rna_model, columns_order)
                 
                 self.encoders[modality] = UnimodalEncoder(
                     encoder,
@@ -537,12 +538,12 @@ class MultiMaeForPretraining(nn.Module):
     """Multi-modal Masked Autoencoder for pre-training."""
     
 
-    def __init__(self, cfg, tracker: ExperimentTracker =None):
+    def __init__(self, cfg, tracker: ExperimentTracker =None, preproc=None):
         super().__init__()
         self.cfg = cfg
         self.tracker = tracker
         self.modalities = cfg.modalities
-        self.model = MultiMAEModel(self.cfg, tracker=tracker)
+        self.model = MultiMAEModel(self.cfg, tracker=tracker, preproc=preproc)
 
         self.decoder = MultiMAEDecoder(self.cfg, self.get_all_patches_number())
         if cfg.postprocessing:
@@ -868,7 +869,7 @@ class PerceiverMultiResampler(nn.Module):
                        
 class MultiMaeForSurvival(nn.Module):
 
-    def __init__(self, cfg, tracker: ExperimentTracker = None):
+    def __init__(self, cfg, tracker: ExperimentTracker = None, preproc=None):
         super().__init__()
         self.cfg = cfg
         self.tracker = tracker
@@ -882,7 +883,7 @@ class MultiMaeForSurvival(nn.Module):
             model_state_dict = {k.replace("model.", "", 1): v for k, v in model_state_dict.items() if k.startswith("model.")}     
             print("Load keys: ", model_state_dict.keys())
 
-            self.model = MultiMAEModel(cfg, tracker= tracker)
+            self.model = MultiMAEModel(cfg, tracker= tracker, preproc=preproc)
 
             print("Model keys:", list(self.model.state_dict().keys()))
             self.model.load_state_dict(model_state_dict)
@@ -897,7 +898,7 @@ class MultiMaeForSurvival(nn.Module):
                 
         else:
 
-            self.model = MultiMAEModel(cfg, tracker= tracker)
+            self.model = MultiMAEModel(cfg, tracker= tracker, preproc=preproc)
 
             
         if cfg.missing_modalities_strategy =="decoder":

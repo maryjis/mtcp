@@ -7,7 +7,7 @@ rna:
     var_threshold: 0.0
     root_path: "../"
     # rna_dataset_path: "src/data/rna_balanced_dataset.csv"
-    rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
+    rna_dataset_path: "src/data/rna_dataset_full_tcga_go.csv"
 
 cnv:
     is_cluster_genes: False

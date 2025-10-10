@@ -1,14 +1,14 @@
-experiment_name: "rsna_mae_survival_800_september"
-n_epochs: 800
+experiment_name: "rsna_mae_clusters_survival_800_september"
+n_epochs: 1600
+warmup_epochs: 50
 n_intervals: 20
 random_seed: 1380
-warmup_epochs: 50 
 
 optimizer:
-    name: "Adam"
+    name: "AdamW"
     params:
-        lr: 1.5e-5 # 2e-5
-        weight_decay: 1e-2
+        lr: 1e-4
+        weight_decay: 0.05
     
 scheduler: 
     name: "CosineAnnealingLR"
@@ -23,10 +23,10 @@ splits: 5
 root_path: "../"
 save_path : "outputs/models/"
 data_path: "src/data/dataset_full_tcga_all_balanced.csv"
-rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
+rna_dataset_path: "src/data/rna_dataset_full_tcga_go.csv"
 device: "cuda:0"
 remove_nan_column: 'RNA'
-batch_size: 256
+batch_size: 64
 
 log:
     logging: True

@@ -24,25 +24,23 @@ class OmicsDataset(BaseDataset):
         """
         super().__init__(data_split, dataset_file, transform, is_hazard_logits, return_mask)
         self.rna_dataset = pd.read_csv(dataset_file)
-        print(self.rna_dataset.columns)
-        print("Preprocess Omics dataset, project_ids ", project_ids)
+
         if project_ids:
-            print("Preprocess Dataset.shape before ", self.rna_dataset.shape)
             self.rna_dataset =self.rna_dataset.loc[self.rna_dataset.project_id.isin(project_ids)]
-            print(" Preprocess Dataset.shape after ", self.rna_dataset.shape)
+
         self.rna_dataset =self.rna_dataset.iloc[:, :-2]
             
         self.column_order = column_order
         self.column_name = column_name
         self.debug_mode = debug_mode
+        
         if isinstance(column_order, pd.Index): 
-            
             self.column_order =self.column_order.append(pd.Index(["file_id"]))
             self.rna_dataset = self.rna_dataset[self.column_order]
         elif isinstance(column_order,np.ndarray):
             self.column_order = np.append(self.column_order, "file_id")
             self.rna_dataset = self.rna_dataset[self.column_order]
-        else:   
+        else: 
             self.column_order = self.rna_dataset.columns[:-1]
 
     def len(self):
@@ -61,7 +59,7 @@ class OmicsDataset(BaseDataset):
             name =sample[self.column_name]
             sample =self.rna_dataset.loc[self.rna_dataset["file_id"]==name]
             if sample.empty:
-                sample = np.zeros((1, self.rna_dataset.shape[1]-1))
+                sample = np.zeros((1, self.column_order.shape[0]))
             else:
                 mask = True
                 file_id = sample["file_id"].values[0]
@@ -75,7 +73,7 @@ class OmicsDataset(BaseDataset):
             return sample.float(), mask
         else:
 
-            sample = torch.zeros((1, self.rna_dataset.shape[1]-1)).float()
+            sample = torch.zeros((1, self.column_order.shape[0])).float()
             if self.transform:
                 sample = self.transform(sample)
                 

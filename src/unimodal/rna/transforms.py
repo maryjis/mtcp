@@ -288,18 +288,31 @@ def padded_transforms_simple(size):
     return  Padding(size)
 
 
-def padded_transforms_with_scaling(standart_scaler2, size):
+def padded_transforms_with_scaling(standart_scaler2, size, is_padding =True):
     if standart_scaler2 is not None:
-        return transforms.Compose([
-                                transforms.Lambda(log_transform),
-                                Scale(UpperQuartileNormalizer(quantile=50)),
-                                Scale(standart_scaler2),
-                                Padding(size)
-                                ])
+        if is_padding:
+            return transforms.Compose([
+                                    transforms.Lambda(log_transform),
+                                    Scale(UpperQuartileNormalizer(quantile=50)),
+                                    Scale(standart_scaler2),
+                                    Padding(size)
+                                    ])
+        else:
+             return transforms.Compose([
+                                    transforms.Lambda(log_transform),
+                                    Scale(UpperQuartileNormalizer(quantile=50)),
+                                    Scale(standart_scaler2)
+                                    ])
     else:
-        return transforms.Compose([
-                                transforms.Lambda(log_transform),
-                                Scale(UpperQuartileNormalizer(quantile=50)),
-                                Padding(size)
-                                ])
+        if is_padding:
+            return transforms.Compose([
+                                    transforms.Lambda(log_transform),
+                                    Scale(UpperQuartileNormalizer(quantile=50)),
+                                    Padding(size)
+                                    ])
+        else:
+            return transforms.Compose([
+                                    transforms.Lambda(log_transform),
+                                    Scale(UpperQuartileNormalizer(quantile=50))
+                                    ])
     

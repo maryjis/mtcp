@@ -5,7 +5,7 @@ import numpy as np
 from typing import Optional, Set, Tuple, Union
 import random
 import json
-
+from torch.nn.utils.rnn import pad_sequence
 """
 This classes adopted from  https://github.com/huggingface/transformers/blob/main/src/transformers/models/vit_mae/modeling_vit_mae.py#L323
 """
@@ -20,9 +20,9 @@ class RnaMAEEmbeddings(nn.Module):
         super().__init__()
 
         self.cls_token = nn.Parameter(torch.zeros(1, 1, cfg.hidden_size))
-        if cfg.patch_embedding.type == "tmae":
+        if cfg.patch_embedding["architecture"] == "tmae":
             self.patch_embeddings = RnaTMAEPatchEmbeddings(cfg)
-        elif cfg.patch_embedding.type == "clusterd_go":
+        elif cfg.patch_embedding["architecture"] == "clusterd_go":
             self.patch_embeddings = RnaClusterdGOPatchEmbeddings(cfg, columns_order)
         else:
             raise ValueError(f"Invalid patch embedding type: {cfg.patch_embedding.type}")
@@ -34,7 +34,22 @@ class RnaMAEEmbeddings(nn.Module):
         self.patch_size = cfg.patch_size
         self.config = cfg
         self.initialize_weights()
+        
+    def init_deepsets_weights(self):
+        # Инициализация всех Linear в phi
+        for layer in self.patch_embeddings.deepsets.phi.modules():
+            if isinstance(layer, torch.nn.Linear):
+                torch.nn.init.xavier_uniform_(layer.weight)
+                if layer.bias is not None:
+                    torch.nn.init.zeros_(layer.bias)
 
+        # Инициализация всех Linear в rho
+        for layer in self.patch_embeddings.deepsets.rho.modules():
+            if isinstance(layer, torch.nn.Linear):
+                torch.nn.init.xavier_uniform_(layer.weight)
+                if layer.bias is not None:
+                    torch.nn.init.zeros_(layer.bias)
+                
     def initialize_weights(self):
         # initialize (and freeze) position embeddings by sin-cos embedding
         pos_embed = get_1d_sincos_pos_embed_from_grid(
@@ -43,9 +58,12 @@ class RnaMAEEmbeddings(nn.Module):
         pos_embed = np.concatenate([np.zeros([1, self.position_embeddings.shape[-1]]), pos_embed], axis=0)
         self.position_embeddings.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
+        # if self.config.patch_embedding["architecture"] == "tmae":
         # initialize patch_embeddings like nn.Linear (instead of nn.Conv2d)
         w = self.patch_embeddings.projection.weight.data
         torch.nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
+        # elif self.config.patch_embedding["architecture"] == "clusterd_go":
+        #     self.init_deepsets_weights()
 
         # timm's trunc_normal_(std=.02) is effectively normal_(std=0.02) as cutoff is too big (2.)
         torch.nn.init.normal_(self.cls_token, std=self.config.initializer_range)
@@ -143,69 +161,70 @@ class RnaTMAEPatchEmbeddings(nn.Module):
         return x
 
 
-class DeepSetsFromMask(nn.Module):
-    def __init__(self, in_features=1, phi_dim=64, rho_dim=128, out_features=256, pooling="mean"):
-        super().__init__()
-        self.phi = nn.Sequential(
-            nn.Linear(in_features, phi_dim),
-            nn.ReLU(),
-            nn.Linear(phi_dim, phi_dim),
-            nn.ReLU()
-        )
-        self.rho = nn.Sequential(
-            nn.Linear(phi_dim, rho_dim),
-            nn.ReLU(),
-            nn.Linear(rho_dim, out_features)
-        )
-        self.pooling = pooling
-
-    def forward(self, x, cluster_mask):
-        """
-        x:            (B, N, F)
-        cluster_mask: (T, N) или (B, T, N)
-                       True=ген принадлежит кластеру
-        return:       (B, T, out_features)
-        """
-        B, N, F = x.shape
-        if cluster_mask.dim() == 2:
-            # общий для всех батчей
-            cluster_mask = cluster_mask.unsqueeze(0).expand(B, -1, -1)  # (B, T, N)
-
-        B, T, N = cluster_mask.shape
-        # расширим x до (B, 1, N, F)
-        x_exp = x.unsqueeze(1).expand(-1, T, -1, -1)  # (B, T, N, F)
-
-        # делаем маску для broadcast
-        mask = cluster_mask.unsqueeze(-1)            # (B, T, N, 1)
-        h = self.phi(x_exp)                          # (B, T, N, H_phi)
-        h = h * mask                                 # занулим паддинг
-
-        if self.pooling == "mean":
-            summed = h.sum(2)                        # (B, T, H_phi)
-            count = mask.sum(2)                      # (B, T, 1)
-            pooled = summed / count.clamp_min(1.0)   # среднее по реальным генам
-        elif self.pooling == "sum":
-            pooled = h.sum(2)
-        elif self.pooling == "max":
-            pooled = h.masked_fill(~mask, -1e9).max(2).values
-        else:
-            raise ValueError("pooling must be mean/sum/max")
-
-        return self.rho(pooled)                      # (B, T, out_features)
 
 class RnaClusterdGOPatchEmbeddings(nn.Module):
     def __init__(self, cfg, columns_order):
         super().__init__()
         self.cfg = cfg
-        self.clusters= json.load(open(cfg.clusters_path))
+        self.clusters= json.load(open(cfg.patch_embedding["clusters_path"]))
         self.num_clusters = len(self.clusters)
+        
+        rna_size, patch_size = cfg.size, cfg.patch_size
+        num_channels, hidden_size = cfg.num_channels, cfg.hidden_size
+
+        num_patches = rna_size // patch_size
+        
+        self.rna_size = rna_size
+        
+
+        self.patch_size = patch_size
+        self.num_channels = num_channels
+        self.num_patches = self.num_clusters
+        print("columns_order", len(columns_order))
         self.cluster_indices = self.prepare_cluster_indices(columns_order, self.clusters)
-        self.cluster_mask = self.make_cluster_mask(self.cluster_indices, len(columns_order), device=cfg.device)
-        self.deepsets = DeepSetsFromMask(in_features=self.cfg.patch_embedding.in_features,
-                                         phi_dim=self.cfg.patch_embedding.phi_dim,
-                                         rho_dim=self.cfg.patch_embedding.rho_dim, 
-                                         out_features=self.cfg.patch_embedding.out_features, 
-                                         pooling=self.cfg.patch_embedding.pooling_type)
+        self.cluster_mask, self.max_cluster_lenth = self.make_cluster_mask(self.cluster_indices, len(columns_order))
+        self.projection = nn.Linear(self.max_cluster_lenth, hidden_size)
+        
+
+    def gather_clusters_padded(self, rna_values, cluster_indices):
+        """
+        rna_values: (B, 1, N)
+        cluster_indices: dict[name -> list[int]]
+        
+        Returns:
+            padded_clusters: (B, T, L_max)
+            cluster_lens: list of cluster lengths
+        """
+        B, _, N = rna_values.shape
+        device = rna_values.device
+
+        # Remove the singleton channel dimension
+        rna_values = rna_values.squeeze(1)  # (B, N)
+        
+        clusters = list(cluster_indices.values())
+        T = len(clusters)
+
+        # Gather all cluster tensors
+        cluster_tensors = []
+        cluster_lens = []
+
+        for idxs in clusters:
+            idxs = torch.tensor(idxs, dtype=torch.long, device=device)
+            # extract gene values for these indices
+            vals = rna_values[:, idxs]        # (B, cluster_len)
+            cluster_tensors.append(vals)
+            cluster_lens.append(len(idxs))
+
+        # pad to max cluster length
+        L_max = max(cluster_lens)
+        print("L_max: ", L_max)
+        padded = torch.zeros((B, T, L_max), device=device)
+
+        for t, vals in enumerate(cluster_tensors):
+            length = vals.shape[1]
+            padded[:, t, :length] = vals      # zero-padded beyond actual length
+
+        return padded, cluster_lens    
         
     def make_cluster_mask(self,cluster_indices, n_genes, device=None):
         """
@@ -214,10 +233,13 @@ class RnaClusterdGOPatchEmbeddings(nn.Module):
         return          : torch.BoolTensor (T, N)
         """
         T = len(cluster_indices)
-        mask = torch.zeros(T, n_genes, dtype=torch.bool, device=device)
+        max_cluster_lenth = 0
+        mask = torch.zeros(T, n_genes, dtype=torch.bool)
         for t, idxs in enumerate(cluster_indices.values()):
             mask[t, idxs] = True
-        return mask   
+            if len(idxs) >max_cluster_lenth:
+                max_cluster_lenth = len(idxs)
+        return mask, max_cluster_lenth   
      
     def prepare_cluster_indices(self, columns_order, clusters):
         """
@@ -230,8 +252,7 @@ class RnaClusterdGOPatchEmbeddings(nn.Module):
         gene2idx = {g: i for i, g in enumerate(columns_order)}
 
         cluster_indices = {}
-        for name, data in clusters.items():
-            genes = data.get("genes", data)
+        for name, genes in clusters.items():
             idxs = [gene2idx[g] for g in genes if g in gene2idx]
             if idxs:  # если нашлись индексы
                 cluster_indices[name] = torch.tensor(sorted(idxs), dtype=torch.long)
@@ -240,7 +261,10 @@ class RnaClusterdGOPatchEmbeddings(nn.Module):
     def forward(self, rna_values):
         
         batch_size, num_channels, rna_size = rna_values.shape 
-        embeddings = self.deepsets(rna_values, self.cluster_mask)
+        # rna_values = rna_values.permute(0, 2, 1).contiguous()
+        padded_clustered_rna, cluster_lens = self.gather_clusters_padded(rna_values, self.cluster_indices)
+        print("padded_clustered_rna: ", padded_clustered_rna.shape)
+        embeddings =self.projection(padded_clustered_rna)
         return embeddings
         
 
@@ -263,27 +287,31 @@ class RnaMAEModel(ViTMAEModel):
             `torch.FloatTensor` of shape `(batch_size, num_patches, patch_size * num_channels)`:
                 Patchified pixel values.
         """
-        patch_size, num_channels = self.config.patch_size, self.config.num_channels
-        # sanity checks
-        if not interpolate_pos_encoding and (
-            rna_values.shape[2] % patch_size != 0
-        ):
-            raise ValueError("Make sure the RNA values is divisible by the patch size")
-        if rna_values.shape[1] != num_channels:
-            raise ValueError(
-                "Make sure the number of channels of the pixel values is equal to the one set in the configuration"
+        if cfg.patch_embedding["architecture"] == "tmae":
+
+        ` patch_size, num_channels = self.config.patch_size, self.config.num_channels
+            # sanity checks
+            if not interpolate_pos_encoding and (
+                rna_values.shape[2] % patch_size != 0
+            ):
+                raise ValueError("Make sure the RNA values is divisible by the patch size")
+            if rna_values.shape[1] != num_channels:
+                raise ValueError(
+                    "Make sure the number of channels of the pixel values is equal to the one set in the configuration"
+                )
+
+            # patchify
+            batch_size = rna_values.shape[0]
+            num_patches = rna_values.shape[2] // patch_size
+
+            patchified_rna_values = rna_values.reshape(batch_size, num_channels, num_patches, patch_size)
+            patchified_rna_values = patchified_rna_values.permute(0, 2, 3, 1)
+            patchified_rna_values = patchified_rna_values.reshape(
+                batch_size, num_patches, patch_size * num_channels
             )
-
-        # patchify
-        batch_size = rna_values.shape[0]
-        num_patches = rna_values.shape[2] // patch_size
-
-        patchified_rna_values = rna_values.reshape(batch_size, num_channels, num_patches, patch_size)
-        patchified_rna_values = patchified_rna_values.permute(0, 2, 3, 1)
-        patchified_rna_values = patchified_rna_values.reshape(
-            batch_size, num_patches, patch_size * num_channels
-        )
-        return patchified_rna_values
+            return patchified_rna_values
+        elif cfg.patch_embedding["architecture"] == "clusterd_go":
+            return self.patchify_clustered(rna_values)`
 
     def unpatchify(self, patchified_rna_values, original_rna_size: int=None):
         """
@@ -297,41 +325,89 @@ class RnaMAEModel(ViTMAEModel):
             `torch.FloatTensor` of shape `(batch_size, num_channels, original_rna_size)`:
                 Pixel values.
         """
-        patch_size, num_channels = self.config.patch_size, self.config.num_channels
-        original_rna_size = original_rna_size if original_rna_size is not None else self.config.size
-        
-        num_patches = original_rna_size // patch_size
-   
-        # sanity check
-        if num_patches != patchified_rna_values.shape[1]:
-            raise ValueError(
-                f"The number of patches in the patchified rna values {patchified_rna_values.shape[1]}, does not match the number of patches on original rna {num_patches}"
-            )
-
-        # unpatchify
-        batch_size = patchified_rna_values.shape[0]
-        patchified_pixel_values = patchified_rna_values.reshape(
-            batch_size,
-            num_patches,
-            patch_size,
-            num_channels,
-        )
-        patchified_pixel_values = patchified_pixel_values.permute(0, 3, 1, 2)
-        pixel_values = patchified_pixel_values.reshape(
-            batch_size,
-            num_channels,
-            num_patches * patch_size
-        )
-        return pixel_values
+        if cfg.patch_embedding["architecture"] == "tmae":
+            patch_size, num_channels = self.config.patch_size, self.config.num_channels
+            original_rna_size = original_rna_size if original_rna_size is not None else self.config.size
+            
+            num_patches = original_rna_size // patch_size
     
+            # sanity check
+            if num_patches != patchified_rna_values.shape[1]:
+                raise ValueError(
+                    f"The number of patches in the patchified rna values {patchified_rna_values.shape[1]}, does not match the number of patches on original rna {num_patches}"
+                )
+
+            # unpatchify
+            batch_size = patchified_rna_values.shape[0]
+            patchified_pixel_values = patchified_rna_values.reshape(
+                batch_size,
+                num_patches,
+                patch_size,
+                num_channels,
+            )
+            patchified_pixel_values = patchified_pixel_values.permute(0, 3, 1, 2)
+            pixel_values = patchified_pixel_values.reshape(
+                batch_size,
+                num_channels,
+                num_patches * patch_size
+            )
+            return pixel_values
+        elif cfg.patch_embedding["architecture"] == "clusterd_go":
+            return self.unpatchify_clustered(patchified_rna_values)`
+    
+     def patchify_clustered(self, rna_values):
+        """
+        Args:
+            rna_values: (B, 1, N)
+        Returns:
+            padded_clustered_rna: (B, T, L_max)
+            cluster_lens: list[int]
+        """
+        pe = self.embeddings.patch_embeddings
+        if not isinstance(pe, RnaClusterdGOPatchEmbeddings):
+            raise ValueError("patchify_clustered() доступен только для clusterd_go архитектуры")
+
+        padded_patchifiers, cluster_lens = pe.gather_clusters_padded(rna_values, pe.cluster_indices)
+        return padded_patchifiers
+
+    def unpatchify_clustered(self, cluster_values):
+        """
+        Восстанавливает исходный rna_values (B, 1, N) из кластеров.
+        При пересечении генов — усредняет значения.
+        """
+        pe = self.embeddings.patch_embeddings
+        cluster_indices = pe.cluster_indices
+        B, T, Lmax = cluster_values.shape
+        N = pe.rna_size
+        device = cluster_values.device
+
+        # создаём нулевые тензоры для сумм и счётчиков
+        reconstructed = torch.zeros(B, 1, N, device=device)
+        counts = torch.zeros(B, 1, N, device=device)
+
+        # вставляем значения обратно по индексам генов
+        for t, idxs in enumerate(cluster_indices.values()):
+            idxs = idxs.to(device)
+            L = min(len(idxs), Lmax)
+            reconstructed[:, 0, idxs[:L]] += cluster_values[:, t, :L]
+            counts[:, 0, idxs[:L]] += 1
+
+        counts[counts == 0] = 1  # чтобы не делить на ноль
+        reconstructed = reconstructed / counts
+        return reconstructed
         
 
 class RnaMAEDecoder(ViTMAEDecoder):
-    def __init__(self, config, num_patches):
-        super().__init__(config, num_patches)
-        self.decoder_pred = nn.Linear(
-            config.decoder_hidden_size, config.patch_size * config.num_channels, bias=True
-        )  # encoder to decoder
+    def __init__(self, config, rna_patching):
+        super().__init__(config,rna_patching.num_patches)
+        if not isinstance(rna_patching, RnaClusterdGOPatchEmbeddings):
+            self.decoder_pred = nn.Linear(
+                config.decoder_hidden_size, config.patch_size * config.num_channels, bias=True
+            )  # encoder to decoder
+        else:
+            self.decoder_pred = nn.Linear(
+                config.decoder_hidden_size, rna_patching.max_cluster_lenth, bias=True
+            ) 
         self.initialize_weights(num_patches)
         
     def initialize_weights(self, num_patches):
@@ -351,7 +427,7 @@ class RnaMAEForPreTraining(ViTMAEForPreTraining):
         self.config = config
 
         self.vit = RnaMAEModel(config, columns_order)
-        self.decoder = RnaMAEDecoder(config, num_patches=self.vit.embeddings.num_patches)
+        self.decoder = RnaMAEDecoder(config, num_patches=self.vit.embeddings.patch_embeddings)
 
         # Initialize weights and apply final processing
         self.post_init()

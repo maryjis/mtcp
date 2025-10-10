@@ -277,7 +277,8 @@ class UnimodalSurvivalTrainer(Trainer):
             if self.cfg.base.architecture=="MAE":
                  OmegaConf.set_struct(cfg, False) 
                  cfg.model["size"] = cfg.model.size if cfg.model.get("size", None) else math.ceil(len(self.preproc.get_column_order()) /cfg.model.patch_size)* cfg.model.patch_size
-                 transforms = padded_transforms_with_scaling(self.preproc.get_scaling(), cfg.model.size)
+                 
+                 transforms = padded_transforms_with_scaling(self.preproc.get_scaling(), cfg.model.size, cfg.model.is_padding)
                  
             elif self.cfg.base.architecture=="CNN":    
                 transforms = base_transforms(self.preproc.get_scaling())
@@ -317,7 +318,7 @@ class UnimodalSurvivalTrainer(Trainer):
                     batch_size=1,
                     num_workers=self.cfg.base.get("num_workers", 0)
                 )
-        self.model =self.initialise_models(self.cfg.base.modalities[0], self.cfg.model).to(cfg.base.device)
+        self.model =self.initialise_models(self.cfg.base.modalities[0],self.preproc, self.cfg.model).to(cfg.base.device)
         self.initialise_loss()
 
         print(self.model)
@@ -329,6 +330,7 @@ class UnimodalSurvivalTrainer(Trainer):
         datasets ={}
         print("UnimodalSurvivalTrainer, initilise data")
         # Todo - подумать нужно ли тут разббить для каждого trainerа - свой initialise_dataset
+
         if modality == "rna":
             for split_name, dataset in splits.items():
                 splits[split_name] = preproc.transform_labels(dataset)
@@ -401,13 +403,13 @@ class UnimodalSurvivalTrainer(Trainer):
         
         return datasets
  
-    def initialise_models(self, modality, model_cfg):
+    def initialise_models(self, modality,preproc, model_cfg):
         # TODO check that is ok for multimodal
         if modality=="rna": 
                 if self.cfg.base.architecture=="MAE":
-                    return initialise_rna_mae_model(ViTMAEConfig(**OmegaConf.to_container(model_cfg)))
+                    return initialise_rna_mae_model(ViTMAEConfig(**OmegaConf.to_container(model_cfg)), preproc.get_column_order())
                 elif self.cfg.base.architecture=="CNN":
-                    return initialise_rna_model(model_cfg, self.preproc.get_column_order())
+                    return initialise_rna_model(model_cfg)
                 else:
                     raise NotImplementedError("Exist only for rna. Initialising datasets for other modalities aren't declared")
         elif modality=="mri":
@@ -509,7 +511,7 @@ class UnimodalMAETrainer(Trainer):
             OmegaConf.set_struct(cfg, False)
             logger.debug(f'math.ceil(len(self.preproc.get_column_order()) /cfg.model.patch_size)* cfg.model.patch_size: {math.ceil(len(self.preproc.get_column_order()) /cfg.model.patch_size)* cfg.model.patch_size}')
             #cfg.model["size"] = cfg.model.size if cfg.model.get("size", None) else math.ceil(len(self.preproc.get_column_order()) /cfg.model.patch_size)* cfg.model.patch_size
-            transforms = padded_transforms_with_scaling(self.preproc.get_scaling(), cfg.model.get("size", None))
+            transforms = padded_transforms_with_scaling(self.preproc.get_scaling(), cfg.model.get("size", None),cfg.model.is_padding))
             logger.debug(f"transforms:{transforms} ")
         elif self.cfg.base.modalities[0]=="dnam":
             transforms = padded_transforms_scaling(self.preproc.get_scaling(), cfg.model.get("size", None))

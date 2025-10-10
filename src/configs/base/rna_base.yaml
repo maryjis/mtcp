@@ -30,7 +30,7 @@ device: "cuda:0"
 remove_nan_column: 'RNA'
 batch_size: 24
 project_ids: ["GBM", "LGG"]
-sampler: True
+sampler: False
 loss:
     additional_loss: "CoxPHLoss"
     alpha: 0.7
