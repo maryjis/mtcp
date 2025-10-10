@@ -511,7 +511,7 @@ class UnimodalMAETrainer(Trainer):
             OmegaConf.set_struct(cfg, False)
             logger.debug(f'math.ceil(len(self.preproc.get_column_order()) /cfg.model.patch_size)* cfg.model.patch_size: {math.ceil(len(self.preproc.get_column_order()) /cfg.model.patch_size)* cfg.model.patch_size}')
             #cfg.model["size"] = cfg.model.size if cfg.model.get("size", None) else math.ceil(len(self.preproc.get_column_order()) /cfg.model.patch_size)* cfg.model.patch_size
-            transforms = padded_transforms_with_scaling(self.preproc.get_scaling(), cfg.model.get("size", None),cfg.model.is_padding))
+            transforms = padded_transforms_with_scaling(self.preproc.get_scaling(), cfg.model.get("size", None),cfg.model.is_padding)
             logger.debug(f"transforms:{transforms} ")
         elif self.cfg.base.modalities[0]=="dnam":
             transforms = padded_transforms_scaling(self.preproc.get_scaling(), cfg.model.get("size", None))

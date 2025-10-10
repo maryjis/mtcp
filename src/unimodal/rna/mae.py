@@ -289,7 +289,7 @@ class RnaMAEModel(ViTMAEModel):
         """
         if cfg.patch_embedding["architecture"] == "tmae":
 
-        ` patch_size, num_channels = self.config.patch_size, self.config.num_channels
+            patch_size, num_channels = self.config.patch_size, self.config.num_channels
             # sanity checks
             if not interpolate_pos_encoding and (
                 rna_values.shape[2] % patch_size != 0
@@ -311,7 +311,7 @@ class RnaMAEModel(ViTMAEModel):
             )
             return patchified_rna_values
         elif cfg.patch_embedding["architecture"] == "clusterd_go":
-            return self.patchify_clustered(rna_values)`
+            return self.patchify_clustered(rna_values)
 
     def unpatchify(self, patchified_rna_values, original_rna_size: int=None):
         """
@@ -353,9 +353,9 @@ class RnaMAEModel(ViTMAEModel):
             )
             return pixel_values
         elif cfg.patch_embedding["architecture"] == "clusterd_go":
-            return self.unpatchify_clustered(patchified_rna_values)`
+            return self.unpatchify_clustered(patchified_rna_values)
     
-     def patchify_clustered(self, rna_values):
+    def patchify_clustered(self, rna_values):
         """
         Args:
             rna_values: (B, 1, N)
