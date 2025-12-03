@@ -1,4 +1,4 @@
-experiment_name: "dna_pretraining_big_september"
+experiment_name: "dnam_clusters_pretraining_big_september"
 n_epochs: 800
 n_intervals: 20
 random_seed: 1380
@@ -7,8 +7,8 @@ warmup_epochs: 50
 optimizer:
     name: "Adam"
     params:
-        lr: 1.5e-5 # 2e-5
-        weight_decay: 1e-2
+        lr: 1e-4 # 2e-5
+        weight_decay: 0.05
     
 scheduler: 
     name: "CosineAnnealingLR"
@@ -25,13 +25,10 @@ save_path : "outputs/models/"
 data_path: "src/data/dataset_full_tcga_all_balanced.csv"
 rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
 
-<<<<<<< HEAD
-device: "cuda:4"
-=======
+
 device: "cuda:2"
->>>>>>> clean-main
 remove_nan_column: 'DNAm'
-batch_size: 256
+batch_size: 64
 
 log:
     logging: True

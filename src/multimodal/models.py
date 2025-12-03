@@ -166,7 +166,7 @@ class MultiMAEModel(PreTrainedModel):
                     for param in encoder.parameters():
                         param.requires_grad = False
                 else:
-                    encoder = RnaMAEModel(cfg_rna_model, columns_order)
+                    encoder = RnaMAEModel(cfg_rna_model, column_order)
                 
                 self.encoders[modality] = UnimodalEncoder(
                     encoder,
@@ -195,12 +195,13 @@ class MultiMAEModel(PreTrainedModel):
             elif modality == "dnam":
                 cfg_dnam_model = ViTMAEConfig(**self.cfg.dnam_model)
                 encoder = None
+                column_order = preproc["dnam"].get_column_order() if preproc else None
                 if cfg_dnam_model.is_load_pretrained:
-                    encoder = DNAmMAEModel.from_pretrained(cfg_dnam_model.pretrained_model_path, config=cfg_dnam_model)
+                    encoder = DNAmMAEModel.from_pretrained(cfg_dnam_model.pretrained_model_path, config=cfg_dnam_model, column_order=column_order)
                     for param in encoder.parameters():
                         param.requires_grad = False
                 else:
-                    encoder = DNAmMAEModel(cfg_dnam_model)
+                    encoder = DNAmMAEModel(cfg_dnam_model, column_order)
                     
                 self.encoders[modality] = UnimodalEncoder(
                     encoder,
@@ -566,7 +567,10 @@ class MultiMaeForPretraining(nn.Module):
         
     def get_patch_size(self,  modality: str)-> int:
         if modality =="rna" or modality=="dnam":
-            return self.cfg.to_dict()[f"{modality}_model"]["patch_size"]
+            if self.cfg.to_dict()[f"{modality}_model"]["patch_embedding"]["architecture"] == "tmae":
+                    return self.cfg.to_dict()[f"{modality}_model"]["patch_size"]
+            elif self.cfg.to_dict()[f"{modality}_model"]["patch_embedding"]["architecture"] == "clusterd_go":
+                return self.model.encoders[modality].encoder.embeddings.patch_embeddings.max_cluster_lenth
         elif  modality =="mri":
             return self.cfg.to_dict()[f"{modality}_model"]["patch_size"] ** 3
         elif modality =="wsi":
@@ -626,10 +630,10 @@ class MultiMaeForPretraining(nn.Module):
   
 
         target = encoder.encoder.patchify(values, interpolate_pos_encoding=interpolate_pos_encoding)
-        
-        # print("pixel_values: ", values.shape)
-        # print("target: ", target.shape)
-        # print("pred", pred.shape)
+        print("encoder.modality: ", encoder.modality)
+        print("pixel_values: ", values.shape)
+        print("target: ", target.shape)
+        print("pred", pred.shape)
         # print("target: ", target.mean())
         # print("self.config.norm_pix_loss:", self.cfg.norm_pix_loss)
         # if encoder.modality == "wsi":

@@ -58,7 +58,7 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
         if cfg.model.get("rna_model", None):
             cfg.model.rna_model.size = cfg.model.rna_model.size if cfg.model.rna_model.get("size", None) else math.ceil(len(self.preproc["rna"].get_column_order()) /cfg.model.rna_model.patch_size)* cfg.model.rna_model.patch_size
         transforms = {"rna": padded_transforms_with_scaling(self.preproc["rna"].get_scaling(), cfg.model.rna_model.size, cfg.model.rna_model.is_padding) if cfg.model.get("rna_model", None) else None, 
-                        "dnam" : padded_transforms_scaling(self.preproc["dnam"].get_scaling(), cfg.model.dnam_model.get("size", None)) if cfg.model.get("dnam_model", None) else None,
+                        "dnam" : padded_transforms_scaling(self.preproc["dnam"].get_scaling(), cfg.model.dnam_model.get("size", None),cfg.model.dnam_model.is_padding) if cfg.model.get("dnam_model", None) else None,
                         "cnv" : padded_transforms_cnv_scaling(self.preproc["cnv"].get_scaling(), cfg.model.cnv_model.get("size", None)) if "cnv" in self.preproc.keys() else None,
                         "mri" : None, "wsi" : None }
 
@@ -149,7 +149,7 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
         if cfg.model.get("rna_model", None):
             cfg.model.rna_model.size = cfg.model.rna_model.size if cfg.model.rna_model.get("size", None) else math.ceil(len(self.preproc["rna"].get_column_order()) /cfg.model.rna_model.patch_size)* cfg.model.rna_model.patch_size
         transforms = {"rna": padded_transforms_with_scaling(self.preproc["rna"].get_scaling(), cfg.model.rna_model.size,cfg.model.rna_model.is_padding) if cfg.model.get("rna_model", None) else None,
-                      "dnam" : padded_transforms_scaling(self.preproc["dnam"].get_scaling(), cfg.model.dnam_model.get("size", None)) if cfg.model.get("dnam_model", None) else None,
+                      "dnam" : padded_transforms_scaling(self.preproc["dnam"].get_scaling(), cfg.model.dnam_model.get("size", None), cfg.model.dnam_model.is_padding) if cfg.model.get("dnam_model", None) else None,
                       "mri" : None, "wsi" : None,
                       "cnv" : padded_transforms_cnv_scaling(self.preproc["cnv"].get_scaling(), cfg.model.cnv_model.get("size", None)) if "cnv" in self.preproc.keys() else None,
                       "clinical" : base_scaling(self.preproc["clinical"].get_scaling() if "clinical" in self.preproc.keys() else None)}

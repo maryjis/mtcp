@@ -283,7 +283,7 @@ class UnimodalSurvivalTrainer(Trainer):
             elif self.cfg.base.architecture=="CNN":    
                 transforms = base_transforms(self.preproc.get_scaling())
         elif self.cfg.base.modalities[0]=="dnam":
-            transforms = padded_transforms_scaling(self.preproc.get_scaling(), cfg.model.get("size", None))
+            transforms = padded_transforms_scaling(self.preproc.get_scaling(), cfg.model.get("size", None),  cfg.model.is_padding)
         elif self.cfg.base.modalities[0]=="clinical":
              transforms = base_scaling(self.preproc.get_scaling()) 
         elif self.cfg.base.modalities[0]=="cnv": 
@@ -421,7 +421,7 @@ class UnimodalSurvivalTrainer(Trainer):
                     raise NotImplementedError("Exist only MAE and CNN architectures for mri modality")
         elif modality=="dnam":
                 if self.cfg.base.architecture=="MAE":
-                    return initialise_dnam_mae_model(ViTMAEConfig(**OmegaConf.to_container(model_cfg)))
+                    return initialise_dnam_mae_model(ViTMAEConfig(**OmegaConf.to_container(model_cfg)), preproc.get_column_order())
                 elif self.cfg.base.architecture=="CNN":
                     return initialise_dnam_model(model_cfg)
                 else:
@@ -514,7 +514,7 @@ class UnimodalMAETrainer(Trainer):
             transforms = padded_transforms_with_scaling(self.preproc.get_scaling(), cfg.model.get("size", None),cfg.model.is_padding)
             logger.debug(f"transforms:{transforms} ")
         elif self.cfg.base.modalities[0]=="dnam":
-            transforms = padded_transforms_scaling(self.preproc.get_scaling(), cfg.model.get("size", None))
+            transforms = padded_transforms_scaling(self.preproc.get_scaling(), cfg.model.get("size", None), cfg.model.is_padding)
         elif self.cfg.base.modalities[0]=="cnv":
             transforms = padded_transforms_cnv_scaling(self.preproc.get_scaling(), cfg.model.get("size", None))     
         elif self.cfg.base.modalities[0]=="mri":
@@ -552,7 +552,7 @@ class UnimodalMAETrainer(Trainer):
         elif self.cfg.base.modalities[0]=="mri":
             return MriMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
         elif self.cfg.base.modalities[0]=="dnam":
-            return DNAmMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))
+            return DNAmMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)),columns_order=self.preproc.get_column_order())
         elif self.cfg.base.modalities[0]=="wsi":
             return WsiMAEForPreTraining(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)))     
         else:
@@ -624,8 +624,8 @@ class UnimodalMAETrainer(Trainer):
             else: data = batch
             outputs =self.model(data.to(device))
             if torch.isnan(outputs.loss) or torch.isinf(outputs.loss):
-                logger.error(f"Invalid loss detected at batch {batch_idx}: {outputs.loss.item()}")
-                raise ValueError("Loss became NaN or Inf")
+                logger.error(f"Invalid loss detected at batch: {outputs.loss.item()}")
+                
 
             if split=="train":
                 self.optimizer.zero_grad()

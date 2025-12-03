@@ -217,7 +217,6 @@ class RnaClusterdGOPatchEmbeddings(nn.Module):
 
         # pad to max cluster length
         L_max = max(cluster_lens)
-        print("L_max: ", L_max)
         padded = torch.zeros((B, T, L_max), device=device)
 
         for t, vals in enumerate(cluster_tensors):
@@ -287,7 +286,7 @@ class RnaMAEModel(ViTMAEModel):
             `torch.FloatTensor` of shape `(batch_size, num_patches, patch_size * num_channels)`:
                 Patchified pixel values.
         """
-        if cfg.patch_embedding["architecture"] == "tmae":
+        if self.config.patch_embedding["architecture"] == "tmae":
 
             patch_size, num_channels = self.config.patch_size, self.config.num_channels
             # sanity checks
@@ -310,7 +309,7 @@ class RnaMAEModel(ViTMAEModel):
                 batch_size, num_patches, patch_size * num_channels
             )
             return patchified_rna_values
-        elif cfg.patch_embedding["architecture"] == "clusterd_go":
+        elif self.config.patch_embedding["architecture"] == "clusterd_go":
             return self.patchify_clustered(rna_values)
 
     def unpatchify(self, patchified_rna_values, original_rna_size: int=None):
@@ -398,8 +397,8 @@ class RnaMAEModel(ViTMAEModel):
         
 
 class RnaMAEDecoder(ViTMAEDecoder):
-    def __init__(self, config, rna_patching):
-        super().__init__(config,rna_patching.num_patches)
+    def __init__(self, config,num_patches, rna_patching=None):
+        super().__init__(config,num_patches)
         if not isinstance(rna_patching, RnaClusterdGOPatchEmbeddings):
             self.decoder_pred = nn.Linear(
                 config.decoder_hidden_size, config.patch_size * config.num_channels, bias=True
@@ -427,7 +426,7 @@ class RnaMAEForPreTraining(ViTMAEForPreTraining):
         self.config = config
 
         self.vit = RnaMAEModel(config, columns_order)
-        self.decoder = RnaMAEDecoder(config, num_patches=self.vit.embeddings.patch_embeddings)
+        self.decoder = RnaMAEDecoder(config,num_patches =self.vit.embeddings.patch_embeddings.num_patches, rna_patching=self.vit.embeddings.patch_embeddings)
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -449,7 +448,8 @@ class RnaMAEForPreTraining(ViTMAEForPreTraining):
         """
         
         target = self.patchify(pixel_values, interpolate_pos_encoding=interpolate_pos_encoding)
-
+        # print("target.shape: ", target.shape)
+        # print("pred.shape", pred.shape)
 
         if self.config.norm_pix_loss:
             mean = target.mean(dim=-1, keepdim=True)
@@ -457,11 +457,13 @@ class RnaMAEForPreTraining(ViTMAEForPreTraining):
             target = (target - mean) / (var + 1.0e-6) ** 0.5
 
         loss = (pred - target) ** 2
-
+        # print("loss.shape", loss.shape)
         loss = loss.mean(dim=-1)  # [N, L], mean loss per patch
+        # print("loss.shape", loss.shape)
         loss = (loss * mask).sum() / mask.sum()  # mean loss on removed patches
+        # print("loss:", loss)
         return loss
-        
+
     def patchify(self, rna_values, interpolate_pos_encoding: bool = False):
         """
         Args:
@@ -474,30 +476,33 @@ class RnaMAEForPreTraining(ViTMAEForPreTraining):
             `torch.FloatTensor` of shape `(batch_size, num_patches, patch_size * num_channels)`:
                 Patchified pixel values.
         """
-        # TODO return self.vit.patchify(self, rna_values, interpolate_pos_encoding: bool = False)
-        patch_size, num_channels = self.config.patch_size, self.config.num_channels
-        # sanity checks
-        if not interpolate_pos_encoding and (
-            rna_values.shape[2] % patch_size != 0
-        ):
-            raise ValueError("Make sure the RNA values is divisible by the patch size")
-        if rna_values.shape[1] != num_channels:
-            raise ValueError(
-                "Make sure the number of channels of the pixel values is equal to the one set in the configuration"
+        if self.config.patch_embedding["architecture"] == "tmae":
+
+            patch_size, num_channels = self.config.patch_size, self.config.num_channels
+            # sanity checks
+            if not interpolate_pos_encoding and (
+                rna_values.shape[2] % patch_size != 0
+            ):
+                raise ValueError("Make sure the RNA values is divisible by the patch size")
+            if rna_values.shape[1] != num_channels:
+                raise ValueError(
+                    "Make sure the number of channels of the pixel values is equal to the one set in the configuration"
+                )
+
+            # patchify
+            batch_size = rna_values.shape[0]
+            num_patches = rna_values.shape[2] // patch_size
+
+            patchified_rna_values = rna_values.reshape(batch_size, num_channels, num_patches, patch_size)
+            patchified_rna_values = patchified_rna_values.permute(0, 2, 3, 1)
+            patchified_rna_values = patchified_rna_values.reshape(
+                batch_size, num_patches, patch_size * num_channels
             )
+            return patchified_rna_values
+        elif self.config.patch_embedding["architecture"] == "clusterd_go":
+            return self.patchify_clustered(rna_values) 
 
-        # patchify
-        batch_size = rna_values.shape[0]
-        num_patches = rna_values.shape[2] // patch_size
-
-        patchified_rna_values = rna_values.reshape(batch_size, num_channels, num_patches, patch_size)
-        patchified_rna_values = patchified_rna_values.permute(0, 2, 3, 1)
-        patchified_rna_values = patchified_rna_values.reshape(
-            batch_size, num_patches, patch_size * num_channels
-        )
-        return patchified_rna_values
-
-    def unpatchify(self, patchified_rna_values, original_rna_size: int):
+    def unpatchify(self, patchified_rna_values, original_rna_size: int=None):
         """
         Args:
             patchified_rna_values (`torch.FloatTensor` of shape `(batch_size, num_patches, patch_size * num_channels)`:
@@ -509,32 +514,76 @@ class RnaMAEForPreTraining(ViTMAEForPreTraining):
             `torch.FloatTensor` of shape `(batch_size, num_channels, original_rna_size)`:
                 Pixel values.
         """
-        patch_size, num_channels = self.config.patch_size, self.config.num_channels
-        original_rna_size = original_rna_size if original_rna_size is not None else self.config.rna_size
-        
-        num_patches = original_rna_size // patch_size
-   
-        # sanity check
-        if num_patches != patchified_rna_values.shape[1]:
-            raise ValueError(
-                f"The number of patches in the patchified rna values {patchified_rna_values.shape[1]}, does not match the number of patches on original rna {num_patches}"
-            )
+        if self.config.patch_embedding["architecture"] == "tmae":
+            patch_size, num_channels = self.config.patch_size, self.config.num_channels
+            original_rna_size = original_rna_size if original_rna_size is not None else self.config.size
+            
+            num_patches = original_rna_size // patch_size
+    
+            # sanity check
+            if num_patches != patchified_rna_values.shape[1]:
+                raise ValueError(
+                    f"The number of patches in the patchified rna values {patchified_rna_values.shape[1]}, does not match the number of patches on original rna {num_patches}"
+                )
 
-        # unpatchify
-        batch_size = patchified_rna_values.shape[0]
-        patchified_pixel_values = patchified_rna_values.reshape(
-            batch_size,
-            num_patches,
-            patch_size,
-            num_channels,
-        )
-        patchified_pixel_values = patchified_pixel_values.permute(0, 3, 1, 2)
-        pixel_values = patchified_pixel_values.reshape(
-            batch_size,
-            num_channels,
-            num_patches * patch_size
-        )
-        return pixel_values
+            # unpatchify
+            batch_size = patchified_rna_values.shape[0]
+            patchified_pixel_values = patchified_rna_values.reshape(
+                batch_size,
+                num_patches,
+                patch_size,
+                num_channels,
+            )
+            patchified_pixel_values = patchified_pixel_values.permute(0, 3, 1, 2)
+            pixel_values = patchified_pixel_values.reshape(
+                batch_size,
+                num_channels,
+                num_patches * patch_size
+            )
+            return pixel_values
+        elif self.config.patch_embedding["architecture"] == "clusterd_go":
+            return self.unpatchify_clustered(patchified_rna_values)
+    
+    def patchify_clustered(self, rna_values):
+        """
+        Args:
+            rna_values: (B, 1, N)
+        Returns:
+            padded_clustered_rna: (B, T, L_max)
+            cluster_lens: list[int]
+        """
+        pe = self.vit.embeddings.patch_embeddings
+        if not isinstance(pe, RnaClusterdGOPatchEmbeddings):
+            raise ValueError("patchify_clustered() доступен только для clusterd_go архитектуры")
+
+        padded_patchifiers, cluster_lens = pe.gather_clusters_padded(rna_values, pe.cluster_indices)
+        return padded_patchifiers
+
+    def unpatchify_clustered(self, cluster_values):
+        """
+        Восстанавливает исходный rna_values (B, 1, N) из кластеров.
+        При пересечении генов — усредняет значения.
+        """
+        pe = self.vit.embeddings.patch_embeddings
+        cluster_indices = pe.cluster_indices
+        B, T, Lmax = cluster_values.shape
+        N = pe.rna_size
+        device = cluster_values.device
+
+        # создаём нулевые тензоры для сумм и счётчиков
+        reconstructed = torch.zeros(B, 1, N, device=device)
+        counts = torch.zeros(B, 1, N, device=device)
+
+        # вставляем значения обратно по индексам генов
+        for t, idxs in enumerate(cluster_indices.values()):
+            idxs = idxs.to(device)
+            L = min(len(idxs), Lmax)
+            reconstructed[:, 0, idxs[:L]] += cluster_values[:, t, :L]
+            counts[:, 0, idxs[:L]] += 1
+
+        counts[counts == 0] = 1  # чтобы не делить на ноль
+        reconstructed = reconstructed / counts
+        return reconstructed
 
 
 class RnaSurvivalModel(nn.Module):

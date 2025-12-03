@@ -85,16 +85,16 @@ class DNAmDecoder(nn.Module):
         return x
 
 class DNAmMAEModel(RnaMAEModel):
-    def __init__(self, config):
-        super().__init__(config)
+    def __init__(self, config, columns_order=None):
+        super().__init__(config, columns_order)
 
 class DNAmMAEForPreTraining(RnaMAEForPreTraining):
-    def __init__(self, config):
-        super().__init__(config)
+    def __init__(self, config, columns_order=None):
+        super().__init__(config, columns_order)
         
 class DNAmSurvivalModel(RnaSurvivalModel):
-    def __init__(self, config):
-        super().__init__(config)
+    def __init__(self, config, columns_order=None):
+        super().__init__(self, config, columns_order)
  
  
 class DNAmEncoderSurvival(DNAmEncoder):
@@ -108,8 +108,8 @@ class DNAmEncoderSurvival(DNAmEncoder):
         x = self.projection(x).squeeze(-1)
         return x    
                
-def initialise_dnam_mae_model(cfg):
-    return DNAmSurvivalModel(cfg)
+def initialise_dnam_mae_model(cfg,columns_order=None):
+    return DNAmSurvivalModel(config, columns_order)
 
 def initialise_dnam_model(cfg: DictConfig):
     return DNAmEncoderSurvival(cfg.embedding_dim, cfg.dropout, cfg.output_dim)

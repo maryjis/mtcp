@@ -4,6 +4,7 @@ from torch.nn import Identity
 import numpy as np
 from torchvision import transforms
 from sklearn.base import BaseEstimator, TransformerMixin
+import torch 
 
 class Scale(object):
     """Rescale the image in a sample to a given size.
@@ -20,8 +21,11 @@ class Scale(object):
 
     def __call__(self, sample):
         sample =self.standart_scaler.transform(sample)
-
-        return sample
+        if isinstance(sample, np.ndarray):
+            return torch.from_numpy(sample)
+        else:
+            return sample
+        
     
 def padded_transforms_simple(size):
     if size:
@@ -30,11 +34,19 @@ def padded_transforms_simple(size):
         return None
     
     
-def padded_transforms_scaling(standart_scaler, size=None):
+def padded_transforms_scaling(standart_scaler, size=None, is_padding =True):
     print("padded_transforms_scaling: ", size)
+    print("is_padding: ", is_padding)
     if standart_scaler is not None:
-        return transforms.Compose([
-                                Scale(standart_scaler),
-                                Padding(size)])
+        if is_padding:
+            return transforms.Compose([
+                                    Scale(standart_scaler),
+                                    Padding(size)])
+        else:
+            return transforms.Compose([
+                                    Scale(standart_scaler)])                            
     else:
-        return Padding(size)
+        if is_padding:
+            return Padding(size)
+        else:
+            return Identity()

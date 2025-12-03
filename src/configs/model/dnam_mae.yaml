@@ -22,3 +22,8 @@ is_load_pretrained: false
 pretrained_model_name: "dna_without_clusters_mae_survival"
 pretrained_model_path: ""
 output_dim: 20
+patch_embedding:
+  architecture: "clusterd_go"
+  in_features: 1
+  gene_emb_dim: 64
+  clusters_path: "src/data/dna_clusters_go_v3.json"
