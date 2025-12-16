@@ -1,4 +1,4 @@
 defaults: 
-    - model: dnam_mae
-    - base: dnam_mae
+    - model: clinical_mae
+    - base: clinical_base
     - data: multimodal_data

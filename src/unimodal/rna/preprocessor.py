@@ -10,7 +10,7 @@ from torch.utils.data import Dataset, DataLoader
 import numpy as np
 from sklearn.preprocessing import FunctionTransformer
 from sklearn.pipeline import Pipeline
-from src.unimodal.rna.transforms import log_transform
+from src.unimodal.rna.transforms import log_transform, ColumnSelectorFromFile
 from scipy.cluster.hierarchy import linkage, dendrogram, fcluster,leaves_list
 from scipy.spatial.distance import squareform
 import matplotlib.pyplot as plt
@@ -26,16 +26,19 @@ class RNAPreprocessor(BaseUnimodalPreprocessor):
                  n_intervals: int, scaling_method: TransformerMixin, scaling_prams: dict = {},
                  var_threshold = 0.0, is_cluster_genes: bool = False ,
                  threshold: float =0, is_hierarchical_cluster: bool =False,
-                 project_ids = []):
+                 project_ids = [], columns_file_path="src/data/columns.json"):
         super().__init__(data_train, n_intervals)
         self.data_train = data_train
         self.train_dataset = OmicsDataset(data_train, dataset_dir, project_ids =project_ids)
         self.train_loaders = DataLoader(self.train_dataset)
-        
-        self.pipe = Pipeline(steps=[('log', FunctionTransformer(log_transform)) ,
-                                    ('scaler1',UpperQuartileNormalizer(quantile=50)), 
-                                    ('var' , VarianceThreshold(var_threshold))])
-        
+        if var_threshold>=0:
+            self.pipe = Pipeline(steps=[('log', FunctionTransformer(log_transform)) ,
+                                        ('scaler1',UpperQuartileNormalizer(quantile=50)), 
+                                        ('var' , VarianceThreshold(var_threshold))])
+        else:
+            self.pipe = Pipeline(steps=[('log', FunctionTransformer(log_transform)) ,
+                                        ('scaler1',UpperQuartileNormalizer(quantile=50)), 
+                                        ('var' , ColumnSelectorFromFile(columns_file_path))])
         self.scaling_method = None
         if scaling_method is not None:
             # self.scaling_method = scaling_method(**scaling_prams)

@@ -4,10 +4,11 @@ rna:
     clustering_threshold: 0.7
     scaling_method: "MinMaxScaler"
     scaling_params: {}
-    var_threshold: 0.0
+    var_threshold: -1
     root_path: "../"
     # rna_dataset_path: "src/data/rna_balanced_dataset.csv"
     rna_dataset_path: "src/data/rna_dataset_full_tcga_go.csv"
+    rna_columns_path: "src/data/rna_columns.json"
 
 cnv:
     is_cluster_genes: False
@@ -31,12 +32,20 @@ dnam:
     scaling_method: "MinMaxScaler"
     scaling_params: {}
     clustering_threshold: 0.7
-    var_threshold: 0.0
+    var_threshold: -1
     # dnam_dataset_path: "src/data/dna_balanced_dataset.csv"
     dnam_dataset_path: "src/data/dna_dataset_full_tcga.csv"
+    dnam_columns_path: "src/data/dnam_columns.json"
 
 clinical:
-    dataset_path: "src/data/dataset_glioma_with_treatment.csv"
+    dataset_path: "src/data/dataset_tcga_with_treatment_intersection_v2.csv"
+    scaling_method: "MinMaxScaler"
+    cat_indices: [0, 1, 2, 3, 4, 5, 6, 7, 8]
+    cont_indices: [ 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+       26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42,
+       43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59,
+       60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76,
+       77, 78, 79, 80, 81]
     # selected_columns: ["treatments_radiation_binary", "treatments_binary", "age_at_diagnosis"]
     selected_columns: ["Chemotherapy",
                         "Radiation Therapy",
@@ -46,46 +55,81 @@ clinical:
                         "Not Specified",
                         "Other",
                         "Ancillary",
-                        "Temozolomide",
+                        "Vaccine",
                         "Radiation 1",
-                        "Bevacizumab",
-                        "Lomustine",
+                        "Temozolomide",
+                        "Cyclophosphamide",
+                        "Paclitaxel",
+                        "Doxorubicin",
+                        "Carboplatin",
+                        "Tamoxifen",
+                        "Anastrazole",
                         "Radiation 2",
+                        "Bevacizumab",
+                        "Docetaxel",
+                        "Cisplatin",
+                        "Gemcitabine",
+                        "Lomustine",
+                        "Fluorouracil",
                         "Carmustine",
                         "Irinotecan",
+                        "Trastuzumab",
                         "Dexamethasone",
+                        "Letrozole",
                         "Etoposide",
-                        "Procarbazine",
-                        "Tamoxifen",
-                        "Erlotinib",
+                        "Pemetrexed",
                         "Vincristine",
-                        "Carboplatin",
+                        "Erlotinib",
                         "Radiation 3",
-                        "Hydroxyurea",
+                        "Procarbazine",
+                        "Exemestane",
+                        "Methotrexate",
+                        "Epirubicin",
+                        "Zoledronic Acid",
+                        "Doxorubicin + Cyclophosphamide",
+                        "Capecitabine",
+                        "Radiation 4",
                         "Celecoxib",
-                        "Cisplatin",
                         "Imatinib",
+                        "Hydroxyurea",
+                        "Vinblastine",
                         "Tetrathiomolybdate",
+                        "Goserelin",
                         "81C6",
+                        "Megestrol Acetate",
                         "Sirolimus",
                         "Isotretinoin",
+                        "Nos",
+                        "Vinorelbine",
+                        "Fulvestrant",
+                        "Pegfilgrastim",
+                        "Topotecan",
                         "Cilengitide",
-                        "6-O-Benzylguanine",
                         "Mab I-131",
-                        "Cyclophosphamide",
+                        "6-O-Benzylguanine",
+                        "Ifosfamide",
                         "Fotemustine",
-                        "Procarbazine + Lomustine + Vincristine",
-                        "Radiation 4",
-                        "Ci-980",
                         "Oxaliplatin",
+                        "Ci-980",
+                        "Procarbazine + Lomustine + Vincristine",
+                        "Bacillus Calmette-Guerin",
+                        "Leuprolide",
+                        "Denosumab",
+                        "Clodronic Acid",
                         "Dc Vax (Dendritic Cell Vaccine)",
                         "Levetiracetam",
+                        "Carboplatin + Paclitaxel",
+                        "Cabozantinib",
+                        "Sodium Mercaptoetansolfonato",
                         "Motexafin Gadolinium",
-                        "Interleukin-13 + Pseudomonas Exotoxin",
                         "Attac",
+                        "Cyclophosphamide + Docetaxel",
                         "Sorafenib",
-                        "Cabozantinib"]
-    
+                        "Gefitinib",
+                        "Ixabepilone",
+                        "Interleukin-13 + Pseudomonas Exotoxin",
+                        "Pamidronic Acid"]
+                            
 wsi:
   resize_to: [224, 224]
   max_patches_per_sample: 10

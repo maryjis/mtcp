@@ -11,6 +11,49 @@ from torch.utils.data import Sampler
 
 import numpy as np
 from torch.utils.data import Sampler
+import json
+import pandas as pd
+from sklearn.base import BaseEstimator, TransformerMixin
+
+class ColumnSelectorFromFile(BaseEstimator, TransformerMixin):
+    def __init__(self, columns_file):
+        self.columns_file = columns_file
+        self.columns_ = None
+
+    def fit(self, X, y=None):
+        # читаем файл
+        if self.columns_file.endswith(".json"):
+            with open(self.columns_file, "r", encoding="utf-8") as f:
+                self.columns_ = json.load(f)
+        else:
+            with open(self.columns_file, "r", encoding="utf-8") as f:
+                self.columns_ = [line.strip() for line in f if line.strip()]
+
+        # проверка наличия колонок
+        if hasattr(X, "columns"):
+            missing = set(self.columns_) - set(X.columns)
+            if missing:
+                raise ValueError(f"Колонки отсутствуют в данных: {missing}")
+
+        return self
+
+    def transform(self, X):
+        if hasattr(X, "loc"):  # pandas
+            return X.loc[:, self.columns_].values
+        else:  # numpy
+            raise TypeError("Ожидается pandas DataFrame")
+
+    def get_support(self, indices=False):
+        if indices:
+            return list(range(len(self.columns_)))
+        return np.array(self.columns_)
+
+    def get_feature_names_out(self, input_features=None):
+        """
+        Совместимо со sklearn >= 1.0
+        """
+        return np.array(self.columns_)
+
 
 class PosFractionSampler(Sampler):
     """
@@ -34,7 +77,7 @@ class PosFractionSampler(Sampler):
         p_ptr, a_ptr = 0, 0
 
         n_pos = max(1, int(np.floor(self.batch_size * self.pos_frac)))
-
+    
         while p_ptr < len(pos_perm) or a_ptr < len(all_perm):
             batch = []
 
@@ -61,7 +104,8 @@ class PosFractionSampler(Sampler):
                 refill = [x for x in refill if x not in batch]  # исключаем всё уже добавленное
                 add = min(remaining_needed, len(refill))
                 batch.extend(refill[:add])
-            print("sampler batch", batch)
+
+            # batch = np.random.permutation(batch)
             if len(batch) > 0:
                 yield batch
 

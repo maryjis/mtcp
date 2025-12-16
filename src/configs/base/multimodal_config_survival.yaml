@@ -1,4 +1,4 @@
-experiment_name: "multimodal_rna_dnam_wsi_multimodal_pretrained_warmup_bagration_dropout5_early_stoping_survival"
+experiment_name: "multimodal_rna_dnam_wsi_with_pretraining_survival"
 n_epochs: 20
 warmup_epochs: 5 
 n_intervals: 20
@@ -7,20 +7,20 @@ random_seed: 1380
 optimizer:
     name: "AdamW"
     params:
-        lr: 1e-4
+        lr: 1e-4 # 2e-5
         weight_decay: 1e-2
-    
+
 scheduler: 
     name: "CosineAnnealingLR"
     params:
         eta_min: 5e-6
 loss:
     additional_loss: "CoxPHLoss"
-    alpha: 0.5
+    alpha: 0.7
 
 type: "multimodal"
 strategy: "survival" # mae, survival
-
+sampler: True
 
 modalities: ["rna", "dnam", "wsi"]
 
@@ -28,12 +28,12 @@ multimodal_intersection_test: true
 architecture: "MAE"
 splits: 5
 save_path : "outputs/models/"
-project_ids: ["BLCA"]
+# project_ids: ["GBM", "LGG"]
 
 
 data_path: "src/data/dataset_inetrsection_all_v2.csv"
 rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
-device: "cuda:0"
+device: "cuda:3"
 
 #available_gpus:  [0]  # Указываем, какие GPU можно использовать
 remove_nan_column: 'RNA'

@@ -5,6 +5,7 @@ import numpy as np
 from typing import Optional, Set, Tuple, Union
 import random
 import json
+import os
 from torch.nn.utils.rnn import pad_sequence
 """
 This classes adopted from  https://github.com/huggingface/transformers/blob/main/src/transformers/models/vit_mae/modeling_vit_mae.py#L323
@@ -166,8 +167,10 @@ class RnaClusterdGOPatchEmbeddings(nn.Module):
     def __init__(self, cfg, columns_order):
         super().__init__()
         self.cfg = cfg
+        print("cfg.patch_embedding", cfg.patch_embedding["clusters_path"])
         self.clusters= json.load(open(cfg.patch_embedding["clusters_path"]))
         self.num_clusters = len(self.clusters)
+
         
         rna_size, patch_size = cfg.size, cfg.patch_size
         num_channels, hidden_size = cfg.num_channels, cfg.hidden_size
@@ -180,7 +183,18 @@ class RnaClusterdGOPatchEmbeddings(nn.Module):
         self.patch_size = patch_size
         self.num_channels = num_channels
         self.num_patches = self.num_clusters
-        print("columns_order", len(columns_order))
+
+        base_path = f'{cfg.patch_embedding["clusters_path"]}-columns'
+        ext = ".json"
+        path = base_path + ext
+        i = 1
+        while os.path.exists(path):
+            path = f"{base_path}_{i}{ext}"
+            i += 1
+
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(columns_order.tolist(), f, ensure_ascii=False, indent=2)
+
         self.cluster_indices = self.prepare_cluster_indices(columns_order, self.clusters)
         self.cluster_mask, self.max_cluster_lenth = self.make_cluster_mask(self.cluster_indices, len(columns_order))
         self.projection = nn.Linear(self.max_cluster_lenth, hidden_size)
@@ -262,7 +276,6 @@ class RnaClusterdGOPatchEmbeddings(nn.Module):
         batch_size, num_channels, rna_size = rna_values.shape 
         # rna_values = rna_values.permute(0, 2, 1).contiguous()
         padded_clustered_rna, cluster_lens = self.gather_clusters_padded(rna_values, self.cluster_indices)
-        print("padded_clustered_rna: ", padded_clustered_rna.shape)
         embeddings =self.projection(padded_clustered_rna)
         return embeddings
         
@@ -448,8 +461,7 @@ class RnaMAEForPreTraining(ViTMAEForPreTraining):
         """
         
         target = self.patchify(pixel_values, interpolate_pos_encoding=interpolate_pos_encoding)
-        # print("target.shape: ", target.shape)
-        # print("pred.shape", pred.shape)
+
 
         if self.config.norm_pix_loss:
             mean = target.mean(dim=-1, keepdim=True)

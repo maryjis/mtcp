@@ -20,6 +20,7 @@ class ClinicalDataset(BaseDataset):
         """
         super().__init__(data_split, root_dir, transform, is_hazard_logits, return_mask)
         self.selected_columns = selected_columns
+        print("self.selected_columns ", self.selected_columns )
         
 
 

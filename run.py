@@ -56,20 +56,20 @@ def run(cfg : DictConfig) -> None:
         if cfg.base.type == 'unimodal':
 
             if cfg.base.strategy == "survival":
-                trainer = UnimodalSurvivalTrainer(splits, cfg, tracker)
+                trainer = UnimodalSurvivalTrainer(splits, cfg, tracker, fold_ind)
             elif cfg.base.strategy == "mae": 
-                trainer = UnimodalMAETrainer(splits, cfg, tracker)
+                trainer = UnimodalMAETrainer(splits, cfg, tracker, fold_ind)
             else:
                 raise NotImplementedError(f"Such strategy - {cfg.base.strategy} isn't implemented in unimodal approach.")
         elif cfg.base.type == 'multimodal':
               
             cfg = add_model_paths_to_config(cfg,fold_ind)                      
             if cfg.base.strategy == "mae": 
-                trainer = MultiModalMAETrainer(splits, cfg, tracker)
+                trainer = MultiModalMAETrainer(splits, cfg, tracker, fold_ind)
             elif cfg.base.strategy == "survival":
-                  trainer = MultiModalSurvivalTrainer(splits, cfg, tracker)
+                  trainer = MultiModalSurvivalTrainer(splits, cfg, tracker, fold_ind)
             elif cfg.base.strategy == "boosting_survival":
-                trainer = MultimodalBoostingSurvivalTrainer(splits, cfg, tracker)
+                trainer = MultimodalBoostingSurvivalTrainer(splits, cfg, tracker, fold_ind)
             else:
                 raise NotImplementedError(f"Such strategy - {cfg.base.strategy} isn't implemented in multimodal approach.")
         else:

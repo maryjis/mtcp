@@ -19,16 +19,17 @@ from src.utils import check_dir_exists, count_parameters, print_vit_sizes
 from src.utils import ExperimentTracker
 from pycox.models.loss import CoxPHLoss
 from src.multimodal.losses import PairwiseRankingLoss
-
+from src.unimodal.rna.transforms import PosFractionSampler
 
 class MultiModalTrainer(Trainer):
-    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker):
+    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker, fold_index: int =0):
         self.cfg =cfg
         print("self.cfg: ", self.cfg)
         self.preproc = self.initialise_preprocessing(splits, self.cfg.base.modalities)
         print(self.preproc)
         self.tracker = tracker
         self.best_model = None
+        self.fold_index =fold_index
  
     def initialise_preprocessing(self, splits, modalities):
         preproc_dict = {}
@@ -51,8 +52,8 @@ class MultiModalTrainer(Trainer):
 
 class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
     
-    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker):
-        super().__init__(splits, cfg, tracker)
+    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker, fold_index: int =0):
+        super().__init__(splits, cfg, tracker, fold_index)
         # TODO MRI - done preprocess! 
 
         if cfg.model.get("rna_model", None):
@@ -143,8 +144,8 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
     
     
 class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
-    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker):
-        super().__init__(splits, cfg, tracker)
+    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker, fold_index: int =0):
+        super().__init__(splits, cfg, tracker, fold_index)
         ## TODO MRI add transforms!!
         if cfg.model.get("rna_model", None):
             cfg.model.rna_model.size = cfg.model.rna_model.size if cfg.model.rna_model.get("size", None) else math.ceil(len(self.preproc["rna"].get_column_order()) /cfg.model.rna_model.patch_size)* cfg.model.rna_model.patch_size
@@ -153,10 +154,36 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
                       "mri" : None, "wsi" : None,
                       "cnv" : padded_transforms_cnv_scaling(self.preproc["cnv"].get_scaling(), cfg.model.cnv_model.get("size", None)) if "cnv" in self.preproc.keys() else None,
                       "clinical" : base_scaling(self.preproc["clinical"].get_scaling() if "clinical" in self.preproc.keys() else None)}
+
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities, self.preproc, transforms)
-        self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False, batch_size=cfg.base.batch_size 
-                                              if split == "train" else 1, drop_last=True if split == "train" else False)
-                            for split in splits.keys()}
+        self.dataloaders = {}
+        for split in splits.keys():
+            if split == "train":
+                # берем события напрямую из датасета
+                events = self.datasets["train"].data.event.values  # или .to_numpy(), если это pandas
+                sampler = PosFractionSampler(events, batch_size=self.cfg.base.batch_size, pos_frac=1/10)
+                if self.cfg.base.get("sampler", True):
+                    print("sampler:")
+                    self.dataloaders[split] = DataLoader(
+                        self.datasets[split],
+                        batch_sampler=sampler,
+                        num_workers=self.cfg.base.get("num_workers", 0)
+                    )
+                else:
+                    self.dataloaders[split] = DataLoader(
+                        self.datasets[split],
+                        shuffle=True,
+                        batch_size=self.cfg.base.batch_size,
+                        drop_last=True,
+                        num_workers=self.cfg.base.get("num_workers", 0)
+                    )
+            else:
+                self.dataloaders[split] = DataLoader(
+                    self.datasets[split],
+                    shuffle=False,
+                    batch_size=1,
+                    num_workers=self.cfg.base.get("num_workers", 0)
+                )
         self.model = self.initialise_models().to(cfg.base.device)
         self.initialise_loss()
         print(self.model)

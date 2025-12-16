@@ -23,6 +23,8 @@ from src.unimodal.mri.models import MRIEmbeddingEncoder
 from src.unimodal.wsi.models import WSIEncoder
 from src.unimodal.rna.mae import initialise_rna_mae_model
 from src.unimodal.cnv.models import initialise_cnv_mae_model
+from src.unimodal.clinical.models import ClinicalSurvivalModel
+from src.unimodal.clinical.transforms import StandardScalerWithoutCategorical
 import torch
 from ..evaluation import compute_survival_metrics
 import wandb
@@ -77,11 +79,12 @@ def log_memory():
 
 
 class Trainer(object):
-    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker):
+    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker, fold_index: int =0):
         self.cfg = cfg
         self.preproc = self.initialise_preprocessing(splits, self.cfg.base.modalities[0])
         self.tracker = tracker
         self.best_model = None
+        self.fold_index =fold_index
  
     def initialise_preprocessing(self, splits, modality):
         
@@ -97,7 +100,8 @@ class Trainer(object):
             logger.debug(f"project_ids: {self.cfg.base.get('project_ids', None)}")
             preproc = RNAPreprocessor(splits["train"], self.cfg.data.rna.rna_dataset_path, self.cfg.base.n_intervals, scaling_method, 
                                           self.cfg.data.rna.scaling_params, self.cfg.data.rna.var_threshold,
-                                          self.cfg.data.rna.is_cluster_genes , self.cfg.data.rna.clustering_threshold, self.cfg.data.rna.get("is_hierarchical_clusters", False), project_ids = self.cfg.base.get("project_ids", None))
+                                          self.cfg.data.rna.is_cluster_genes , self.cfg.data.rna.clustering_threshold,
+                                          self.cfg.data.rna.get("is_hierarchical_clusters", False), project_ids = self.cfg.base.get("project_ids", None),columns_file_path=f"{self.cfg.data.rna.rna_columns_path}_{self.fold_index}.json")
             preproc.fit()
             return preproc
         elif modality=="cnv":
@@ -124,7 +128,8 @@ class Trainer(object):
             preproc = DNAmPreprocessor(splits["train"], self.cfg.data.dnam.dnam_dataset_path,self.cfg.base.n_intervals, 
                                            self.cfg.data.dnam.var_threshold,
                                           self.cfg.data.dnam.is_cluster_genes , self.cfg.data.dnam.clustering_threshold,
-                                          self.cfg.data.dnam.get("is_hierarchical_clusters", False),  scaling_method, self.cfg.data.dnam.scaling_params, project_ids = self.cfg.base.get("project_ids", []))
+                                          self.cfg.data.dnam.get("is_hierarchical_clusters", False),  scaling_method, 
+                                          self.cfg.data.dnam.scaling_params, project_ids = self.cfg.base.get("project_ids", []), columns_file_path=f"{self.cfg.data.dnam.dnam_columns_path}_{self.fold_index}.json")
             preproc.fit()
             return preproc
         
@@ -140,8 +145,8 @@ class Trainer(object):
                                           self.cfg.data.clinical.dataset_path,
                                           self.cfg.data.clinical.selected_columns, 
                                           self.cfg.base.n_intervals,
-                                          StandardScaler, 
-                                          {})
+                                          StandardScalerWithoutCategorical, 
+                                          {"categorical_cols":self.cfg.data.clinical.cat_indices, "numerical_cols":self.cfg.data.clinical.cont_indices})
             preproc.fit()
             return preproc
 
@@ -268,9 +273,9 @@ class Trainer(object):
 
 class UnimodalSurvivalTrainer(Trainer):
     
-    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker):
+    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker, fold_index: int =0):
         
-        super().__init__(splits, cfg, tracker)
+        super().__init__(splits, cfg, tracker, fold_index)
         
         transforms = None
         if cfg.base.modalities[0]=="rna":
@@ -440,7 +445,9 @@ class UnimodalSurvivalTrainer(Trainer):
                                       dim_head=model_cfg.dim_head, mlp_dim=model_cfg.mlp_dim, dropout=model_cfg.dropout,
                                       emb_dropout=model_cfg.emb_dropout, n_outputs=model_cfg.n_outputs)
                 else:
-                    raise NotImplementedError("Exist only MAE and CNN architectures for mri modality")    
+                    raise NotImplementedError("Exist only MAE and CNN architectures for mri modality")
+        elif modality =="clinical":
+                return ClinicalSurvivalModel(ViTMAEConfig(**OmegaConf.to_container(model_cfg)))
         else:
                 raise NotImplementedError("Exist only for rna and mri. Initialising models for other modalities aren't declared")   
 
@@ -470,7 +477,7 @@ class UnimodalSurvivalTrainer(Trainer):
             data = {modality :value.to(device) for modality, value in data.items()} if isinstance(data, dict) else data.to(device)
             batch_size = (next(iter(data.values())).shape[0] if isinstance(data, dict) else data.shape[0])
             outputs =self.model(data, masks = mask)
-            print("event:", event)
+
             loss1 = self.criterion_logistic(outputs, time.to(device), event.to(dtype=torch.float32,device=device))
            
             haz = torch.sigmoid(outputs)
@@ -480,7 +487,7 @@ class UnimodalSurvivalTrainer(Trainer):
             loss2 = self.criterion_additional(risk, time.to(device), event.to(dtype=torch.float32,device=device))
       
             loss  =  self.cfg.base.loss.alpha *  loss1  + (1- self.cfg.base.loss.alpha) * loss2
-            print("Loss:", loss)
+   
             # Backpropagation
             if split=="train":
                 self.optimizer.zero_grad()
@@ -504,8 +511,8 @@ class UnimodalSurvivalTrainer(Trainer):
         
 class UnimodalMAETrainer(Trainer):
     
-    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker):
-        super().__init__(splits, cfg,  tracker)
+    def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker, fold_index: int =0):
+        super().__init__(splits, cfg,  tracker, fold_index)
         transforms = None
         if self.cfg.base.modalities[0]=="rna":
             OmegaConf.set_struct(cfg, False)

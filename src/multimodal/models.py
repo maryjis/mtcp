@@ -8,7 +8,9 @@ from src.unimodal.mri.mae import MriMAEModel
 from src.unimodal.dna.models import DNAmSurvivalModel, DNAmMAEModel
 from src.unimodal.wsi.mae import WsiMAEModel
 from src.unimodal.cnv.models import CNVMAEModel
-
+from src.unimodal.clinical.models import ClinicalModel
+from typing import Optional
+from dataclasses import dataclass
 import torch.nn.functional as F
 
 from omegaconf import DictConfig, OmegaConf
@@ -23,6 +25,15 @@ from src.utils import ExperimentTracker
 import torch
 import torch.nn as nn
 
+@dataclass
+class MultiModalOutput(ViTMAEModelOutput):
+    last_hidden_state: Optional[torch.FloatTensor] = None
+    mask: Optional[torch.LongTensor] = None
+    ids_restore: Optional[torch.LongTensor] = None
+    hidden_states: Optional[tuple[torch.FloatTensor]] = None
+    attentions: Optional[tuple[torch.FloatTensor]] = None
+
+    last_hidden_state_with_cls: Optional[torch.FloatTensor] = None
 
 class BatchSigmaClipper(nn.Module):
     def __init__(self, k: float = 5.0, eps: float = 1e-8, nan_safe: bool = True):
@@ -267,7 +278,17 @@ class MultiMAEModel(PreTrainedModel):
                     modality
                 )
             elif modality == "clinical":
-                pass  
+                cfg_clinical_model = ViTMAEConfig(**self.cfg.clinical_model)
+                if self.cfg.clinica_linear_last_fusion:
+                    pass
+                else:
+                    encoder = ClinicalModel(config =cfg_clinical_model)
+                    self.encoders[modality] = UnimodalEncoder(
+                                        encoder,
+                                        cfg_clinical_model.hidden_size, 
+                                        self.cfg.hidden_size,
+                                        self.cfg.is_projection,
+                                        modality)  
             else:
                 # Add support for other modalities
                 raise NotImplementedError(f"Encoder for modality {modality} not implemented")
@@ -281,7 +302,23 @@ class MultiMAEModel(PreTrainedModel):
         Returns:
             Number of patches for the modality
         """
-        return self.encoders[modality].encoder.embeddings.num_patches
+        if modality =="clinical":
+            return self.encoders[modality].encoder.total_tokens
+        else:
+            return self.encoders[modality].encoder.embeddings.num_patches
+
+    def get_cls_ids(self):
+        cls_indexes =[1]
+        for modality in self.modalities[1:]:
+            if modality =="clinical":
+                if self.cfg.clinica_linear_last_fusion:
+                    continue
+                else:
+                    num_tokens= self.encoders[modality].encoder.total_tokens
+            else:
+                num_tokens= self.encoders[modality].encoder.embeddings.num_patches
+            cls_indexes.append(num_tokens+1)
+        return cls_indexes
      
     def get_all_patches_number(self) -> int:
         """Calculate total number of patches across all modalities.
@@ -443,7 +480,8 @@ class MultiMAEModel(PreTrainedModel):
         for modality in self.modalities:
             # print(modality)
             if modality =="clinical":
-                continue
+                if self.cfg.clinica_linear_last_fusion:
+                    continue
             seq_length = self.get_patches_number(modality)
             sample = x[modality]
             
@@ -461,7 +499,9 @@ class MultiMAEModel(PreTrainedModel):
 
             multimodal_length += seq_length
             
-            last_hidden_state = embedded_sample.last_hidden_state[:,1:, :]
+            #last_hidden_state = embedded_sample.last_hidden_state[:,1:, :]
+            #try to take with token
+            last_hidden_state = embedded_sample.last_hidden_state
  
             if modality =="wsi" and self.encoders["wsi"].encoder.config.max_patches_per_sample>1 and not self.encoders["wsi"].encoder.config.random_patch_selection:
                     n10, n_tokens, hidden_size = last_hidden_state.shape
@@ -524,8 +564,16 @@ class MultiMAEModel(PreTrainedModel):
             else:
                 last_hidden_states = self.encoder_fusion_strategy(last_hidden_states, None) 
 
-        concat_embedding = ViTMAEModelOutput(
-            last_hidden_state=last_hidden_states,
+        last_hidden_states_without_cls = last_hidden_states.clone()
+        remove_cls = torch.ones(last_hidden_states_without_cls.size(1), dtype=torch.bool)
+        indexes_for_remove = self.get_cls_ids()
+        remove_cls[indexes_for_remove] = False
+     
+        last_hidden_states_without_cls_new = last_hidden_states_without_cls[:,remove_cls, :]
+
+        concat_embedding = MultiModalOutput(
+            last_hidden_state=last_hidden_states_without_cls_new,
+            last_hidden_state_with_cls = last_hidden_states,
             mask=masks,
             ids_restore=ids_restores,
             hidden_states=None,
@@ -628,23 +676,10 @@ class MultiMaeForPretraining(nn.Module):
         if encoder.modality == "wsi":
             values = values.squeeze(1)
   
-
         target = encoder.encoder.patchify(values, interpolate_pos_encoding=interpolate_pos_encoding)
-        print("encoder.modality: ", encoder.modality)
-        print("pixel_values: ", values.shape)
-        print("target: ", target.shape)
-        print("pred", pred.shape)
-        # print("target: ", target.mean())
-        # print("self.config.norm_pix_loss:", self.cfg.norm_pix_loss)
-        # if encoder.modality == "wsi":
-        #     target = target.unsqueeze(1)
-       
-        # print("mask: ", mask)
-        # print("modality_mask: ", modality_mask)
-        # Masked loss for all zero subjects (missing ones)
+
         modality_mask = modality_mask.unsqueeze(1).to(mask.device)
         mask =  mask * modality_mask
-        # print("after mask: ", mask)
         
         # Normalize target values if configured
         if self.cfg.norm_pix_loss:
@@ -706,7 +741,8 @@ class MultiMaeForPretraining(nn.Module):
         modality_losses = {}
         for modality in self.modalities:
             if modality =="clinical":
-                continue
+                if self.cfg.clinica_linear_last_fusion:
+                    continue
             # if modality =="mri":
             #     modality_losses[modality] = torch.zeros(0).to(x[modality].device)
             #     continue
@@ -746,10 +782,12 @@ class MultiMaeForPretraining(nn.Module):
         modalities_embeddings ={}   
         for modality in self.modalities:
             if modality =="clinical":
-                continue
+                if self.cfg.clinica_linear_last_fusion:
+                    continue
         for modality in self.modalities:
             if modality =="clinical":
-                continue
+                if self.cfg.clinica_linear_last_fusion:
+                    continue
             if modality not in modality_losses:
                 modality_losses[modality] = 0
             # Get number of patches for current modality
@@ -828,8 +866,9 @@ class MaskAttentionFusion(nn.Module):
         self.fusion_dim_feedforward = fusion_dim_feedforward
         
         if self.fusion_dim_feedforward > 0:
-            self.fusion_layers = nn.ModuleList([nn.TransformerEncoderLayer(fusion_dim, fusion_nhead, dim_feedforward=fusion_dim_feedforward, dropout=fusion_dropout,
-                                   layer_norm_eps=1e-05, batch_first=True, norm_first=True) for _ in range(fusion_depth)])
+            self.fusion_layers = nn.ModuleList([nn.TransformerEncoderLayer(fusion_dim,
+                                         fusion_nhead, dim_feedforward=fusion_dim_feedforward, dropout=fusion_dropout,
+                                   activation='gelu', batch_first=True, norm_first=True) for _ in range(fusion_depth)])
         else:    
             self.fusion_layers = nn.ModuleList([nn.MultiheadAttention(fusion_dim, fusion_nhead, dropout=fusion_dropout, batch_first=True) for _ in range(fusion_depth)])
         
@@ -837,7 +876,7 @@ class MaskAttentionFusion(nn.Module):
 
         for layer in self.fusion_layers:
             if self.fusion_dim_feedforward > 0:
-                x = layer(x, src_key_padding_mask= mask)
+               x = layer(x, src_key_padding_mask= None)
             else:
                x = layer(x,x,x, key_padding_mask  = mask)        
 
@@ -894,7 +933,7 @@ class MultiMaeForSurvival(nn.Module):
             if cfg.freezing_strategy:
                 print("Freezing!")
                 for name, param in self.model.named_parameters():
-                    if ("cls_token" in name) or ("encoder_fusion_strategy" in name) or ("layer.11" in name) or ('encoders.dnam.encoder.encoder.layer.5' in name):
+                    if ("cls_token" in name) or ("encoder_fusion_strategy" in name) or ("layer.11" in name) or ('encoders.dnam.encoder.encoder.layer.5' in name) or ('encoders.rna.encoder.encoder.layer.5' in name):
                         print("chozen", name)
                         param.requires_grad = True
                     else: 
@@ -943,8 +982,12 @@ class MultiMaeForSurvival(nn.Module):
         elif self.cfg.fusion_strategy == "disentangled_fusion":
             self.fusion_strategy = MaskAttentionFusion(cfg.fusion_depth, cfg.fusion_dim, cfg.fusion_nhead,
                                                        cfg.fusion_dim_feedforward, cfg.fusion_dropout)
-            self.agregation = nn.Linear(len(self.modalities)+1, 1)
-            
+            number_modalities = len(self.modalities)
+            if "clinical" in self.modalities:
+                if self.cfg.clinica_linear_last_fusion:
+                    number_modalities = number_modalities -1                                     
+            self.agregation = nn.Linear(number_modalities+1, 1)
+
         else:
             raise ValueError(f"Invalid fusion strategy: {cfg.fusion_strategy}")
         
@@ -960,14 +1003,15 @@ class MultiMaeForSurvival(nn.Module):
         #     self.projection = nn.Linear(cfg.fusion_dim+3, cfg.output_dim)
         # else:           
         
-        if "clinical" in self.modalities:
+        if "clinical" in self.modalities and self.cfg.clinica_linear_last_fusion:
             #TODO add special param for it -> cfg.fusion_dim+3
-            self.clinical_projection = nn.Sequential(nn.Linear(47, 32),
-                                                  nn.BatchNorm1d(32),
-                                                  nn.ReLU(),
+            self.clinical_projection = nn.Sequential(nn.Linear(82, 32),
+                                                  nn.LayerNorm(32),
+                                                  nn.GELU(),
                                                   nn.Linear(32, 16),
-                                                  nn.BatchNorm1d(16),
-                                                  nn.ReLU())
+                                                  nn.LayerNorm(16),
+                                                  nn.GELU(),
+                                                  nn.Dropout(0.5))
             self.projection = nn.Linear(cfg.fusion_dim+16, cfg.output_dim)
         else:
             self.projection = nn.Linear(cfg.fusion_dim, cfg.output_dim)    
@@ -985,7 +1029,7 @@ class MultiMaeForSurvival(nn.Module):
             
     def forward(self, x: Dict[str, torch.FloatTensor], masks: Dict[str, torch.FloatTensor], interpolate_pos_encoding: bool = False):
         # print({modality: value.mean() for modality, value  in x.items()})
-        if "clinical" in x.keys():
+        if "clinical" in x.keys() and self.cfg.clinica_linear_last_fusion:
 
             clinical_data = x["clinical"].clone()
             del x["clinical"]
@@ -1041,22 +1085,26 @@ class MultiMaeForSurvival(nn.Module):
             
             modalities_cls  =[]
             for modality in self.modalities:
+                if modality=="clinical" and self.cfg.clinica_linear_last_fusion:
+                    continue
                 x_modality = x[modality] 
                 embedding_modality = self.model.encoders[modality](x_modality)
                 modalities_cls.append(embedding_modality.last_hidden_state[:,0,:])
             fused_embedding = torch.stack((concat_x[:,0,:], *modalities_cls), dim=1)
             fused_embedding = fused_embedding.permute(0,2,1)
-            concat_x =self.agregation(fused_embedding).permute(0,2,1)
+       
+            concat_x =self.agregation(fused_embedding)
+
+            concat_x=concat_x.permute(0,2,1)
         else:
             concat_x = self.fusion_strategy(concat_x.last_hidden_state)
         
         
-        if "clinical" in self.modalities:
-            print("clinical_data.shape", clinical_data.shape)
-            print("clinical_data[:,0,:].shape", clinical_data[:,0,:].shape)
+        if "clinical" in self.modalities and self.cfg.clinica_linear_last_fusion:
+
             clinical_logits = self.clinical_projection(clinical_data[:,0,:])    
             concat_with_clinical =torch.cat([concat_x[:,0,:], clinical_logits], axis =-1)
-            logits = self.projection(concat_with_clinical) 
+            logits = self.projection(concat_with_clinical)
         else:    
             logits = self.projection(concat_x[:,0,:])
         # if "clinical" in self.modalities:

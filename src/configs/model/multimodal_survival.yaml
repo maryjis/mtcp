@@ -1,21 +1,21 @@
-modalities: ["rna","dnam", "wsi"]
+modalities: ["rna", "dnam", "wsi"]
 
 defaults: 
   - rna_model: survival
+  # - clinical_model: survival
   # - mri_model: survival
   - dnam_model: survival
   - wsi_model: survival
   # - cnv_model: survival
   # - mm_decoder_config: multimodal_mae
 
-
 hidden_size: 768
 is_projection: False
 attention_probs_dropout_prob: 0.0
 decoder_hidden_size: 512
 decoder_intermediate_size: 2048
-decoder_num_attention_heads: 4
-decoder_num_hidden_layers: 3
+decoder_num_attention_heads: 16
+decoder_num_hidden_layers: 8
 hidden_act: "gelu"
 hidden_dropout_prob: 0.0
 initializer_range: 0.02
@@ -26,12 +26,15 @@ model_type: "vit_mae"
 norm_pix_loss: false
 num_attention_heads: 4
 num_channels: 1
-num_hidden_layers: 4
+num_hidden_layers: 6
 qkv_bias: true
 patch_size: 512
-
+postprocessing: True
+output_dim: 20
+contrastive_loss: false
+clinica_linear_last_fusion: False
 is_load_pretrained: True
-pretrained_model_name: "multimodal_rna_dna_wsi_1e5_bigset_balanced_800_16_09_fixed_bagration"
+pretrained_model_name: "multimodal_rna_dna_wsi_clusters_with_normalizers_bs_64_1e4_bigset_balanced_1600_28_10_fixed"
 #"multimodal_rna_dna_wsi_mri_400_mae_last"  #"multimodal_rna_dna_wsi_400_mae_last" #"multimodal_rna_dnam_mri_pretrained_mae_800_17_02", "multimodal_rna_dnam6_50_mae_pretrained_rna_with_mm_800_16_02"
 pretrained_model_path: ""
 freezing_strategy: True
@@ -46,18 +49,14 @@ per_modality_pooling:
   dnam: false
   wsi: false
 
-output_dim: 20
 return_order: true
-
-contrastive_loss: false
-
 encoder_fusion_strategy: "masked_attention"
 
-encoder_fusion_depth: 1
+encoder_fusion_depth: 2
 encoder_fusion_dim: 768
-encoder_fusion_nhead: 4
+encoder_fusion_nhead: 16
 encoder_fusion_dim_feedforward: 2048
-encoder_fusion_dropout: 0.3
+encoder_fusion_dropout: 0.0
 
 fusion_strategy: "mask_attention"
 
@@ -79,6 +78,6 @@ return_attention: false
 
 make_modality_pooling: false
 make_modality_normalizers: false
-make_modality_dropout: true
+make_modality_dropout: false
 make_modality_clipper: false
 make_simple_normalizer: true

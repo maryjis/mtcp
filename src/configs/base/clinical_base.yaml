@@ -1,4 +1,4 @@
-experiment_name: "rsna_mae_survival_random_final_version"
+experiment_name: "clinical_survival"
 n_epochs: 20
 warmup_epochs: 5 
 n_intervals: 20
@@ -18,18 +18,17 @@ scheduler:
 
 type: "unimodal"
 strategy: "survival" # mae, survival
-modalities: ["rna"]
+modalities: ["clinical"]
 architecture: "MAE"
 splits: 5
 
 root_path: "../"
 save_path : "outputs/models/"
-data_path: "src/data/dataset_inetrsection_all_v2.csv"
-rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
+data_path: "src/data/dataset_tcga_with_treatment_intersection_v2.csv"
 device: "cuda:3"
 remove_nan_column: 'RNA'
 batch_size: 24
-project_ids: ["LUAD"]
+project_ids: ["BLCA"]
 sampler: True
 loss:
     additional_loss: "CoxPHLoss"
