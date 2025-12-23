@@ -20,16 +20,19 @@ from src.utils import ExperimentTracker
 from pycox.models.loss import CoxPHLoss
 from src.multimodal.losses import PairwiseRankingLoss
 from src.unimodal.rna.transforms import PosFractionSampler
+from ..evaluation import compute_survival_metrics
+from itertools import chain
 
 class MultiModalTrainer(Trainer):
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker, fold_index: int =0):
         self.cfg =cfg
+        self.fold_index =fold_index
         print("self.cfg: ", self.cfg)
         self.preproc = self.initialise_preprocessing(splits, self.cfg.base.modalities)
         print(self.preproc)
         self.tracker = tracker
         self.best_model = None
-        self.fold_index =fold_index
+        
  
     def initialise_preprocessing(self, splits, modalities):
         preproc_dict = {}
@@ -196,14 +199,139 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
             self.criterion_additional = CoxPHLoss()
         else:
             raise NotImplementedError(f"Such loss isn't implemented {self.cfg.base.loss.additional_loss}")
-        self.optimizer = AdamW(self.model.parameters(), **self.cfg.base.optimizer.params)
-        self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
         
+        if self.cfg.model.multimodal_fusion =="multiple_heads":
+            self.optimizer = AdamW(
+                        params=[
+                            *self.model.model.encoder_fusion_strategy.parameters(),
+                            *self.model.fusion_strategy.parameters(),
+                            *self.model.projections["multimodal"].parameters(),
+                        ],
+                        **self.cfg.base.optimizer.params
+                    )
+            self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
+
+            self.criterion_logistic_unimodal = NLLLogistiHazardLoss()    
+            self.criterion_additional_unimodal = CoxPHLoss()
+
+            param_groups = []
+
+            for m in self.cfg.base.modalities:
+                lr_m = self.cfg.base.optimizer_unimodal[m].params.lr
+
+                param_groups.append({
+                    "params": chain(
+                        self.model.model.encoders[m].parameters(),
+                        self.model.projections[m].parameters(),
+                    ),
+                    "lr": lr_m,
+                    "weight_decay": self.cfg.base.optimizer_unimodal[m].params.weight_decay,
+                })
+
+            self.optimizer_unimodal = AdamW(
+                    param_groups
+                )
+
+            # self.optimizer_unimodal = AdamW(
+            #     params=chain(
+            #         # unimodal encoders
+            #         *(self.model.model.encoders[m].parameters() for m in self.cfg.base.modalities),
+            #         # unimodal heads
+            #         *(self.model.projections[m].parameters() for m in self.cfg.base.modalities),
+            #     ),
+            #     **self.cfg.base.optimizer_unimodal.params
+            # )
+
+            self.scheduler_unimodal = CosineAnnealingLR(self.optimizer_unimodal, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler_unimodal.params)
+        else:
+            self.optimizer = AdamW(self.model.parameters(), **self.cfg.base.optimizer.params)
+            self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
+
     def initialise_models(self):
 
         return MultiMaeForSurvival(ViTMAEConfig(**OmegaConf.to_container(self.cfg.model)), tracker = self.tracker, preproc =self.preproc)
 
+    def __loop__(self,split, fold_ind, dataloader, device):
+        total_task_loss =0
+        num_samples = 0
+        times,events = [], []
+        preds = defaultdict(list)
+
+        for batch in dataloader:
+            data, mask,  time, event = batch 
+            data = {modality :value.to(device) for modality, value in data.items()} if isinstance(data, dict) else data.to(device)
+            batch_size = (next(iter(data.values())).shape[0] if isinstance(data, dict) else data.shape[0])
+            if split=="train":
+                self.optimizer.zero_grad()
+
+            pred_values = 0
+            if self.cfg.model.multimodal_fusion =="multiple_heads":
+                unimodal_loss = 0
+                if split=="train":
+                    self.optimizer_unimodal.zero_grad()
+
+                outputs_dict =self.model.forward_unimodal_encoders(data, masks = mask) # here is a dictinary -> modality -outputs
+                
+                # Train unimodal encoders
+                for output_modality, outputs in outputs_dict.items():
+                    print("Through: ", output_modality)
+                    loss1 = self.criterion_logistic_unimodal(outputs, time.to(device), event.to(dtype=torch.float32,device=device))
+                
+                    haz = torch.sigmoid(outputs)
+                    cum_hazard = -torch.log1p(-haz + 1e-7).cumsum(1)
+                    risk = cum_hazard[:, -1]
+            
+                    loss2 = self.criterion_additional_unimodal(risk, time.to(device), event.to(dtype=torch.float32,device=device))
+            
+                    loss  =  self.cfg.base.loss.alpha *  loss1  + (1- self.cfg.base.loss.alpha) * loss2
+                    unimodal_loss+=loss
+                    # # Backpropagation
+                    # if split=="train":
+                    #     loss.backward()
+                    preds[output_modality].append(outputs.detach().cpu())
+                    pred_values+=outputs
+                    total_task_loss+=loss*batch_size
+                    num_samples+=batch_size
+                if split=="train":
+                    unimodal_loss.backward()
+                    self.optimizer_unimodal.step()
+
+            # Train multimodal encoder
+            outputs_multimodal =self.model(data, masks = mask)
+            haz = torch.sigmoid(outputs_multimodal)
+            cum_hazard = -torch.log1p(-haz + 1e-7).cumsum(1)
+            risk = cum_hazard[:, -1]
+
+            loss1 = self.criterion_logistic(outputs_multimodal, time.to(device), event.to(dtype=torch.float32,device=device))
+            loss2 = self.criterion_additional(risk, time.to(device), event.to(dtype=torch.float32,device=device))
+            loss  =  self.cfg.base.loss.alpha *  loss1  + (1- self.cfg.base.loss.alpha) * loss2
     
+            times.append(time.cpu())
+            events.append(event.cpu())
+            preds["multimodal"].append(outputs_multimodal.detach().cpu())
+            pred_values += outputs_multimodal
+            preds["mean_val"].append(pred_values.detach().cpu() / len(outputs_dict.keys())+1)
+             # Backpropagation
+            if split=="train":
+                loss.backward()
+                self.optimizer.step()
+        
+        metrics = {"task_loss": total_task_loss.cpu().detach().numpy() / num_samples}
+        if split!="train":
+            preproc = self.preproc[next(iter(self.preproc))] if isinstance(self.preproc, dict) else self.preproc
+            metrics.update(compute_survival_metrics( preds["mean_val"], torch.cat(times, dim=0), torch.cat(events, dim=0), cuts=preproc.get_hazard_cuts()))
+            if len(preds.keys())>1:
+                for key in preds.keys():
+                    if key!= "mean_val":
+                        metrics_modality=compute_survival_metrics( preds[key], torch.cat(times, dim=0), torch.cat(events, dim=0), cuts=preproc.get_hazard_cuts())
+                        metrics.update({f"{key}_{name}" : value for name, value in metrics_modality.items()})
+        else:
+            self.scheduler.step()
+            if self.cfg.model.multimodal_fusion =="multiple_heads":
+                self.scheduler_unimodal.step()
+            
+        return  metrics 
+
     def initialise_datasets(self, splits, modalities, preprocs, transforms=None):
         datasets = defaultdict(list)
         for modality in modalities:

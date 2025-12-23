@@ -223,7 +223,7 @@ class RnaClusterdGOPatchEmbeddings(nn.Module):
         cluster_lens = []
 
         for idxs in clusters:
-            idxs = torch.tensor(idxs, dtype=torch.long, device=device)
+            idxs = idxs.clone().detach().to(device=device, dtype=torch.long)
             # extract gene values for these indices
             vals = rna_values[:, idxs]        # (B, cluster_len)
             cluster_tensors.append(vals)
@@ -337,7 +337,7 @@ class RnaMAEModel(ViTMAEModel):
             `torch.FloatTensor` of shape `(batch_size, num_channels, original_rna_size)`:
                 Pixel values.
         """
-        if cfg.patch_embedding["architecture"] == "tmae":
+        if self.config.patch_embedding["architecture"] == "tmae":
             patch_size, num_channels = self.config.patch_size, self.config.num_channels
             original_rna_size = original_rna_size if original_rna_size is not None else self.config.size
             
@@ -364,7 +364,7 @@ class RnaMAEModel(ViTMAEModel):
                 num_patches * patch_size
             )
             return pixel_values
-        elif cfg.patch_embedding["architecture"] == "clusterd_go":
+        elif self.config.patch_embedding["architecture"] == "clusterd_go":
             return self.unpatchify_clustered(patchified_rna_values)
     
     def patchify_clustered(self, rna_values):

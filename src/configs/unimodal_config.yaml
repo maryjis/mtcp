@@ -1,4 +1,4 @@
 defaults: 
-    - model: clinical_mae
-    - base: clinical_base
+    - model: rna_mae
+    - base: rna_base
     - data: multimodal_data

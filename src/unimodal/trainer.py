@@ -81,10 +81,11 @@ def log_memory():
 class Trainer(object):
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker, fold_index: int =0):
         self.cfg = cfg
+        self.fold_index =fold_index
         self.preproc = self.initialise_preprocessing(splits, self.cfg.base.modalities[0])
         self.tracker = tracker
         self.best_model = None
-        self.fold_index =fold_index
+        
  
     def initialise_preprocessing(self, splits, modality):
         

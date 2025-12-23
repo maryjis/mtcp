@@ -154,8 +154,6 @@ class MultiMAEModel(PreTrainedModel):
             self.normalizers = nn.ModuleDict({modality: nn.LayerNorm(cfg.hidden_size) for modality in  cfg.modalities})
         if self.cfg.make_modality_clipper:
             self.cliper = BatchSigmaClipper(k=4.0)
-        if self.cfg.make_modality_dropout:
-            self.dropout =nn.Dropout(p=0.5)
         
 
         if self.cfg.encoder_fusion_strategy =="masked_attention":
@@ -458,6 +456,48 @@ class MultiMAEModel(PreTrainedModel):
     def initialize_weights(self):
         torch.nn.init.normal_(self.cls_token, std=self.cfg.initializer_range)
         # torch.nn.init.normal_(self.mask_token, std=self.config.initializer_range)
+    
+    def dropout(self, last_hidden_state, modality):
+        """
+        last_hidden_state: (B, T, D)
+        Выводит индексы семплов, которые были дропнуты для данной модальности.
+        """
+        if self._md_active is None:
+            return last_hidden_state
+
+        p_mod = self.cfg.modality_dropout_p.get(modality, 0.0)
+        if p_mod == 0.0:
+            return last_hidden_state
+
+        B = last_hidden_state.shape[0]
+
+        # сэмплируем для каждого примера
+        rand = torch.rand(B, device=last_hidden_state.device)
+
+        # условия:
+        # 1) пример активен
+        # 2) dropout ещё не применялся
+        # 3) прошли вероятность модальности
+        mask = (
+            self._md_active
+            & (~self._md_used)
+            & (rand < p_mod)
+        )
+
+        dropped_indices = torch.nonzero(mask, as_tuple=False).view(-1).tolist()
+        n_dropped = len(dropped_indices)
+
+        if n_dropped > 0:
+            self._md_used = self._md_used | mask
+            
+            # зануляем selected samples
+            last_hidden_state = last_hidden_state * (~mask).view(B, 1, 1)
+            
+            # логируем
+            print(f"[ModDrop] Dropped {n_dropped} samples for modality '{modality}': indices {dropped_indices}")
+
+        return last_hidden_state
+
         
     def forward(
         self,
@@ -476,7 +516,18 @@ class MultiMAEModel(PreTrainedModel):
 
         # Process each modality
         is_first = True
+        print("self.cfg.make_modality_dropout: ", self.cfg.make_modality_dropout)
+        if self.training and self.cfg.make_modality_dropout:
+            B = next(iter(x.values())).shape[0]
 
+            # какие примеры вообще участвуют в modality dropout
+            self._md_active = torch.rand(B, device=next(iter(x.values())).device) < self.cfg.p_dropout_value
+
+            # для каких примеров уже применили dropout
+            self._md_used = torch.zeros(B, dtype=torch.bool, device=self._md_active.device)
+        else:
+            self._md_active = None
+            
         for modality in self.modalities:
             # print(modality)
             if modality =="clinical":
@@ -512,9 +563,10 @@ class MultiMAEModel(PreTrainedModel):
                     embedded_sample.mask =embedded_sample.mask[:n,:]
                     embedded_sample.ids_restore =embedded_sample.ids_restore[:n,:]
                     
-                    if self.cfg.make_modality_dropout:
-                        print("Make dropout on wsi")
-                        last_hidden_state =self.dropout(last_hidden_state)
+            if self.cfg.make_modality_dropout:
+                    print("Make dropout:")
+                    last_hidden_state =self.dropout(last_hidden_state, modality)
+                            
             if self.cfg.make_modality_clipper:
                 last_hidden_state =self.cliper(last_hidden_state)
                 
@@ -868,7 +920,7 @@ class MaskAttentionFusion(nn.Module):
         if self.fusion_dim_feedforward > 0:
             self.fusion_layers = nn.ModuleList([nn.TransformerEncoderLayer(fusion_dim,
                                          fusion_nhead, dim_feedforward=fusion_dim_feedforward, dropout=fusion_dropout,
-                                   activation='gelu', batch_first=True, norm_first=True) for _ in range(fusion_depth)])
+                                         batch_first=True, norm_first=True) for _ in range(fusion_depth)])
         else:    
             self.fusion_layers = nn.ModuleList([nn.MultiheadAttention(fusion_dim, fusion_nhead, dropout=fusion_dropout, batch_first=True) for _ in range(fusion_depth)])
         
@@ -1002,19 +1054,21 @@ class MultiMaeForSurvival(nn.Module):
         #     #TODO add special param for it -> cfg.fusion_dim+3
         #     self.projection = nn.Linear(cfg.fusion_dim+3, cfg.output_dim)
         # else:           
-        
-        if "clinical" in self.modalities and self.cfg.clinica_linear_last_fusion:
-            #TODO add special param for it -> cfg.fusion_dim+3
-            self.clinical_projection = nn.Sequential(nn.Linear(82, 32),
-                                                  nn.LayerNorm(32),
-                                                  nn.GELU(),
-                                                  nn.Linear(32, 16),
-                                                  nn.LayerNorm(16),
-                                                  nn.GELU(),
-                                                  nn.Dropout(0.5))
-            self.projection = nn.Linear(cfg.fusion_dim+16, cfg.output_dim)
+        if self.cfg.multimodal_fusion =="single_head":
+            if "clinical" in self.modalities and self.cfg.clinica_linear_last_fusion:
+                #TODO add special param for it -> cfg.fusion_dim+3
+                self.clinical_projection = nn.Sequential(nn.Linear(82, 32),
+                                                    nn.LayerNorm(32),
+                                                    nn.GELU(),
+                                                    nn.Linear(32, 16),
+                                                    nn.LayerNorm(16),
+                                                    nn.GELU(),
+                                                    nn.Dropout(0.5))
+                self.projection = nn.Linear(cfg.fusion_dim+16, cfg.output_dim)
+            else:
+                self.projection = nn.Linear(cfg.fusion_dim, cfg.output_dim)
         else:
-            self.projection = nn.Linear(cfg.fusion_dim, cfg.output_dim)    
+            self.projections =nn.ModuleDict({modality: nn.Linear(cfg.fusion_dim, cfg.output_dim) for modality in  cfg.modalities +["multimodal"]})           
         
         
     def get_primary_order(self, x,ids_restore):
@@ -1025,7 +1079,28 @@ class MultiMaeForSurvival(nn.Module):
         x = torch.cat([x[:, :1, :], x_], dim=1)
 
         return x
-            
+
+    def forward_unimodal_encoders(self, x: Dict[str, torch.FloatTensor], masks: Dict[str, torch.FloatTensor], interpolate_pos_encoding: bool = False):
+        result = {}
+        for modality_key, projection in self.projections.items():
+                print("modality_key: ",modality_key, projection)
+                if not modality_key =="multimodal":
+                    x_modality = x[modality_key] 
+                    embedding_modality = self.model.encoders[modality_key](x_modality)
+                    print("random_patch_selection:", self.model.encoders["wsi"].encoder.config.random_patch_selection)
+                    print("max_patches_per_sample", self.model.encoders["wsi"].encoder.config.max_patches_per_sample)
+                    if modality_key =="wsi" and self.model.encoders["wsi"].encoder.config.max_patches_per_sample>1 and not self.model.encoders["wsi"].encoder.config.random_patch_selection:
+                        print("Calculate mean")
+                        n10, n_tokens, hidden_size = embedding_modality.last_hidden_state.shape
+                        n = n10 // self.model.encoders["wsi"].encoder.config.max_patches_per_sample
+
+                        last_hidden_state = embedding_modality.last_hidden_state.view(n, self.model.encoders["wsi"].encoder.config.max_patches_per_sample, n_tokens, hidden_size)  # (n, 10, n_tokens, hidden_size)
+                        last_hidden_state = last_hidden_state.mean(dim=1)
+                        result[modality_key] = projection(last_hidden_state[:,0,:])
+                    else:
+                        result[modality_key] = projection(embedding_modality.last_hidden_state[:,0,:])
+                    print("result[modality_key]", result[modality_key].shape)
+        return result        
             
     def forward(self, x: Dict[str, torch.FloatTensor], masks: Dict[str, torch.FloatTensor], interpolate_pos_encoding: bool = False):
         # print({modality: value.mean() for modality, value  in x.items()})
@@ -1100,20 +1175,27 @@ class MultiMaeForSurvival(nn.Module):
             concat_x = self.fusion_strategy(concat_x.last_hidden_state)
         
         
-        if "clinical" in self.modalities and self.cfg.clinica_linear_last_fusion:
-
-            clinical_logits = self.clinical_projection(clinical_data[:,0,:])    
-            concat_with_clinical =torch.cat([concat_x[:,0,:], clinical_logits], axis =-1)
-            logits = self.projection(concat_with_clinical)
-        else:    
-            logits = self.projection(concat_x[:,0,:])
+        
         # if "clinical" in self.modalities:
         #     clinical_logits = self.clinical_projection(clinical_data[:,0,:])
         #     concat_logits = torch.stack([logits,clinical_logits], dim =2)
         #     print("concat_logits.shape", concat_logits.shape)
         #     logits = self.final_projection(concat_logits)
         #     logits =torch.squeeze(logits,2)
+        if self.cfg.multimodal_fusion =="single_head":
+            if "clinical" in self.modalities and self.cfg.clinica_linear_last_fusion:
+
+                clinical_logits = self.clinical_projection(clinical_data[:,0,:])    
+                concat_with_clinical =torch.cat([concat_x[:,0,:], clinical_logits], axis =-1)
+                logits = self.projection(concat_with_clinical)
+                result = logits
+            else:    
+                logits = self.projection(concat_x[:,0,:])
+                result = logits
+        elif self.cfg.multimodal_fusion =="multiple_heads":
+                result = self.projections["multimodal"](concat_x[:,0,:])
+               
         if self.cfg.return_attention:
-            return logits, attn_weights
+            return result, attn_weights
         else:
-            return logits
+            return result

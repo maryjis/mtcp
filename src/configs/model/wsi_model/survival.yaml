@@ -24,7 +24,7 @@ pretrained_model_path: ""
 output_dim: 20
 max_patches_per_sample: 10
 num_patches: 10
-random_patch_selection: True
+random_patch_selection: False
 use_transformer_pool: False
 #pretrained_model_path: "facebook/vit-mae-base"
 # embeddings_layers:

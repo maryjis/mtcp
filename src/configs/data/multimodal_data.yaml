@@ -4,11 +4,11 @@ rna:
     clustering_threshold: 0.7
     scaling_method: "MinMaxScaler"
     scaling_params: {}
-    var_threshold: -1
+    var_threshold: 0.0
     root_path: "../"
     # rna_dataset_path: "src/data/rna_balanced_dataset.csv"
     rna_dataset_path: "src/data/rna_dataset_full_tcga_go.csv"
-    rna_columns_path: "src/data/rna_columns.json"
+    rna_columns_path: "src/data/final_clusters_GO_v3.json-columns"
 
 cnv:
     is_cluster_genes: False
@@ -32,10 +32,10 @@ dnam:
     scaling_method: "MinMaxScaler"
     scaling_params: {}
     clustering_threshold: 0.7
-    var_threshold: -1
+    var_threshold: 0.0
     # dnam_dataset_path: "src/data/dna_balanced_dataset.csv"
     dnam_dataset_path: "src/data/dna_dataset_full_tcga.csv"
-    dnam_columns_path: "src/data/dnam_columns.json"
+    dnam_columns_path: "src/data/dna_clusters_go_v3.json-columns"
 
 clinical:
     dataset_path: "src/data/dataset_tcga_with_treatment_intersection_v2.csv"

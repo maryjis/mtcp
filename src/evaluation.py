@@ -30,25 +30,66 @@ def interpolate_dataframe(dataframe: pd.DataFrame, n: int = 10) -> pd.DataFrame:
     return dataframe
 
 
-def compute_survival_metrics(outputs, time, event, cuts):
-        """
-        Compute the survival metrics with the PyCox package.
-        """
+def compute_survival_metrics(outputs, time, event, cuts=None):
+    """
+    Compute the survival metrics with the PyCox package.
+    
+    Parameters
+    ----------
+    outputs : dict or list of torch.Tensor
+        Если dict: ключи - модальности, значения - output logits по времени [N, T]
+        Если list: обычный список output logits
+    time : torch.Tensor
+        Время до события
+    event : torch.Tensor
+        Флаги событий
+    cuts : optional
+        Не используется в этой версии
+    """
+    
+    # Если outputs словарь, усредняем risk по модальностям
+    if isinstance(outputs, dict):
+        risk_list = []
+        survival_list = []
+        for modality, out in outputs.items():
+            haz = out.sigmoid()
+            cum_h = -torch.log1p(-haz + 1e-7).cumsum(1)
+            risk_list.append(cum_h[:, -1].clone())
+            surv = (1 - haz).add(1e-7).log().cumsum(1).exp().cpu().numpy()
+            survival_list.append(surv.clone())
+        
+        # Усреднение риска по модальностям
+        risk = torch.stack(risk_list, dim=0).mean(dim=0).cpu().numpy()
+        
+        # Усреднение survival по модальностям
+        survival = np.mean(np.stack(survival_list, axis=0), axis=0)
+        
+    else:
+        # outputs — list/tensor
         hazard = torch.cat(outputs, dim=0)
+        cum_hazard = -torch.log1p(-hazard.sigmoid() + 1e-7).cumsum(1)
+        risk = cum_hazard[:, -1].cpu().numpy()
         survival = (1 - hazard.sigmoid()).add(1e-7).log().cumsum(1).exp().cpu().numpy()
-        risk = -survival[:, -1]
-        survival =pd.DataFrame(survival.transpose())
-        # TODO check why we use inteprolation here! 
-        #survival = interpolate_dataframe(pd.DataFrame(survival.transpose(), cuts))
-        evaluator = EvalSurv(
-            survival, time.cpu().numpy(), event.cpu().numpy(), censor_surv="km"
-        )
-        c_index = evaluator.concordance_td()
-        ibs = evaluator.integrated_brier_score(np.linspace(0, time.cpu().numpy().max()))
-        inbll = evaluator.integrated_nbll(np.linspace(0, time.cpu().numpy().max()))
-        cs_score = (c_index + (1 - ibs)) / 2
-        c_index_v2 = concordance_index_censored(event.cpu().numpy().astype(bool), time.cpu().numpy(), risk , tied_tol=1e-08)[0]
-        return {"c_index": c_index, "ibs": ibs, "inbll": inbll,"cs_score": cs_score, "c_index_v2": c_index_v2}
+    
+    survival_df = pd.DataFrame(survival.transpose())
+
+    # TODO check why we use interpolation here!
+    # survival_df = interpolate_dataframe(pd.DataFrame(survival.transpose(), cuts))
+    
+    evaluator = EvalSurv(
+        survival_df, time.cpu().numpy(), event.cpu().numpy(), censor_surv="km"
+    )
+    c_index = evaluator.concordance_td()
+    ibs = evaluator.integrated_brier_score(np.linspace(0, time.cpu().numpy().max()))
+    inbll = evaluator.integrated_nbll(np.linspace(0, time.cpu().numpy().max()))
+    cs_score = (c_index + (1 - ibs)) / 2
+    c_index_v2 = concordance_index_censored(event.cpu().numpy().astype(bool),
+                                            time.cpu().numpy(),
+                                            risk,
+                                            tied_tol=1e-08)[0]
+    
+    return {"c_index": c_index, "ibs": ibs, "inbll": inbll,
+            "cs_score": cs_score, "c_index_v2": c_index_v2}
     
 def agg_fold_metrics(lst: list[dict[str, float]]):
     """Compute mean, min, max, std from cross validation metrics"""

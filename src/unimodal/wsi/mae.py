@@ -95,7 +95,7 @@ class ViTMAEEmbeddings(nn.Module):
                 mainly used for testing purposes to control randomness and maintain the reproducibility
         """
         batch_size, seq_length, dim = sequence.shape
-        print("self.config.mask_ratio:", self.config.mask_ratio)
+    
         len_keep = int(seq_length * (1 - self.config.mask_ratio))
 
         if noise is None:

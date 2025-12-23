@@ -29,11 +29,11 @@ rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
 device: "cuda:3"
 remove_nan_column: 'RNA'
 batch_size: 24
-project_ids: ["LUAD"]
+project_ids: ["GBM", "LGG"]
 sampler: True
 loss:
     additional_loss: "CoxPHLoss"
-    alpha: 1.0
+    alpha: 0.7
 
 log:
     logging: True
