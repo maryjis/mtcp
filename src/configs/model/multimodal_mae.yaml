@@ -40,6 +40,7 @@ encoder_fusion_dim: 768
 encoder_fusion_nhead: 16
 encoder_fusion_dim_feedforward: 2048
 encoder_fusion_dropout: 0.0
+encoder_activation_name: "relu"
 
 fusion_strategy: "mask_attention"
 fusion_depth: 1

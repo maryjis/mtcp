@@ -52,11 +52,12 @@ def compute_survival_metrics(outputs, time, event, cuts=None):
         risk_list = []
         survival_list = []
         for modality, out in outputs.items():
+            out = torch.cat(out, dim=0)
             haz = out.sigmoid()
             cum_h = -torch.log1p(-haz + 1e-7).cumsum(1)
             risk_list.append(cum_h[:, -1].clone())
             surv = (1 - haz).add(1e-7).log().cumsum(1).exp().cpu().numpy()
-            survival_list.append(surv.clone())
+            survival_list.append(surv)
         
         # Усреднение риска по модальностям
         risk = torch.stack(risk_list, dim=0).mean(dim=0).cpu().numpy()

@@ -159,7 +159,7 @@ class MultiMAEModel(PreTrainedModel):
         if self.cfg.encoder_fusion_strategy =="masked_attention":
             self.encoder_fusion_strategy = MaskAttentionFusion(cfg.encoder_fusion_depth, cfg.encoder_fusion_dim,
                                                                 cfg.encoder_fusion_nhead,
-                                                        cfg.encoder_fusion_dim_feedforward, cfg.encoder_fusion_dropout)
+                                                        cfg.encoder_fusion_dim_feedforward, cfg.encoder_fusion_dropout, cfg.encoder_activation_name)
         self.initialize_weights()
 
     def __init_encoders__(self, preproc=None):
@@ -912,14 +912,15 @@ class MultiMaeForPretraining(nn.Module):
             attentions=concat_embedding.attentions,
         )
 class MaskAttentionFusion(nn.Module):
-    def __init__(self, fusion_depth, fusion_dim, fusion_nhead, fusion_dim_feedforward, fusion_dropout):
+    def __init__(self, fusion_depth, fusion_dim, fusion_nhead, fusion_dim_feedforward, fusion_dropout, activation_name ="relu"):
         super().__init__()
         self.fusion_depth = fusion_depth
         self.fusion_dim_feedforward = fusion_dim_feedforward
         
         if self.fusion_dim_feedforward > 0:
             self.fusion_layers = nn.ModuleList([nn.TransformerEncoderLayer(fusion_dim,
-                                         fusion_nhead, dim_feedforward=fusion_dim_feedforward, dropout=fusion_dropout,
+                                         fusion_nhead, dim_feedforward=fusion_dim_feedforward,
+                                         dropout=fusion_dropout,activation =activation_name,
                                          batch_first=True, norm_first=True) for _ in range(fusion_depth)])
         else:    
             self.fusion_layers = nn.ModuleList([nn.MultiheadAttention(fusion_dim, fusion_nhead, dropout=fusion_dropout, batch_first=True) for _ in range(fusion_depth)])

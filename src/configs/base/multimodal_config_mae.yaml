@@ -32,7 +32,7 @@ rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
 device: "cuda:1"  # Указываем, что основное устройство - GPU 2
 available_gpus:  [1, 2, 0, 4]  # Указываем, какие GPU можно использовать
 
-remove_nan_column: 'RNA'
+remove_nan_column: 'WSI_initial'
 batch_size: 64
 
 log:

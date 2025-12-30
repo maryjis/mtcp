@@ -310,7 +310,7 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
             events.append(event.cpu())
             preds["multimodal"].append(outputs_multimodal.detach().cpu())
             pred_values += outputs_multimodal
-            preds["mean_val"].append(pred_values.detach().cpu() / len(outputs_dict.keys())+1)
+            #preds["mean_val"].append(pred_values.detach().cpu() / len(outputs_dict.keys())+1)
              # Backpropagation
             if split=="train":
                 loss.backward()
@@ -319,7 +319,7 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
         metrics = {"task_loss": total_task_loss.cpu().detach().numpy() / num_samples}
         if split!="train":
             preproc = self.preproc[next(iter(self.preproc))] if isinstance(self.preproc, dict) else self.preproc
-            metrics.update(compute_survival_metrics( preds["mean_val"], torch.cat(times, dim=0), torch.cat(events, dim=0), cuts=preproc.get_hazard_cuts()))
+            metrics.update(compute_survival_metrics( preds, torch.cat(times, dim=0), torch.cat(events, dim=0), cuts=preproc.get_hazard_cuts()))
             if len(preds.keys())>1:
                 for key in preds.keys():
                     if key!= "mean_val":
@@ -344,7 +344,8 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
         concat_dataset = {} 
         for split, modalities_data in datasets.items():
             concat_dataset[split] = MultimodalSurvivalDataset(splits[split], self.cfg.base.data_path, modalities_data,
-                                                 transform = transforms, is_hazard_logits = True)
+                                                 transform = transforms, is_hazard_logits = True,
+                                                 debug_mode =self.cfg.data.rna.debug_mode)
         return concat_dataset
     
 

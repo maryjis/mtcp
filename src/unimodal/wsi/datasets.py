@@ -85,7 +85,8 @@ class WSIDataset_patches(BaseDataset):
         is_hazard_logits: bool = False,
         resize_to: tuple = (224, 224),
         max_patches_per_sample: int = 10,
-        random_patch_selection: bool = False
+        random_patch_selection: bool = False,
+        debug_mode =False
     ) -> None:
         super().__init__(
             data=data,
@@ -96,7 +97,7 @@ class WSIDataset_patches(BaseDataset):
         self.resize_to = resize_to
         self.max_patches_per_sample = max_patches_per_sample
         self.random_patch_selection = random_patch_selection
-
+        self.debug_mode =debug_mode
         logger.info(
             f"WSIDataset_patches initialized: n_samples={len(self.data)}, "
             f"resize_to={self.resize_to}, max_patches_per_sample={self.max_patches_per_sample}, "
@@ -200,8 +201,10 @@ class WSIDataset_patches(BaseDataset):
 
         elapsed = (time.perf_counter() - t0) * 1000
         logger.debug(f"__getitem__ idx={idx} | path={patch_dir} | shape={patches.shape} | time={elapsed:.1f} ms")
-
-        return (patches, mask) if self.return_mask else patches
+        if not self.debug_mode:
+            return (patches, mask) if self.return_mask else patches
+        else:
+            return (str(patch_dir), patches, mask) if self.return_mask else (str(patch_dir),patches)
 
     def __len__(self):
         return len(self.data)
@@ -216,8 +219,10 @@ class SurvivalWSIDataset(torch.utils.data.Dataset):
         split: pd.DataFrame,
         dataset: torch.utils.data.Dataset,
         is_hazard_logits: bool = False,
+        debug_mode =False
     ) -> None:
         self.dataset = dataset
+        self.debug_mode = debug_mode
         if is_hazard_logits:
             self.time = torch.from_numpy(split["new_time"].values)
             self.event = torch.from_numpy(split["new_event"].values)
@@ -226,10 +231,15 @@ class SurvivalWSIDataset(torch.utils.data.Dataset):
             self.event = torch.from_numpy(split["event"].values)
 
     def __getitem__(self, idx: int) -> Tuple[Any, torch.Tensor, torch.Tensor]:
-        data, mask = self.dataset[idx]  # Разбиваем tuple
-        #print(f"Index {idx} -> Data shape: {data.shape},  Time: {self.time[idx]}, Event: {self.event[idx]}")
-        return data, mask, self.time[idx], self.event[idx]
+        if not self.debug_mode:
+            data, mask = self.dataset[idx]  # Разбиваем tuple
+            return data, mask, self.time[idx], self.event[idx]
+        else: 
+            file_ids, data, mask = self.dataset[idx]
+            return file_ids, data, mask, self.time[idx], self.event[idx]
 
+        #print(f"Index {idx} -> Data shape: {data.shape},  Time: {self.time[idx]}, Event: {self.event[idx]}")
+        
     def __len__(self) -> int:
         return len(self.dataset)
 

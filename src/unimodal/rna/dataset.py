@@ -71,9 +71,9 @@ class OmicsDataset(BaseDataset):
                 sample = self.transform(sample)
            
             if self.debug_mode:
-                return file_id,  sample.float(), mask
-            
-            return sample.float(), mask
+                return str(file_id),  sample.float(), mask
+            else:
+                return sample.float(), mask
         else:
 
             sample = torch.zeros((1, self.rna_dataset.shape[1]-1)).float()
@@ -82,8 +82,9 @@ class OmicsDataset(BaseDataset):
                 sample = self.transform(sample)
          
             if self.debug_mode:
-                return file_id,  sample.float(), mask
-            return sample.float(), mask
+                return str(file_id),  sample.float(), mask
+            else:
+                return sample.float(), mask
         
 class OmicsSurvivalDataset(OmicsDataset):
         def __init__(self, data_split, dataset_dir, transform = None, 
