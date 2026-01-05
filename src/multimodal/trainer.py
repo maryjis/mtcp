@@ -15,13 +15,14 @@ from src.unimodal.clinical.transforms import base_scaling
 from src.unimodal.trainer import Trainer, UnimodalSurvivalTrainer, UnimodalMAETrainer
 from src.multimodal.models import MultiMaeForPretraining, MultiMaeForSurvival
 import torch
-from src.utils import check_dir_exists, count_parameters, print_vit_sizes
+from src.utils import check_dir_exists, count_parameters, print_vit_sizes, debug_optimizers_trainable_params
 from src.utils import ExperimentTracker
 from pycox.models.loss import CoxPHLoss
 from src.multimodal.losses import PairwiseRankingLoss
 from src.unimodal.rna.transforms import PosFractionSampler
 from ..evaluation import compute_survival_metrics
 from itertools import chain
+from transformers import get_cosine_schedule_with_warmup
 
 class MultiModalTrainer(Trainer):
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker, fold_index: int =0):
@@ -205,33 +206,46 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
                         params=[
                             *self.model.model.encoder_fusion_strategy.parameters(),
                             *self.model.fusion_strategy.parameters(),
+                            self.model.model.cls_token,
+                            self.model.model.mask_token,
                             *self.model.projections["multimodal"].parameters(),
                         ],
                         **self.cfg.base.optimizer.params
                     )
-            self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
+       
+            #self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
+            self.scheduler = get_cosine_schedule_with_warmup(self.optimizer,
+                                                         num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"]),     # warmup = 40 epochs
+                                                         num_training_steps= self.cfg.base.n_epochs * len(self.dataloaders["train"]))  # cosine decay
+            
+            self.criterion_logistic_unimodal = {m: NLLLogistiHazardLoss() for m in self.cfg.base.modalities}    
+            self.criterion_additional_unimodal = {m: CoxPHLoss() for m in self.cfg.base.modalities}
 
-            self.criterion_logistic_unimodal = NLLLogistiHazardLoss()    
-            self.criterion_additional_unimodal = CoxPHLoss()
-
-            param_groups = []
+            param_groups = {}
 
             for m in self.cfg.base.modalities:
                 lr_m = self.cfg.base.optimizer_unimodal[m].params.lr
 
-                param_groups.append({
-                    "params": chain(
+                param_groups[m] = {
+                    "params": list(chain(
                         self.model.model.encoders[m].parameters(),
                         self.model.projections[m].parameters(),
-                    ),
+                    )),
                     "lr": lr_m,
                     "weight_decay": self.cfg.base.optimizer_unimodal[m].params.weight_decay,
-                })
+                }
 
-            self.optimizer_unimodal = AdamW(
-                    param_groups
-                )
-
+            self.optimizer_unimodal = {m: AdamW([param_groups[m]]) for m in self.cfg.base.modalities}
+            debug_optimizers_trainable_params(
+                model=self.model,
+                optimizer=self.optimizer,
+                optimizer_unimodal=self.optimizer_unimodal,   # dict {modality: optimizer}
+                print_param_names=True,
+                max_names_per_opt=200,   # or None for all
+                only_requires_grad=True,
+                check_overlap=True,
+                title="MM Survival Trainer Optimizers",
+            )
             # self.optimizer_unimodal = AdamW(
             #     params=chain(
             #         # unimodal encoders
@@ -242,7 +256,10 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
             #     **self.cfg.base.optimizer_unimodal.params
             # )
 
-            self.scheduler_unimodal = CosineAnnealingLR(self.optimizer_unimodal, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler_unimodal.params)
+            #self.scheduler_unimodal ={ m: CosineAnnealingLR(self.optimizer_unimodal[m], T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler_unimodal.params) for m in self.cfg.base.modalities}
+            self.scheduler_unimodal ={ m: get_cosine_schedule_with_warmup(self.optimizer_unimodal[m],
+                                                         num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"]),     # warmup = 40 epochs
+                                                         num_training_steps= self.cfg.base.n_epochs * len(self.dataloaders["train"])) for m in self.cfg.base.modalities} # cosine decay) for m in self.cfg.base.modalities}
         else:
             self.optimizer = AdamW(self.model.parameters(), **self.cfg.base.optimizer.params)
             self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
@@ -261,40 +278,41 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
             data, mask,  time, event = batch 
             data = {modality :value.to(device) for modality, value in data.items()} if isinstance(data, dict) else data.to(device)
             batch_size = (next(iter(data.values())).shape[0] if isinstance(data, dict) else data.shape[0])
+            time, event = time.to(device), event.to(dtype=torch.float32,device=device)
             if split=="train":
-                self.optimizer.zero_grad()
+                self.optimizer.zero_grad(set_to_none=True)
 
             pred_values = 0
             if self.cfg.model.multimodal_fusion =="multiple_heads":
                 unimodal_loss = 0
                 if split=="train":
-                    self.optimizer_unimodal.zero_grad()
+                    for m in self.cfg.base.modalities:
+                            self.optimizer_unimodal[m].zero_grad(set_to_none=True)
 
                 outputs_dict =self.model.forward_unimodal_encoders(data, masks = mask) # here is a dictinary -> modality -outputs
-                
+
                 # Train unimodal encoders
                 for output_modality, outputs in outputs_dict.items():
-                    print("Through: ", output_modality)
-                    loss1 = self.criterion_logistic_unimodal(outputs, time.to(device), event.to(dtype=torch.float32,device=device))
+                        loss1 = self.criterion_logistic_unimodal[output_modality](outputs, time, event)
+                    
+                        haz = torch.sigmoid(outputs)
+                        cum_hazard = -torch.log1p(-haz + 1e-7).cumsum(1)
+                        risk = cum_hazard[:, -1]
                 
-                    haz = torch.sigmoid(outputs)
-                    cum_hazard = -torch.log1p(-haz + 1e-7).cumsum(1)
-                    risk = cum_hazard[:, -1]
-            
-                    loss2 = self.criterion_additional_unimodal(risk, time.to(device), event.to(dtype=torch.float32,device=device))
-            
-                    loss  =  self.cfg.base.loss.alpha *  loss1  + (1- self.cfg.base.loss.alpha) * loss2
-                    unimodal_loss+=loss
-                    # # Backpropagation
-                    # if split=="train":
-                    #     loss.backward()
-                    preds[output_modality].append(outputs.detach().cpu())
-                    pred_values+=outputs
-                    total_task_loss+=loss*batch_size
-                    num_samples+=batch_size
-                if split=="train":
-                    unimodal_loss.backward()
-                    self.optimizer_unimodal.step()
+                        loss2 = self.criterion_additional_unimodal[output_modality](risk, time, event)
+                
+                        loss  =  self.cfg.base.loss.alpha *  loss1  + (1- self.cfg.base.loss.alpha) * loss2
+                        
+                        preds[output_modality].append(outputs.detach().cpu())
+                        # pred_values+=outputs.detach().cpu()
+                        total_task_loss+=loss.item()*batch_size
+                        num_samples+=batch_size
+                        
+                        if split=="train":
+                            self.optimizer_unimodal[output_modality].zero_grad(set_to_none=True)
+                            loss.backward()
+                            self.optimizer_unimodal[output_modality].step()
+
 
             # Train multimodal encoder
             outputs_multimodal =self.model(data, masks = mask)
@@ -302,33 +320,36 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
             cum_hazard = -torch.log1p(-haz + 1e-7).cumsum(1)
             risk = cum_hazard[:, -1]
 
-            loss1 = self.criterion_logistic(outputs_multimodal, time.to(device), event.to(dtype=torch.float32,device=device))
-            loss2 = self.criterion_additional(risk, time.to(device), event.to(dtype=torch.float32,device=device))
+            loss1 = self.criterion_logistic(outputs_multimodal, time, event)
+            loss2 = self.criterion_additional(risk, time, event)
             loss  =  self.cfg.base.loss.alpha *  loss1  + (1- self.cfg.base.loss.alpha) * loss2
     
-            times.append(time.cpu())
-            events.append(event.cpu())
+            times.append(time.detach().cpu())
+            events.append(event.detach().cpu())
             preds["multimodal"].append(outputs_multimodal.detach().cpu())
-            pred_values += outputs_multimodal
+            # # pred_values += outputs_multimodal.detach().cpu()
+            total_task_loss+=loss.item()*batch_size
+            num_samples+=batch_size
             #preds["mean_val"].append(pred_values.detach().cpu() / len(outputs_dict.keys())+1)
-             # Backpropagation
+            #Backpropagation
             if split=="train":
                 loss.backward()
                 self.optimizer.step()
         
-        metrics = {"task_loss": total_task_loss.cpu().detach().numpy() / num_samples}
-        if split!="train":
-            preproc = self.preproc[next(iter(self.preproc))] if isinstance(self.preproc, dict) else self.preproc
-            metrics.update(compute_survival_metrics( preds, torch.cat(times, dim=0), torch.cat(events, dim=0), cuts=preproc.get_hazard_cuts()))
-            if len(preds.keys())>1:
-                for key in preds.keys():
-                    if key!= "mean_val":
-                        metrics_modality=compute_survival_metrics( preds[key], torch.cat(times, dim=0), torch.cat(events, dim=0), cuts=preproc.get_hazard_cuts())
-                        metrics.update({f"{key}_{name}" : value for name, value in metrics_modality.items()})
-        else:
+        metrics = {"task_loss": total_task_loss/ num_samples}
+        
+        preproc = self.preproc[next(iter(self.preproc))] if isinstance(self.preproc, dict) else self.preproc
+        metrics.update(compute_survival_metrics( preds, torch.cat(times, dim=0), torch.cat(events, dim=0), cuts=preproc.get_hazard_cuts()))
+        if len(preds.keys())>1:
+            for key in preds.keys():
+                if key!= "mean_val":
+                    metrics_modality=compute_survival_metrics( preds[key], torch.cat(times, dim=0), torch.cat(events, dim=0), cuts=preproc.get_hazard_cuts())
+                    metrics.update({f"{key}_{name}" : value for name, value in metrics_modality.items()})
+        if split=="train":
             self.scheduler.step()
             if self.cfg.model.multimodal_fusion =="multiple_heads":
-                self.scheduler_unimodal.step()
+                for m in self.cfg.base.modalities:
+                        self.scheduler_unimodal[m].step()
             
         return  metrics 
 

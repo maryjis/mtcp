@@ -15,6 +15,144 @@ import neptune
 from abc import ABC, abstractmethod
 
 MODALITY_TO_COLUMN_MAP ={"rna" : "RNA", "mri" : "MRI", "dnam" : "DNAm", "wsi": "WSI_initial", "cnv": "CNV"}
+from collections import defaultdict
+from typing import Dict, Optional, Union
+
+def debug_optimizers_trainable_params(
+    model,
+    optimizer,
+    optimizer_unimodal: Optional[Dict[str, object]] = None,
+    *,
+    print_param_names: bool = True,
+    max_names_per_opt: Optional[int] = None,  # e.g. 50 to limit output
+    only_requires_grad: bool = True,
+    check_overlap: bool = True,
+    title: str = "OPTIMIZER DEBUG",
+) -> None:
+    """
+    Prints:
+      - optimizer hyperparameters per param_group
+      - names of all parameters trained by each optimizer
+      - (optional) overlaps: multimodal vs each unimodal, and unimodal vs unimodal
+
+    Notes:
+      - Optimizers don't store parameter names; we map Parameter -> name via model.named_parameters().
+      - Pass optimizer_unimodal as dict {modality: torch.optim.Optimizer}.
+    """
+    def _opt_summary(opt):
+        summaries = []
+        for gi, g in enumerate(opt.param_groups):
+            summaries.append({
+                "group": gi,
+                "lr": g.get("lr", None),
+                "weight_decay": g.get("weight_decay", None),
+                "betas": g.get("betas", None),
+                "eps": g.get("eps", None),
+                "amsgrad": g.get("amsgrad", None),
+                "foreach": g.get("foreach", None),
+                "capturable": g.get("capturable", None),
+                "differentiable": g.get("differentiable", None),
+                "fused": g.get("fused", None),
+                "num_params": len(g.get("params", [])),
+            })
+        return summaries
+
+    def _param_ids_from_opt(opt):
+        ids = set()
+        for g in opt.param_groups:
+            for p in g["params"]:
+                if (not only_requires_grad) or getattr(p, "requires_grad", False):
+                    ids.add(id(p))
+        return ids
+
+    def _names_from_ids(param_ids, id2name):
+        names = []
+        for pid in param_ids:
+            names.append(id2name.get(pid, "<UNKNOWN_PARAMETER>"))
+        names = sorted(set(names))
+        return names
+
+    def _print_one_optimizer(opt_title, opt, id2name):
+        print(f"\n========== {opt_title} ==========")
+        print("Param groups summary:")
+        for s in _opt_summary(opt):
+            print(
+                f"  - group {s['group']}: num_params={s['num_params']} "
+                f"lr={s['lr']} wd={s['weight_decay']} betas={s['betas']} eps={s['eps']}"
+            )
+
+        param_ids = _param_ids_from_opt(opt)
+        names = _names_from_ids(param_ids, id2name)
+
+        print(f"Total unique Parameters (filtered): {len(names)}")
+        if print_param_names:
+            print("Parameter names:")
+            if max_names_per_opt is None:
+                for n in names:
+                    print("  ", n)
+            else:
+                for n in names[:max_names_per_opt]:
+                    print("  ", n)
+                if len(names) > max_names_per_opt:
+                    print(f"  ... ({len(names) - max_names_per_opt} more)")
+        return param_ids
+
+    # Map id(Parameter) -> name
+    id2name = {id(p): n for n, p in model.named_parameters()}
+
+    print(f"\n\n==================== {title} ====================")
+
+    # Multimodal optimizer
+    multi_ids = _print_one_optimizer("MULTIMODAL OPTIMIZER (optimizer)", optimizer, id2name)
+
+    # Unimodal optimizers (optional)
+    unimodal_ids_by_key = {}
+    if optimizer_unimodal is not None:
+        print("\n========== UNIMODAL OPTIMIZERS (optimizer_unimodal) ==========")
+        print("Keys:", list(optimizer_unimodal.keys()))
+        for k, opt in optimizer_unimodal.items():
+            unimodal_ids_by_key[k] = _print_one_optimizer(f"UNIMODAL OPTIMIZER [{k}]", opt, id2name)
+
+    # Overlap checks
+    if check_overlap and optimizer_unimodal is not None:
+        print("\n========== OVERLAP CHECK: multimodal vs unimodal ==========")
+        any_overlap = False
+        for k, uni_ids in unimodal_ids_by_key.items():
+            overlap = multi_ids & uni_ids
+            if overlap:
+                any_overlap = True
+                overlap_names = _names_from_ids(overlap, id2name)
+                print(f"[OVERLAP FOUND] multimodal <-> unimodal[{k}] : {len(overlap_names)} shared parameters")
+                for n in overlap_names:
+                    print("  ", n)
+            else:
+                print(f"[OK] No overlap between multimodal and unimodal[{k}]")
+        if not any_overlap:
+            print("No overlaps found between multimodal optimizer and any unimodal optimizer.")
+
+        print("\n========== OVERLAP CHECK: unimodal vs unimodal ==========")
+        keys = list(unimodal_ids_by_key.keys())
+        shared_any = False
+        for i in range(len(keys)):
+            for j in range(i + 1, len(keys)):
+                ki, kj = keys[i], keys[j]
+                overlap = unimodal_ids_by_key[ki] & unimodal_ids_by_key[kj]
+                if overlap:
+                    shared_any = True
+                    overlap_names = _names_from_ids(overlap, id2name)
+                    print(f"[OVERLAP FOUND] unimodal[{ki}] <-> unimodal[{kj}] : {len(overlap_names)} shared parameters")
+                    for n in overlap_names:
+                        print("  ", n)
+                else:
+                    print(f"[OK] No overlap between unimodal[{ki}] and unimodal[{kj}]")
+        if not shared_any:
+            print("No overlaps found between unimodal optimizers.")
+
+    print(f"================== END {title} ==================\n")
+
+
+# ===== Example usage (call right after optimizers are created) =====
+
 
 # Components for transformer pool
 def exists(val: any) -> bool:

@@ -175,6 +175,7 @@ class MultiMAEModel(PreTrainedModel):
                     for param in encoder.parameters():
                         param.requires_grad = False
                 else:
+                    print("Loading rna model from scratch")
                     encoder = RnaMAEModel(cfg_rna_model, column_order)
                 
                 self.encoders[modality] = UnimodalEncoder(
@@ -209,7 +210,8 @@ class MultiMAEModel(PreTrainedModel):
                     encoder = DNAmMAEModel.from_pretrained(cfg_dnam_model.pretrained_model_path, config=cfg_dnam_model, column_order=column_order)
                     for param in encoder.parameters():
                         param.requires_grad = False
-                else:
+                else: 
+                    print("Loading dnam model from scratch")
                     encoder = DNAmMAEModel(cfg_dnam_model, column_order)
                     
                 self.encoders[modality] = UnimodalEncoder(
@@ -254,6 +256,7 @@ class MultiMAEModel(PreTrainedModel):
                     for param in encoder.parameters():
                         print("Freezing: ")
                         param.requires_grad = False
+                        
                     # else:
                     #     print(os.getcwd())
                     #     print(cfg_wsi_model.pretrained_model_path)
@@ -266,6 +269,7 @@ class MultiMAEModel(PreTrainedModel):
                     #     param.requires_grad = False
                 else:
                     #encoder = WSIEmbeddingMAEModel(config =cfg_wsi_model)
+                    print("Loading wsi model from scratch")
                     encoder = WsiMAEModel(config =cfg_wsi_model)
                     
                 self.encoders[modality] = UnimodalEncoder(
@@ -493,8 +497,8 @@ class MultiMAEModel(PreTrainedModel):
             # зануляем selected samples
             last_hidden_state = last_hidden_state * (~mask).view(B, 1, 1)
             
-            # логируем
-            print(f"[ModDrop] Dropped {n_dropped} samples for modality '{modality}': indices {dropped_indices}")
+            # # логируем
+            # print(f"[ModDrop] Dropped {n_dropped} samples for modality '{modality}': indices {dropped_indices}")
 
         return last_hidden_state
 
@@ -516,7 +520,7 @@ class MultiMAEModel(PreTrainedModel):
 
         # Process each modality
         is_first = True
-        print("self.cfg.make_modality_dropout: ", self.cfg.make_modality_dropout)
+        
         if self.training and self.cfg.make_modality_dropout:
             B = next(iter(x.values())).shape[0]
 
@@ -564,7 +568,7 @@ class MultiMAEModel(PreTrainedModel):
                     embedded_sample.ids_restore =embedded_sample.ids_restore[:n,:]
                     
             if self.cfg.make_modality_dropout:
-                    print("Make dropout:")
+                   
                     last_hidden_state =self.dropout(last_hidden_state, modality)
                             
             if self.cfg.make_modality_clipper:
@@ -986,14 +990,17 @@ class MultiMaeForSurvival(nn.Module):
             if cfg.freezing_strategy:
                 print("Freezing!")
                 for name, param in self.model.named_parameters():
-                    if ("cls_token" in name) or ("encoder_fusion_strategy" in name) or ("layer.11" in name) or ('encoders.dnam.encoder.encoder.layer.5' in name) or ('encoders.rna.encoder.encoder.layer.5' in name):
+                    if (("cls_token" in name) or ("encoder_fusion_strategy" in name) 
+                    or ("layer.11" in name) or ("encoders.dnam.encoder.layernorm" in name) or ("encoders.rna.encoder.layernorm" in name)
+                    or ("encoders.wsi.encoder.layernorm" in name)
+                    or ('encoders.dnam.encoder.encoder.layer.5' in name) or ('encoders.rna.encoder.encoder.layer.5' in name)):
                         print("chozen", name)
                         param.requires_grad = True
                     else: 
                         param.requires_grad = False
                 
         else:
-
+            print("Loading model from scratch")
             self.model = MultiMAEModel(cfg, tracker= tracker, preproc=preproc)
 
             
@@ -1067,9 +1074,9 @@ class MultiMaeForSurvival(nn.Module):
                                                     nn.Dropout(0.5))
                 self.projection = nn.Linear(cfg.fusion_dim+16, cfg.output_dim)
             else:
-                self.projection = nn.Linear(cfg.fusion_dim, cfg.output_dim)
+                self.projection = nn.Sequential(nn.Dropout(p=cfg.final_dropout["multimodal"]), nn.Linear(cfg.fusion_dim, cfg.output_dim))
         else:
-            self.projections =nn.ModuleDict({modality: nn.Linear(cfg.fusion_dim, cfg.output_dim) for modality in  cfg.modalities +["multimodal"]})           
+            self.projections =nn.ModuleDict({modality: nn.Sequential(nn.Dropout(p=cfg.final_dropout[modality]), nn.Linear(cfg.fusion_dim, cfg.output_dim)) for modality in  cfg.modalities +["multimodal"]})           
         
         
     def get_primary_order(self, x,ids_restore):
@@ -1084,14 +1091,13 @@ class MultiMaeForSurvival(nn.Module):
     def forward_unimodal_encoders(self, x: Dict[str, torch.FloatTensor], masks: Dict[str, torch.FloatTensor], interpolate_pos_encoding: bool = False):
         result = {}
         for modality_key, projection in self.projections.items():
-                print("modality_key: ",modality_key, projection)
+                
                 if not modality_key =="multimodal":
                     x_modality = x[modality_key] 
                     embedding_modality = self.model.encoders[modality_key](x_modality)
-                    print("random_patch_selection:", self.model.encoders["wsi"].encoder.config.random_patch_selection)
-                    print("max_patches_per_sample", self.model.encoders["wsi"].encoder.config.max_patches_per_sample)
+
                     if modality_key =="wsi" and self.model.encoders["wsi"].encoder.config.max_patches_per_sample>1 and not self.model.encoders["wsi"].encoder.config.random_patch_selection:
-                        print("Calculate mean")
+                        
                         n10, n_tokens, hidden_size = embedding_modality.last_hidden_state.shape
                         n = n10 // self.model.encoders["wsi"].encoder.config.max_patches_per_sample
 
@@ -1100,7 +1106,7 @@ class MultiMaeForSurvival(nn.Module):
                         result[modality_key] = projection(last_hidden_state[:,0,:])
                     else:
                         result[modality_key] = projection(embedding_modality.last_hidden_state[:,0,:])
-                    print("result[modality_key]", result[modality_key].shape)
+                    
         return result        
             
     def forward(self, x: Dict[str, torch.FloatTensor], masks: Dict[str, torch.FloatTensor], interpolate_pos_encoding: bool = False):

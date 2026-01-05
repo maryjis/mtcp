@@ -7,7 +7,7 @@ random_seed: 1380
 optimizer:
     name: "AdamW"
     params:
-        lr: 1e-4 # 2e-5
+        lr: 1e-3 # 2e-5
         weight_decay: 1e-2
 
 optimizer_unimodal:
@@ -19,12 +19,12 @@ optimizer_unimodal:
     dnam:
         name: "AdamW"
         params:
-            lr: 1e-4 # 2e-5
+            lr: 1e-3 # 2e-5
             weight_decay: 1e-2
     wsi:
         name: "AdamW"
         params:
-            lr: 1e-4 # 2e-5
+            lr: 1e-3 # 2e-5
             weight_decay: 1e-2             
 
 scheduler: 
