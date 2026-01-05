@@ -19,44 +19,12 @@ qkv_bias: true
 patch_size: 16 
 mri_size: 64
 
-# padding: 2
-# embeddings_layers:
-# - name: "Conv3d"
-#   args: 
-#     - ${....num_channels} #in
-#     - 16 #out
-#     - ${eval:'${....patch_size}//4+2*${....padding}'} #kernel
-#   kwargs:
-#     stride: ${eval:'${....patch_size}//4'}
-#     padding: ${....padding}
-# - name: "GELU"
-# - name: "Conv3d"
-#   args: 
-#     - 16 #in
-#     - ${....hidden_size} #out
-#     - ${eval:'${....patch_size}//4+2*${....padding}'} #kernel
-#   kwargs:
-#     stride: 4
-#     padding: ${....padding}
+time_embeddging_dim: 16
 
-# decoder_pred_layers:
-# - name: "ConvTranspose3d"
-#   args:
-#     - ${....decoder_hidden_size}
-#     - 16
-#     - ${eval:'${....patch_size}//4+2*${....padding}'}
-#   kwargs:
-#     stride: 4
-#     padding: ${....padding}
-# - name: "GELU"
-# - name: "ConvTranspose3d"
-#   args:
-#     - 16
-#     - ${....num_channels}
-#     - ${eval:'${....patch_size}//4+2*${....padding}'}
-#   kwargs:
-#     stride: ${eval:'${....patch_size}//4'}
-#     padding: ${....padding}
+#survival-specific
+is_load_pretrained: true
+pretrained_model_name: "mri_diffusion_pretrain_t1c_sample_prediction"
+output_dim: 20 #should 
 
 embeddings_layers:
   - name: "Conv3d"

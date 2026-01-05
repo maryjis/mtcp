@@ -19,6 +19,7 @@ class SinusoidalPositionEmbeddings(nn.Module):
 
     def forward(self, time):
         device = time.device
+        # print("time", time.shape)
 
         # We use half the dimension because we'll generate sin and cos for each dimension, which will then be concatenated
         half_dim = self.dim // 2
@@ -155,6 +156,13 @@ class MriTimeDiffusionModel(MriDiffusionModel):
                 nn.Linear(config.time_embeddging_dim, config.time_embeddging_dim),
                 nn.ReLU()
             )
+        # if config.to_dict().get("times", None) is not None:
+        #     times = config.times
+        #     if times == "learnable":
+        #         self.times = nn.Parameter(torch.zeros(1))
+        #     elif isinstance(times, float):
+        #         self.times = nn.Parameter(torch.tensor(config.times, dtype=torch.float32), requires_grad=False)
+
         self.post_init()
 
     def forward(
@@ -169,6 +177,8 @@ class MriTimeDiffusionModel(MriDiffusionModel):
         interpolate_pos_encoding: bool = False,
     ) -> Union[Tuple, ViTMAEModelOutput]:
         r"""
+        times -- time values from 0 to 1. If None, zeros are used (so fine-tuning withoud times is possible)
+
         Returns:
 
         Examples:
@@ -204,6 +214,8 @@ class MriTimeDiffusionModel(MriDiffusionModel):
         # and head_mask is converted to shape [num_hidden_layers x batch x num_heads x seq_length x seq_length]
         head_mask = self.get_head_mask(head_mask, self.config.num_hidden_layers)
 
+        if times is None:
+            times = torch.zeros(pixel_values.shape[0], device=pixel_values.device)
         time_embeddings = self.time_mlp(times)
 
         embedding_output, mask, ids_restore = self.embeddings(
@@ -322,11 +334,11 @@ class MriTimeDiffusionForPreTraining(MriDiffusionForPreTraining):
             attentions=outputs.attentions,
         )
 
-class MriDiffusionSurvivalModel(MriMaeSurvivalModel):
+class MriTimeDiffusionSurvivalModel(MriMaeSurvivalModel):
     def __init__(self, config):
         super().__init__(config)
         if config.to_dict().get("is_load_pretrained", False):
-            self.vit = MriDiffusionModel.from_pretrained(config.pretrained_model_path, config = config)
+            self.vit = MriTimeDiffusionModel.from_pretrained(config.pretrained_model_path, config = config)
             print(f"Pretrained model loaded from {config.pretrained_model_path}")
         else:
-            self.vit = MriDiffusionModel(config)
+            self.vit = MriTimeDiffusionModel(config)

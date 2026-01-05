@@ -1,5 +1,5 @@
-experiment_name: "mri_diffusion_pretrain_t1c_no_time_sample_prediction"
-n_epochs: 800
+experiment_name: "mri_diffusion_model_t1c_sample_prediction"
+n_epochs: 50 
 splits: 5
 
 n_intervals: 20
@@ -18,9 +18,10 @@ scheduler:
 
 
 type: "unimodal"
-strategy: "diffusion" # diffusion, noise, mae, survival
+strategy: "survival" # noise, mae, survival
 modalities: ["mri"] #rna, mri
-data_path: "src/data/pretrain_mri_t1c_t1n_t2w_t2f.csv"
+architecture: "TimeDiffusion" #TimeDiffusion, Diffusion, Noise, MAE, CNN
+data_path: "src/data/full_dataset.csv"
 root_path: "../"
 save_path : "outputs/models/"
 device: "cuda:0"
@@ -45,4 +46,4 @@ early_stopping:
         smoothing: "running_average"
         smoothing_period: 10
         direction: "min"
-    value_to_track: "mse_loss"
+    value_to_track: "task_loss"

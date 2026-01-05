@@ -21,7 +21,7 @@ mri_size: 64
 
 #survival-specific
 is_load_pretrained: true
-pretrained_model_name: "mri_diffusion_pretrain_t1c_no_time_sample_prediction"
+pretrained_model_name: "mri_diffusion_pretrain_t1c_sample_prediction"
 output_dim: 20 #should 
 
 embeddings_layers:
