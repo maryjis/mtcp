@@ -16,3 +16,4 @@ src/configs/schedule
 nohup.out
 *.csv
 *.txt
+train_debug.log

@@ -1,3 +1,6 @@
+defaults:
+    - log: dwemer8
+
 experiment_name: "rsna_mae_survival_random_final_version"
 n_epochs: 20
 warmup_epochs: 5 
@@ -34,10 +37,3 @@ sampler: True
 loss:
     additional_loss: "CoxPHLoss"
     alpha: 0.7
-
-log:
-    logging: True
-    logging_platform: "neptune"
-    project_name: "almachan2358/cancer-mtcp"
-    run_name: "survival1"
-    api_token: "eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiI1Nzg4MGQxNS0zMjM1LTQ4NTUtYTViYy01ZjExNWU4N2JiOTYifQ=="
