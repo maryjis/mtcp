@@ -1,4 +1,4 @@
-experiment_name: "multimodal_rna_dnam_wsi10_mean1e4_gelu_UCEC_with_pretraining_survival"
+experiment_name: "multimodal_rna_dnam_wsi10_mean1e4_gelu_GLIOMA_unfreeze_with_pretraining_survival"
 n_epochs: 20
 warmup_epochs: 5 
 n_intervals: 20
@@ -7,27 +7,38 @@ random_seed: 1380
 optimizer:
     name: "AdamW"
     params:
-        lr: 1e-3 # 2e-5
+        lr: 1e-4 # 2e-5
+        weight_decay: 1e-2
+
+optimizer_gated:
+    name: "AdamW"
+    params:
+        lr: 1e-4 # 2e-5
         weight_decay: 1e-2
 
 optimizer_unimodal:
     rna:
         name: "AdamW"
         params:
-            lr: 1e-3 # 2e-5
+            lr: 1e-4 # 2e-5
             weight_decay: 1e-2
     dnam:
         name: "AdamW"
         params:
-            lr: 1e-3 # 2e-5
+            lr: 1e-4 # 2e-5
             weight_decay: 1e-2
     wsi:
         name: "AdamW"
         params:
-            lr: 1e-3 # 2e-5
-            weight_decay: 1e-2             
+            lr: 1e-4 # 2e-5
+            weight_decay: 1e-2            
 
 scheduler: 
+    name: "CosineAnnealingLR"
+    params:
+        eta_min: 5e-6
+
+scheduler_gated: 
     name: "CosineAnnealingLR"
     params:
         eta_min: 5e-6
@@ -51,14 +62,14 @@ multimodal_intersection_test: true
 architecture: "MAE"
 splits: 5
 save_path : "outputs/models/"
-project_ids: ["UCEC"]
+project_ids: ["GBM", "LGG"]
 
 
 data_path: "src/data/dataset_inetrsection_all_v2.csv"
 rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
-device: "cuda:2"
+device: "cuda:0"
 
-#available_gpus:  [0]  # Указываем, какие GPU можно использовать
+available_gpus:  [0,2,3]  # Указываем, какие GPU можно использовать
 remove_nan_column: 'RNA'
 batch_size: 24
 

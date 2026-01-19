@@ -1,4 +1,4 @@
-experiment_name: "rsna_mae_survival_random_final_version"
+experiment_name: "rsna_mae_survival_LUAD_random_final_version"
 n_epochs: 20
 warmup_epochs: 5 
 n_intervals: 20
@@ -7,7 +7,7 @@ random_seed: 1380
 optimizer:
     name: "Adam"
     params:
-        lr: 1e-3 # 2e-5
+        lr: 1e-4 # 2e-5
         weight_decay: 1e-2
 
 scheduler: 
@@ -26,10 +26,10 @@ root_path: "../"
 save_path : "outputs/models/"
 data_path: "src/data/dataset_inetrsection_all_v2.csv"
 rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
-device: "cuda:0"
+device: "cuda:2"
 remove_nan_column: 'RNA'
 batch_size: 24
-project_ids: ["UCEC"]
+project_ids: ["LUAD"]
 sampler: True
 loss:
     additional_loss: "CoxPHLoss"

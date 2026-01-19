@@ -463,9 +463,9 @@ class UnimodalSurvivalTrainer(Trainer):
             raise NotImplementedError(f"Such loss isn't implemented {self.cfg.base.loss.additional_loss}")
         self.optimizer = AdamW(self.model.parameters(), **self.cfg.base.optimizer.params)
         # self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
-        self.scheduler = get_cosine_schedule_with_warmup(self.optimizer,
-                                                         num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"]),     # warmup = 40 epochs
-                                                         num_training_steps= self.cfg.base.n_epochs * len(self.dataloaders["train"]))  # cosine decay
+        # self.scheduler = get_cosine_schedule_with_warmup(self.optimizer,
+        #                                                  num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"]),     # warmup = 40 epochs
+        #                                                  num_training_steps= self.cfg.base.n_epochs * len(self.dataloaders["train"]))  # cosine decay
         
     def __loop__(self,split, fold_ind, dataloader, device):
         total_task_loss =0
@@ -504,8 +504,8 @@ class UnimodalSurvivalTrainer(Trainer):
         if split!="train":
             preproc = self.preproc[next(iter(self.preproc))] if isinstance(self.preproc, dict) else self.preproc
             metrics.update(compute_survival_metrics( preds, torch.cat(times, dim=0), torch.cat(events, dim=0), cuts=preproc.get_hazard_cuts()))
-        else:
-            self.scheduler.step()
+        # else:
+        #     self.scheduler.step()
             
         return  metrics 
 
@@ -547,10 +547,10 @@ class UnimodalMAETrainer(Trainer):
     
     def initialise_loss(self):
         self.optimizer = AdamW(self.model.parameters(), **self.cfg.base.optimizer.params)
-        # self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
-        self.scheduler = get_cosine_schedule_with_warmup(self.optimizer,
-                                                         num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"]),     # warmup = 40 epochs
-                                                         num_training_steps= self.cfg.base.n_epochs * len(self.dataloaders["train"]))  # cosine decay
+        self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
+        # self.scheduler = get_cosine_schedule_with_warmup(self.optimizer,
+        #                                                  num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"]),     # warmup = 40 epochs
+        #                                                  num_training_steps= self.cfg.base.n_epochs * len(self.dataloaders["train"]))  # cosine decay
         
     def initialise_models(self):
         if self.cfg.base.modalities[0]=="rna":

@@ -10,6 +10,24 @@ from transformers.models.vit_mae.modeling_vit_mae import (
 from typing import Callable, Optional, Union
 from einops import rearrange, reduce
 
+def _concat_any(xs):
+    """
+    Склеивает список элементов одинаковой структуры:
+    - Tensor: cat по dim=0
+    - tuple/list: рекурсивно по элементам
+    - None: None
+    - иначе: возвращаем первый (на всякий)
+    """
+    x0 = xs[0]
+    if x0 is None:
+        return None
+    if torch.is_tensor(x0):
+        return torch.cat(xs, dim=0)
+    if isinstance(x0, (tuple, list)):
+        out = [_concat_any([x[i] for x in xs]) for i in range(len(x0))]
+        return type(x0)(out)
+    return x0
+
 class ViTMAEEmbeddings(nn.Module):
     """
     Construct the CLS token, position and patch embeddings.
@@ -227,9 +245,37 @@ class WsiMAEModel(ViTMAEModel):
         )
         return patchified_pixel_values
         
+    # def forward(
+    #     self,
+    #     pixel_values: Optional[torch.FloatTensor] = None,
+    #     noise: Optional[torch.FloatTensor] = None,
+    #     head_mask: Optional[torch.FloatTensor] = None,
+    #     output_attentions: Optional[bool] = None,
+    #     output_hidden_states: Optional[bool] = None,
+    #     return_dict: Optional[bool] = None,
+    #     interpolate_pos_encoding: bool = False,
+    # ) -> Union[tuple, ViTMAEModelOutput]:
+    #     pixel_values = rearrange(pixel_values, 'b n c h w -> (b n) c h w')
+
+    #     encoded = super().forward(pixel_values=pixel_values,
+    #                               noise=noise,
+    #                               head_mask=head_mask,
+    #                               output_attentions=output_attentions,
+    #                               output_hidden_states =output_hidden_states,
+    #                               return_dict=return_dict, 
+    #                               interpolate_pos_encoding=interpolate_pos_encoding)
+    #     return encoded
+    @staticmethod
+    def _choose_k_equal_splits(n: int, max_k: int = 10) -> int:
+        # хотим равные чанки и k<=10; берём максимально возможный делитель
+        for k in range(min(max_k, n), 1, -1):
+            if n % k == 0:
+                return k
+        return 1  # fallback: без сплита
+
     def forward(
         self,
-        pixel_values: Optional[torch.FloatTensor] = None,
+        pixel_values: Optional[torch.FloatTensor] = None,   # [B, N, C, H, W]
         noise: Optional[torch.FloatTensor] = None,
         head_mask: Optional[torch.FloatTensor] = None,
         output_attentions: Optional[bool] = None,
@@ -237,17 +283,107 @@ class WsiMAEModel(ViTMAEModel):
         return_dict: Optional[bool] = None,
         interpolate_pos_encoding: bool = False,
     ) -> Union[tuple, ViTMAEModelOutput]:
-        pixel_values = rearrange(pixel_values, 'b n c h w -> (b n) c h w')
 
-        encoded = super().forward(pixel_values=pixel_values,
-                                  noise=noise,
-                                  head_mask=head_mask,
-                                  output_attentions=output_attentions,
-                                  output_hidden_states =output_hidden_states,
-                                  return_dict=return_dict, 
-                                  interpolate_pos_encoding=interpolate_pos_encoding)
-        return encoded
-    
+        assert pixel_values is not None, "pixel_values must be provided"
+        B, N, C, H, W = pixel_values.shape
+
+        # обычный путь
+        if N <= 10:
+            flat = rearrange(pixel_values, "b n c h w -> (b n) c h w")
+            return super().forward(
+                pixel_values=flat,
+                noise=noise,
+                head_mask=head_mask,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+                interpolate_pos_encoding=interpolate_pos_encoding,
+            )
+
+        # равные чанки, k<=10
+        k = self._choose_k_equal_splits(N, max_k=10)
+        if k == 1:
+            flat = rearrange(pixel_values, "b n c h w -> (b n) c h w")
+            return super().forward(
+                pixel_values=flat,
+                noise=noise,
+                head_mask=head_mask,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+                interpolate_pos_encoding=interpolate_pos_encoding,
+            )
+
+        chunks = pixel_values.chunk(k, dim=1)  # каждый [B, chunkN, C, H, W]
+
+        # разрезаем noise, если оно привязано к N
+        noise_chunks = None
+        if noise is not None:
+            if noise.dim() >= 2 and noise.shape[0] == B and noise.shape[1] == N:
+                noise_chunks = noise.chunk(k, dim=1)
+            elif noise.shape[0] == B * N:
+                noise_chunks = []
+                offset = 0
+                chunkN = chunks[0].shape[1]
+                step = B * chunkN
+                for _ in range(k):
+                    noise_chunks.append(noise[offset:offset + step])
+                    offset += step
+            else:
+                noise_chunks = [noise] * k
+
+        sum_last = None
+        template_out = None  # вернём поля (кроме last_hidden_state) отсюда, обычно с последнего чанка
+
+        for i, pv in enumerate(chunks):
+            flat = rearrange(pv, "b n c h w -> (b n) c h w")
+            this_noise = None if noise_chunks is None else noise_chunks[i]
+            print(i, "", flat.shape)
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                out = super().forward(
+                    pixel_values=flat,
+                    noise=this_noise,
+                    head_mask=head_mask,
+                    output_attentions=output_attentions,
+                    output_hidden_states=output_hidden_states,
+                    return_dict=return_dict,
+                    interpolate_pos_encoding=interpolate_pos_encoding,
+                )
+
+                is_last = (i == (k - 1))
+                template_out = out  # перезаписываем — в конце будет последний
+
+                if isinstance(out, tuple):
+                    sum_last = (out[0] if is_last else out[0].detach()) if sum_last is None \
+                    else sum_last + (out[0] if is_last else out[0].detach())
+                else:
+                    # вместо last=... и sum_last=...
+                    sum_last = (out.last_hidden_state if is_last else out.last_hidden_state.detach()) if sum_last is None \
+                    else sum_last + (out.last_hidden_state if is_last else out.last_hidden_state.detach())
+
+                print("chunk-", i, sum_last.shape)
+        mean_last = sum_last / float(k)
+
+        # вернуть тем же типом
+        if isinstance(template_out, tuple):
+            # берём остальные элементы tuple из последнего чанка как есть
+            return (mean_last, *template_out[1:])
+
+        # ModelOutput
+        if isinstance(template_out, ViTMAEModelOutput):
+            return ViTMAEModelOutput(
+                last_hidden_state=mean_last,
+                mask=getattr(template_out, "mask", None),
+                ids_restore=getattr(template_out, "ids_restore", None),
+                hidden_states=getattr(template_out, "hidden_states", None),
+                attentions=getattr(template_out, "attentions", None),
+            )
+
+        # fallback, если вдруг другой ModelOutput
+        template_out.last_hidden_state = mean_last
+        return template_out
+
+
 class WsiMAEDecoder(ViTMAEDecoder):
     def __init__(self, config, num_patches):
         super().__init__(config, num_patches)

@@ -4,8 +4,8 @@ defaults:
     - data: wsi_mae
 base:
 
-    experiment_name: "unimodal_wsi_800_mae_macha_smal_lr_bigvit_pretrained"
-    n_epochs: 800
+    experiment_name: "unimodal_wsi_1600_mae_macha_smal_lr_bigvit_pretrained"
+    n_epochs: 1600
     warmup_epochs: 10 
     n_intervals: 20
     random_seed: 1380
@@ -13,7 +13,7 @@ base:
     optimizer:
         name: "AdamW"
         params:
-            lr: 1e-5
+            lr: 1e-4
             weight_decay: 0.05
             # betas: [0.9, 0.99]
             # eps: 1e-08
@@ -35,7 +35,7 @@ base:
     device: "cuda:1"  # Указываем, что основное устройство - GPU 2
     available_gpus:  [1]  # Указываем, какие GPU можно использовать
     remove_nan_column: 'WSI_initial'
-    batch_size: 256
+    batch_size: 64
     
     log:
         logging: True

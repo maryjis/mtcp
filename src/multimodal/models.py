@@ -9,7 +9,6 @@ from src.unimodal.dna.models import DNAmSurvivalModel, DNAmMAEModel
 from src.unimodal.wsi.mae import WsiMAEModel
 from src.unimodal.cnv.models import CNVMAEModel
 from src.unimodal.clinical.models import ClinicalModel
-from typing import Optional
 from dataclasses import dataclass
 import torch.nn.functional as F
 
@@ -23,7 +22,7 @@ import os
 import matplotlib.pyplot as plt
 from src.utils import ExperimentTracker
 import torch
-import torch.nn as nn
+from typing import List, Optional, Tuple, Union
 
 @dataclass
 class MultiModalOutput(ViTMAEModelOutput):
@@ -990,13 +989,17 @@ class MultiMaeForSurvival(nn.Module):
             if cfg.freezing_strategy:
                 print("Freezing!")
                 for name, param in self.model.named_parameters():
-                    if (("cls_token" in name) or ("encoder_fusion_strategy" in name) 
-                    or ("layer.11" in name) or ("encoders.dnam.encoder.layernorm" in name) or ("encoders.rna.encoder.layernorm" in name)
-                    or ("encoders.wsi.encoder.layernorm" in name)
-                    or ('encoders.dnam.encoder.encoder.layer.5' in name) or ('encoders.rna.encoder.encoder.layer.5' in name)):
+                    if (("cls_token" in name)): 
+                    #or ("encoder_fusion_strategy" in name)):
+                    # or ("layer.11" in name) or ("layer.10" in name) or ("layer.9" in name) or ("layer.8" in name)  or ("encoders.wsi.encoder.layernorm" in name)
+                    # or ("encoders.dnam.encoder.layernorm" in name) or ('encoders.dnam.encoder.encoder.layer.5' in name) 
+                    # or ('encoders.dnam.encoder.encoder.layer.4' in name) or ('encoders.dnam.encoder.encoder.layer.3' in name)
+                    # or ("encoders.rna.encoder.layernorm" in name) or ('encoders.rna.encoder.encoder.layer.5' in name)
+                    # or ('encoders.rna.encoder.encoder.layer.4' in name) or ('encoders.rna.encoder.encoder.layer.3' in name)):
                         print("chozen", name)
                         param.requires_grad = True
                     else: 
+                        print("Freezing: ", name)
                         param.requires_grad = False
                 
         else:
@@ -1077,7 +1080,16 @@ class MultiMaeForSurvival(nn.Module):
                 self.projection = nn.Sequential(nn.Dropout(p=cfg.final_dropout["multimodal"]), nn.Linear(cfg.fusion_dim, cfg.output_dim))
         else:
             self.projections =nn.ModuleDict({modality: nn.Sequential(nn.Dropout(p=cfg.final_dropout[modality]), nn.Linear(cfg.fusion_dim, cfg.output_dim)) for modality in  cfg.modalities +["multimodal"]})           
-        
+        if self.cfg.gated_fusion:
+            self.agg = LogitsGatedAggregator(
+                    num_modalities=len(self.modalities)+1,
+                    num_classes=cfg.output_dim,
+                    mode="A",              # "A" или "B"
+                    gate_input="logits",     # "repr" или "logits" или "both"
+                    modality_dropout_p=0.0,
+                    entropy_reg_weight=0.01,
+                    temperature =2.5
+                )
         
     def get_primary_order(self, x,ids_restore):
         mask_tokens = self.model.mask_token.repeat(x.shape[0], ids_restore.shape[1] + 1 - x.shape[1], 1)
@@ -1087,6 +1099,9 @@ class MultiMaeForSurvival(nn.Module):
         x = torch.cat([x[:, :1, :], x_], dim=1)
 
         return x
+
+    def forward_gated_out(self, logits_list, modality_mask =None,return_weights =True):
+        return self.agg(logits_list,modality_mask=modality_mask,return_weights=return_weights)
 
     def forward_unimodal_encoders(self, x: Dict[str, torch.FloatTensor], masks: Dict[str, torch.FloatTensor], interpolate_pos_encoding: bool = False):
         result = {}
@@ -1206,3 +1221,194 @@ class MultiMaeForSurvival(nn.Module):
             return result, attn_weights
         else:
             return result
+
+
+
+
+class LogitsGatedAggregator(nn.Module):
+    """
+    Gated aggregation (MoE-style) for multiple logits heads.
+
+    Expects 4 modality logits by default, each of shape [B, C] (C=20).
+    Produces aggregated logits [B, C] by weighted sum with per-sample weights.
+
+    Modes:
+      - "A": weights per sample per modality -> w: [B, M]
+      - "B": weights per sample per modality per class -> w: [B, M, C]
+
+    Optional:
+      - modality mask: [B, M] with 1 for available modality, 0 for missing
+      - modality dropout: randomly drop modalities during training
+      - entropy regularization: returns aux loss to discourage collapse
+    """
+
+    def __init__(
+        self,
+        num_modalities: int = 4,
+        num_classes: int = 20,
+        mode: str = "A",  # "A" or "B"
+        gate_input: str = "repr",  # "repr" or "logits" or "both"
+        repr_dim: Optional[int] = None,  # required if gate_input uses "repr"
+        hidden_dims: Tuple[int, ...] = (128, 64),
+        temperature: float = 1.0,  # lower -> sharper weights
+        modality_dropout_p: float = 0.0,
+        entropy_reg_weight: float = 0.0,  # 0 disables
+        eps: float = 1e-8,
+    ):
+        super().__init__()
+
+        assert mode in {"A", "B"}
+        assert gate_input in {"repr", "logits", "both"}
+        if gate_input in {"repr", "both"}:
+            assert repr_dim is not None and repr_dim > 0, "repr_dim is required for gate_input='repr'/'both'."
+
+        self.M = num_modalities
+        self.C = num_classes
+        self.mode = mode
+        self.gate_input = gate_input
+        self.temperature = float(temperature)
+        self.modality_dropout_p = float(modality_dropout_p)
+        self.entropy_reg_weight = float(entropy_reg_weight)
+        self.eps = eps
+
+        # Build gate MLP
+        gate_in_dim = 0
+        if gate_input in {"logits", "both"}:
+            gate_in_dim += self.M * self.C
+        if gate_input in {"repr", "both"}:
+            gate_in_dim += self.M * repr_dim
+
+        layers: List[nn.Module] = []
+        prev = gate_in_dim
+        for h in hidden_dims:
+            layers += [nn.Linear(prev, h), nn.ReLU(inplace=True)]
+            prev = h
+
+        # Output dimension depends on mode
+        gate_out_dim = self.M if mode == "A" else self.M * self.C
+        layers += [nn.Linear(prev, gate_out_dim)]
+        self.gate_mlp = nn.Sequential(*layers)
+
+    def _apply_modality_dropout(
+        self,
+        mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        mask: [B, M] with {0,1} indicating availability.
+        During training, randomly drop available modalities with p.
+        Ensures at least one modality remains per sample.
+        """
+        if not self.training or self.modality_dropout_p <= 0.0:
+            return mask
+
+        B, M = mask.shape
+        drop = (torch.rand(B, M, device=mask.device) < self.modality_dropout_p).to(mask.dtype)
+        dropped_mask = mask * (1.0 - drop)
+
+        # Ensure at least one modality remains; if all dropped, keep one (random among originally available)
+        all_dropped = (dropped_mask.sum(dim=1, keepdim=True) < 0.5)  # [B,1] bool
+        if all_dropped.any():
+            # pick one modality index among available ones; fallback to 0 if none available (shouldn't happen)
+            avail = mask > 0.5
+            # random scores, set to -inf for unavailable to avoid selection
+            scores = torch.rand(B, M, device=mask.device)
+            scores = scores.masked_fill(~avail, -1e9)
+            keep_idx = scores.argmax(dim=1)  # [B]
+            one_hot = F.one_hot(keep_idx, num_classes=M).to(mask.dtype)
+            dropped_mask = torch.where(all_dropped, one_hot, dropped_mask)
+
+        return dropped_mask
+
+    def _entropy_aux_loss(self, w: torch.Tensor) -> torch.Tensor:
+        """
+        Encourage non-collapsed weights via entropy maximization.
+        w:
+          mode A: [B, M]
+          mode B: [B, M, C]
+        Returns scalar loss (to ADD to total loss): -entropy (so minimizing encourages high entropy).
+        """
+        if self.entropy_reg_weight <= 0.0:
+            return w.new_zeros(())
+
+        if self.mode == "A":
+            # entropy per sample
+            ent = -(w * (w + self.eps).log()).sum(dim=1).mean()
+        else:
+            # entropy per sample per class, then mean
+            ent = -(w * (w + self.eps).log()).sum(dim=1).mean()  # sums over M -> [B,C], then mean over B,C
+        # We want to maximize entropy => add negative entropy
+        return -self.entropy_reg_weight * ent
+
+    def forward(
+        self,
+        logits_list: List[torch.Tensor],
+        repr_list: Optional[List[torch.Tensor]] = None,
+        modality_mask: Optional[torch.Tensor] = None,
+        return_weights: bool = False,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
+        """
+        logits_list: list of M tensors [B, C]
+        repr_list:   optional list of M tensors [B, D] (required if gate_input uses 'repr')
+        modality_mask: optional [B, M] with 1 for available, 0 for missing
+        return_weights: if True returns (agg_logits, weights, aux_loss)
+
+        Returns:
+          agg_logits: [B, C]
+          weights:
+            mode A: [B, M]
+            mode B: [B, M, C]
+          aux_loss: scalar tensor (entropy regularization; 0 if disabled)
+        """
+        assert len(logits_list) == self.M, f"Expected {self.M} logits tensors, got {len(logits_list)}."
+        B, C = logits_list[0].shape
+        assert C == self.C, f"Expected num_classes={self.C}, got {C}."
+        for t in logits_list:
+            assert t.shape == (B, C), f"All logits must be [B,{self.C}]. Got {t.shape}."
+
+        if self.gate_input in {"repr", "both"}:
+            assert repr_list is not None and len(repr_list) == self.M, "repr_list must be provided with length M."
+            for r in repr_list:
+                assert r.shape[0] == B and r.dim() == 2, f"Each repr must be [B,D]. Got {r.shape}."
+
+        # Stack logits -> [B, M, C]
+        logits_stack = torch.stack(logits_list, dim=1)
+
+        # Build modality mask
+        if modality_mask is None:
+            mask = torch.ones(B, self.M, device=logits_stack.device, dtype=logits_stack.dtype)
+        else:
+            assert modality_mask.shape == (B, self.M), f"modality_mask must be [B,{self.M}]. Got {modality_mask.shape}."
+            mask = modality_mask.to(device=logits_stack.device, dtype=logits_stack.dtype)
+
+        # Apply modality dropout (training only)
+        mask = self._apply_modality_dropout(mask)
+
+        # Prepare gate input
+        parts = []
+        if self.gate_input in {"logits", "both"}:
+            parts.append(logits_stack.reshape(B, self.M * self.C))
+        if self.gate_input in {"repr", "both"}:
+            repr_stack = torch.stack(repr_list, dim=1)  # [B, M, D]
+            parts.append(repr_stack.reshape(B, -1))
+        gate_in = torch.cat(parts, dim=-1)  # [B, gate_in_dim]
+
+        gate_raw = self.gate_mlp(gate_in)  # [B, M] or [B, M*C]
+
+        if self.mode == "A":
+            gate_raw = gate_raw / max(self.temperature, self.eps)  # [B, M]
+            # mask unavailable modalities by -inf before softmax
+            gate_raw = gate_raw.masked_fill(mask <= 0.5, -1e9)
+            w = F.softmax(gate_raw, dim=-1)  # [B, M]
+            agg = (w.unsqueeze(-1) * logits_stack).sum(dim=1)  # [B, C]
+        else:
+            gate_raw = gate_raw.view(B, self.M, self.C) / max(self.temperature, self.eps)  # [B, M, C]
+            # broadcast mask to [B,M,C]
+            gate_raw = gate_raw.masked_fill(mask.unsqueeze(-1) <= 0.5, -1e9)
+            w = F.softmax(gate_raw, dim=1)  # softmax over modalities -> [B, M, C]
+            agg = (w * logits_stack).sum(dim=1)  # [B, C]
+
+        aux_loss = self._entropy_aux_loss(w)
+
+        if return_weights:
+            return agg, w, aux_loss
+        return agg

@@ -611,7 +611,8 @@ class NeptuneExperimentTracker(ExperimentTracker):
         print(cfg)
         run =  neptune.init_run(
             api_token=cfg.base.log.api_token,      # not needed if using environment variable
-            project=cfg.base.log.project_name           # not needed if using environment variable
+            project=cfg.base.log.project_name 
+            # mode="offline" # not needed if using environment variable
         )
         return run
     
