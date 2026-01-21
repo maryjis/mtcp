@@ -137,3 +137,4 @@ wsi:
   max_patches_per_sample: 10
   random_patch_selection: False
   debug_mode: False
+  root_dir: "/mnt/public-datasets/drim/TCGA_all_wsi"

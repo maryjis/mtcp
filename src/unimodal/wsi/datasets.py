@@ -73,6 +73,7 @@ import pandas as pd
 import torch
 from PIL import Image
 from torchvision.transforms import functional as F
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,7 @@ class WSIDataset_patches(BaseDataset):
     def __init__(
         self,
         data: pd.DataFrame,
+        root_dir: Optional[str] = None,
         transform: "torchvision.transforms" = None,
         return_mask: bool = False,
         is_hazard_logits: bool = False,
@@ -90,6 +92,7 @@ class WSIDataset_patches(BaseDataset):
     ) -> None:
         super().__init__(
             data=data,
+            root_dir=root_dir,
             transform=transform,
             return_mask=return_mask,
             is_hazard_logits=is_hazard_logits
@@ -115,18 +118,18 @@ class WSIDataset_patches(BaseDataset):
         expected_patches = 1 if self.random_patch_selection else self.max_patches_per_sample
 
         if not os.path.exists(patch_dir):
-            logger.warning(f"Patch directory not found: {patch_dir}")
+            logger.warning(f"Patch directory not found: {patch_dir}, zero tensor is returned")
             return torch.zeros((expected_patches, 3, *self.resize_to), dtype=torch.float32), False
 
 
         try:
             patch_files = sorted([f for f in os.listdir(patch_dir) if f.endswith(".png")])
         except Exception as e:
-            logger.exception(f"Failed to list files in {patch_dir}")
+            logger.exception(f"Failed to list files in {patch_dir}, zero tensor is returned")
             return torch.zeros((expected_patches, 3, *self.resize_to), dtype=torch.float32) , False
 
         if not patch_files:
-            logger.warning(f"No patch files found in {patch_dir}")
+            logger.warning(f"No patch files found in {patch_dir}, zero tensor is returned")
             return torch.zeros((expected_patches, 3, *self.resize_to), dtype=torch.float32), False
 
         # Выбор одного случайного патча
@@ -187,10 +190,12 @@ class WSIDataset_patches(BaseDataset):
     def __getitem__(self, idx: int):
         t0 = time.perf_counter()
         sample = self.data.iloc[idx]
-        patch_dir = sample.WSI_initial if not pd.isna(sample.WSI_initial) else None
+        patch_dir = None if pd.isna(sample.WSI_initial) else sample.WSI_initial
+        if self.root_dir and patch_dir: 
+            patch_dir = os.path.join(self.root_dir, os.sep.join(patch_dir.split(os.sep)[-2:]))
 
         if patch_dir:
-            patches,mask = self._load_patches(patch_dir)
+            patches, mask = self._load_patches(patch_dir)
         else:
             patches = torch.zeros(
                 (1 if self.random_patch_selection else self.max_patches_per_sample, 3, *self.resize_to),
