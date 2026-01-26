@@ -22,7 +22,8 @@ from src.multimodal.losses import PairwiseRankingLoss
 from src.unimodal.rna.transforms import PosFractionSampler
 from ..evaluation import compute_survival_metrics
 from itertools import chain
-from transformers import get_cosine_schedule_with_warmup
+from transformers import get_cosine_schedule_with_warmup,get_cosine_with_min_lr_schedule_with_warmup
+from copy import deepcopy
 
 class MultiModalTrainer(Trainer):
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker, fold_index: int =0):
@@ -191,88 +192,196 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
         self.model = self.initialise_models().to(cfg.base.device)
         self.initialise_loss()
         print(self.model)
-    
+
     def initialise_loss(self):
-        self.criterion_logistic = NLLLogistiHazardLoss()    
-        if self.cfg.base.loss.additional_loss =="PairwiseRankLoss":
+        # --- losses ---
+        self.criterion_logistic = NLLLogistiHazardLoss()
+        if self.cfg.base.loss.additional_loss == "PairwiseRankLoss":
             self.criterion_additional = PairwiseRankingLoss()
-        elif self.cfg.base.loss.additional_loss =="CoxPHLoss":
+        elif self.cfg.base.loss.additional_loss == "CoxPHLoss":
             self.criterion_additional = CoxPHLoss()
         else:
             raise NotImplementedError(f"Such loss isn't implemented {self.cfg.base.loss.additional_loss}")
-        
-        if self.cfg.model.multimodal_fusion =="multiple_heads":
-            self.optimizer = AdamW(
-                        params=[
-                            *self.model.model.encoder_fusion_strategy.parameters(),
-                            *self.model.fusion_strategy.parameters(),
-                            self.model.model.cls_token,
-                            self.model.model.mask_token,
-                            *self.model.projections["multimodal"].parameters(),
-                        ],
-                        **self.cfg.base.optimizer.params
-                    )
-       
-            #self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
-            # self.scheduler = get_cosine_schedule_with_warmup(self.optimizer,
-            #                                              num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"]),     # warmup = 40 epochs
-            #                                              num_training_steps= self.cfg.base.n_epochs * len(self.dataloaders["train"]))  # cosine decay
-            
-            self.criterion_logistic_unimodal = {m: NLLLogistiHazardLoss() for m in self.cfg.base.modalities}    
+
+        # --- helpers ---
+        def _opt_kwargs_from_cfg(opt_params_cfg):
+            """Берем betas/eps/etc из cfg, но lr/weight_decay убираем (они будут в param_groups)."""
+            kw = OmegaConf.to_container(opt_params_cfg, resolve=True) if opt_params_cfg is not None else {}
+            kw = dict(kw)
+            kw.pop("lr", None)
+            kw.pop("weight_decay", None)
+            return kw
+
+        def _get_lr_split_unimodal(modality: str):
+            p = self.cfg.base.optimizer_unimodal[modality].params
+
+            # строго: ключи обязаны быть
+            lr_enc  = float(p["lr_encoder"])
+            lr_head = float(p["lr_head"])
+
+            wd_enc  = float(p.get("weight_decay_encoder", 1e-2))
+            wd_head = float(p.get("weight_decay_head", 1e-2))
+
+            return lr_enc, lr_head, wd_enc, wd_head
+
+
+        def _get_lr_split_mm():
+            """
+            LR split для MM оптимайзера: fusion/strategy меньше, mm head больше.
+            Берем cfg.base.optimizer.params.lr как base_lr.
+            """
+            base_lr = float(self.cfg.base.optimizer.params.lr)
+            head_mult = float(self.cfg.base.get("mm_head_lr_mult", 5.0))
+            mm_head_lr = float(self.cfg.base.get("mm_head_lr", base_lr * head_mult))
+
+            wd = float(self.cfg.base.optimizer.params.get("weight_decay", 1e-2))
+            wd_head = float(self.cfg.base.optimizer.params.get("weight_decay_head", wd))
+            wd_tokens = float(self.cfg.base.optimizer.params.get("weight_decay_tokens", 0.0))  # обычно 0
+
+            return base_lr, mm_head_lr, wd, wd_head, wd_tokens
+
+        # scheduler steps
+        warmup_steps = int(self.cfg.base.warmup_epochs * len(self.dataloaders["train"]))
+        total_steps = int(self.cfg.base.n_epochs * len(self.dataloaders["train"]))
+        min_lr = float(self.cfg.base.get("min_lr", 1e-6))
+
+        # --- MAIN: multiple_heads ---
+        if self.cfg.model.multimodal_fusion == "multiple_heads":
+            # ===== MM optimizer (fusion + tokens + mm head) with LR split =====
+            base_lr, mm_head_lr, wd_mm, wd_mm_head, wd_tokens = _get_lr_split_mm()
+            mm_opt_kwargs = _opt_kwargs_from_cfg(self.cfg.base.optimizer.params)
+
+            mm_param_groups = [
+                # fusion/encoder strategy (smaller lr)
+                {
+                    "params": list(chain(
+                        self.model.model.encoder_fusion_strategy.parameters(),
+                        self.model.fusion_strategy.parameters(),
+                    )),
+                    "lr": base_lr,
+                    "weight_decay": wd_mm,
+                },
+                # tokens (часто лучше без weight decay)
+                {
+                    "params": [self.model.model.cls_token, self.model.model.mask_token],
+                    "lr": base_lr,
+                    "weight_decay": wd_tokens,
+                },
+                # multimodal head/projection (bigger lr)
+                {
+                    "params": list(self.model.projections["multimodal"].parameters()),
+                    "lr": mm_head_lr,
+                    "weight_decay": wd_mm_head,
+                },
+            ]
+            print("mm", base_lr, mm_head_lr, wd_mm, wd_mm_head, wd_tokens)
+            self.optimizer = AdamW(mm_param_groups)
+
+            # self.scheduler = get_cosine_with_min_lr_schedule_with_warmup(
+            #     self.optimizer,
+            #     num_warmup_steps=warmup_steps,
+            #     num_training_steps=total_steps,
+            #     min_lr=min_lr,
+            # )
+            # print("self.optimizer", self.optimizer)
+            print("warmup_steps", warmup_steps)
+            # ===== unimodal losses =====
+            self.criterion_logistic_unimodal = {m: NLLLogistiHazardLoss() for m in self.cfg.base.modalities}
             self.criterion_additional_unimodal = {m: CoxPHLoss() for m in self.cfg.base.modalities}
 
-            param_groups = {}
+            # ===== unimodal optimizers (per modality) with LR split: encoder vs head =====
+            self.optimizer_unimodal = {}
+            self.scheduler_unimodal = {}
 
             for m in self.cfg.base.modalities:
-                lr_m = self.cfg.base.optimizer_unimodal[m].params.lr
+                lr_enc, lr_head, wd_enc, wd_head = _get_lr_split_unimodal(m)
+                uni_opt_kwargs = _opt_kwargs_from_cfg(self.cfg.base.optimizer_unimodal[m].params)
 
-                param_groups[m] = {
-                    "params": list(chain(
-                        self.model.model.encoders[m].parameters(),
-                        self.model.projections[m].parameters(),
-                    )),
-                    "lr": lr_m,
-                    "weight_decay": self.cfg.base.optimizer_unimodal[m].params.weight_decay,
-                }
+                uni_param_groups = [
+                    {
+                        "params": list(self.model.model.encoders[m].parameters()),
+                        "lr": lr_enc,
+                        "weight_decay": wd_enc,
+                    },
+                    {
+                        "params": list(self.model.projections[m].parameters()),
+                        "lr": lr_head,
+                        "weight_decay": wd_head,
+                    },
+                ]
+                print(m, lr_enc, lr_head, wd_enc, wd_head)
+                self.optimizer_unimodal[m] = AdamW(uni_param_groups)
+                print(m,self.optimizer_unimodal[m])
+                # print("self.optimizer_unimodal[m]", self.optimizer_unimodal[m])
+                # self.scheduler_unimodal[m] = get_cosine_with_min_lr_schedule_with_warmup(
+                #     self.optimizer_unimodal[m],
+                #     num_warmup_steps=warmup_steps,
+                #     num_training_steps=total_steps,
+                #     min_lr=min_lr,
+                # )
 
-            self.optimizer_unimodal = {m: AdamW([param_groups[m]]) for m in self.cfg.base.modalities}
             debug_optimizers_trainable_params(
                 model=self.model,
                 optimizer=self.optimizer,
-                optimizer_unimodal=self.optimizer_unimodal,   # dict {modality: optimizer}
+                optimizer_unimodal=self.optimizer_unimodal,  # dict {modality: optimizer}
                 print_param_names=True,
-                max_names_per_opt=200,   # or None for all
+                max_names_per_opt=200,
                 only_requires_grad=True,
                 check_overlap=True,
-                title="MM Survival Trainer Optimizers",
+                title="MM Survival Trainer Optimizers (LR split: encoder/head + mm split)",
             )
-            # self.optimizer_unimodal = AdamW(
-            #     params=chain(
-            #         # unimodal encoders
-            #         *(self.model.model.encoders[m].parameters() for m in self.cfg.base.modalities),
-            #         # unimodal heads
-            #         *(self.model.projections[m].parameters() for m in self.cfg.base.modalities),
-            #     ),
-            #     **self.cfg.base.optimizer_unimodal.params
+
+        # --- other fusion strategies ---
+        else:
+            # оставляю как у тебя: один оптимайзер на всё (если нужно — тоже можно split сделать аналогично)
+            base_lr, mm_head_lr, wd_mm, wd_mm_head, wd_tokens = _get_lr_split_mm()
+            mm_opt_kwargs = _opt_kwargs_from_cfg(self.cfg.base.optimizer.params)
+
+            mm_param_groups = [
+                # fusion/encoder strategy (smaller lr)
+                {
+                    "params": list(chain(
+                        self.model.model.encoder_fusion_strategy.parameters(),
+                        self.model.fusion_strategy.parameters(),
+                    )),
+                    "lr": base_lr,
+                    "weight_decay": wd_mm,
+                },
+                # tokens (часто лучше без weight decay)
+                {
+                    "params": [self.model.model.cls_token, self.model.model.mask_token],
+                    "lr": base_lr,
+                    "weight_decay": wd_tokens,
+                },
+                # multimodal head/projection (bigger lr)
+                {
+                    "params": list(self.model.projections["multimodal"].parameters()),
+                    "lr": mm_head_lr,
+                    "weight_decay": wd_mm_head,
+                },
+            ]
+            print("mm", base_lr, mm_head_lr, wd_mm, wd_mm_head, wd_tokens)
+            self.optimizer = AdamW(mm_param_groups)
+            #self.optimizer = AdamW(self.model.parameters(), **self.cfg.base.optimizer.params)
+            # self.scheduler = get_cosine_with_min_lr_schedule_with_warmup(
+            #     self.optimizer,
+            #     num_warmup_steps=warmup_steps,
+            #     num_training_steps=total_steps,
+            #     min_lr=min_lr,
             # )
 
-            #self.scheduler_unimodal ={ m: CosineAnnealingLR(self.optimizer_unimodal[m], T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler_unimodal.params) for m in self.cfg.base.modalities}
-            # self.scheduler_unimodal ={ m: get_cosine_schedule_with_warmup(self.optimizer_unimodal[m],
-            #                                              num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"]),     # warmup = 40 epochs
-            #                                              num_training_steps= self.cfg.base.n_epochs * len(self.dataloaders["train"])) for m in self.cfg.base.modalities} # cosine decay) for m in self.cfg.base.modalities}
-        else:
-            self.optimizer = AdamW(self.model.parameters(), **self.cfg.base.optimizer.params)
-            # self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
-            # self.scheduler = get_cosine_schedule_with_warmup(self.optimizer,
-            #                                              num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"]),     # warmup = 40 epochs
-            #                                              num_training_steps= self.cfg.base.n_epochs * len(self.dataloaders["train"]))
+        # --- gated fusion optimizer (как было) ---
         if self.cfg.model.gated_fusion:
-            self.criterion_logistic_gated = NLLLogistiHazardLoss() 
-            self.criterion_additional_gated = CoxPHLoss() 
+            self.criterion_logistic_gated = NLLLogistiHazardLoss()
+            self.criterion_additional_gated = CoxPHLoss()
             self.optimizer_gated = AdamW(self.model.agg.parameters(), **self.cfg.base.optimizer_gated.params)
-            # self.scheduler_gated = CosineAnnealingLR(self.optimizer_gated, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler_gated.params)
-            # self.scheduler_gated = get_cosine_schedule_with_warmup(self.optimizer_gated,num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"]),     # warmup = 40 epochs
-            #                                              num_training_steps= self.cfg.base.n_epochs * len(self.dataloaders["train"]))
+            # self.scheduler_gated = get_cosine_with_min_lr_schedule_with_warmup(
+            #     self.optimizer_gated,
+            #     num_warmup_steps=warmup_steps,
+            #     num_training_steps=total_steps,
+            #     min_lr=min_lr,
+            # )
+
 
 
     def initialise_models(self):
@@ -297,10 +406,7 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
 
             pred_values = 0
             if self.cfg.model.multimodal_fusion =="multiple_heads":
-                unimodal_loss = 0
-                if split=="train":
-                    for m in self.cfg.base.modalities:
-                            self.optimizer_unimodal[m].zero_grad(set_to_none=True)
+                unimodal_loss = 0    
 
                 outputs_dict =self.model.forward_unimodal_encoders(data, masks = mask) # here is a dictinary -> modality -outputs
 
@@ -324,11 +430,11 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
                         if split=="train":
                             self.optimizer_unimodal[output_modality].zero_grad(set_to_none=True)
                             loss.backward()
+                            if self.cfg.model.clipping_gradient:
+                                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                             self.optimizer_unimodal[output_modality].step()
-                            # self.scheduler_unimodal[m].step()
+                            # self.scheduler_unimodal[output_modality].step()
 
-
-            # Train multimodal encoder
             outputs_multimodal =self.model(data, masks = mask)
             haz = torch.sigmoid(outputs_multimodal)
             cum_hazard = -torch.log1p(-haz + 1e-7).cumsum(1)
@@ -347,27 +453,33 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
             if split=="train":
                 self.optimizer.zero_grad(set_to_none=True)
                 loss.backward()
+                if self.cfg.model.clipping_gradient:
+                                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                 self.optimizer.step()
                 # self.scheduler.step()
                 
             if self.cfg.model.gated_fusion:
                 # logits_list = list(outputs_dict.values()) +[outputs_multimodal]
                 logits_list = [outputs_dict[m].detach() for m in self.cfg.base.modalities] +[outputs_multimodal.detach()]
+                for m in self.cfg.base.modalities:
+                    print(m, torch.mean(outputs_dict[m]), "+-", torch.std(outputs_dict[m]))
+                print('mm',torch.mean(outputs_multimodal), "+-", torch.std(outputs_multimodal))
                 logit_names =self.cfg.base.modalities +["mm"]
                 agg_logits, w, aux =self.model.forward_gated_out(logits_list, modality_mask =None,return_weights =True)
                 preds["gated"].append(agg_logits.detach().cpu())
-
+                print(logit_names, w)
                 loss1 = self.criterion_logistic_gated(agg_logits, time, event)
 
                 haz = torch.sigmoid(agg_logits)
                 cum_hazard = -torch.log1p(-haz + 1e-7).cumsum(1)
                 risk = cum_hazard[:, -1]
                 loss2 = self.criterion_additional_gated(risk, time, event)
-                
                 loss  =  self.cfg.base.loss.alpha *  loss1  + (1- self.cfg.base.loss.alpha) * loss2+aux
                 if split=="train":
                     self.optimizer_gated.zero_grad(set_to_none=True)
                     loss.backward()
+                    if self.cfg.model.clipping_gradient:
+                            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                     self.optimizer_gated.step()
                     # self.scheduler_gated.step()
 

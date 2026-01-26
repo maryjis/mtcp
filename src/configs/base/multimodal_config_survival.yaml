@@ -1,37 +1,78 @@
-experiment_name: "multimodal_rna_dnam_wsi10_mean1e4_gelu_GLIOMA_unfreeze_with_pretraining_survival"
+experiment_name: "multimodal_rna_dnam_wsi10_mean1e4_gelu_GLIOMA_simplemm_unfreeze_survival"
 n_epochs: 20
-warmup_epochs: 5 
+warmup_epochs: 5
 n_intervals: 20
 random_seed: 1380
+# Эти поля читает твоя обновлённая initialise_loss()
+base:
+  # общий множитель, если где-то не задан lr_head явно
+  head_lr_mult: 10.0
+  # множитель для multimodal head (projections["multimodal"])
+  mm_head_lr_mult: 10.0
+  min_lr: 1e-6
+
+
+
 
 optimizer:
-    name: "AdamW"
-    params:
-        lr: 1e-4 # 2e-5
-        weight_decay: 1e-2
+  # MM optimizer (fusion + tokens + multimodal head)
+  # В твоём коде params.lr = base_lr для fusion, а mm_head_lr = base_lr * mm_head_lr_mult
+  name: "AdamW"
+  params:
+    lr: 1e-5                # fusion / encoder_fusion_strategy / fusion_strategy
+    weight_decay: 1e-2
+    # опционально, но удобно фиксировать явно
+    betas: [0.9, 0.999]
+    eps: 1e-8
+
+    # для твоего MM split (используются в initialise_loss())
+    weight_decay_head: 1e-2     # weight decay для projections["multimodal"]
+    weight_decay_tokens: 1e-2   # обычно лучше без wd для cls/mask token
+
 
 optimizer_gated:
-    name: "AdamW"
-    params:
-        lr: 1e-4 # 2e-5
-        weight_decay: 1e-2
+  # gated fusion обычно можно учить чуть быстрее, потому что это небольшая агрегация
+  name: "AdamW"
+  params:
+    lr: 1e-4
+    weight_decay: 1e-2
+    betas: [0.9, 0.999]
+    eps: 1e-8
+
 
 optimizer_unimodal:
-    rna:
-        name: "AdamW"
-        params:
-            lr: 1e-4 # 2e-5
-            weight_decay: 1e-2
-    dnam:
-        name: "AdamW"
-        params:
-            lr: 1e-4 # 2e-5
-            weight_decay: 1e-2
-    wsi:
-        name: "AdamW"
-        params:
-            lr: 1e-4 # 2e-5
-            weight_decay: 1e-2            
+  # Для каждой модальности: encoder lr меньше, head lr больше
+  rna:
+    name: "AdamW"
+    params:
+      lr_encoder: 1e-3
+      lr_head: 1e-3
+      weight_decay_encoder: 1e-2
+      weight_decay_head: 1e-2
+      betas: [0.9, 0.999]
+      eps: 1e-8
+
+  dnam:
+    name: "AdamW"
+    params:
+      lr_encoder: 1e-5
+      lr_head: 1e-4
+      weight_decay_encoder: 1e-2
+      weight_decay_head: 1e-2
+      betas: [0.9, 0.999]
+      eps: 1e-8
+
+  wsi:
+    name: "AdamW"
+    params:
+      # WSI часто можно чуть выше, но безопасно держать split в тех же пропорциях
+      lr_encoder: 1e-4
+      lr_head: 5e-4
+      weight_decay_encoder: 1e-2
+      weight_decay_head: 1e-2
+      betas: [0.9, 0.999]
+      eps: 1e-8
+           
 
 scheduler: 
     name: "CosineAnnealingLR"
@@ -67,7 +108,7 @@ project_ids: ["GBM", "LGG"]
 
 data_path: "src/data/dataset_inetrsection_all_v2.csv"
 rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
-device: "cuda:0"
+device: "cuda:1"
 
 available_gpus:  [0,2,3]  # Указываем, какие GPU можно использовать
 remove_nan_column: 'RNA'
