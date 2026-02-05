@@ -607,7 +607,7 @@ class RnaSurvivalModel(nn.Module):
             self.vit = RnaMAEModel.from_pretrained(self.config.pretrained_model_path, config = self.config)
         else:
             self.vit = RnaMAEModel(config, columns_order)
-        self.projection = nn.Linear(self.config.hidden_size, self.config.output_dim)
+        self.projection = nn.Sequential(nn.Dropout(self.config.final_dropout),nn.Linear(self.config.hidden_size, self.config.output_dim))
         
     def forward(self, rna_values, masks=None):
         x = self.vit(rna_values)

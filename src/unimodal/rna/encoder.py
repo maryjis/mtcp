@@ -41,6 +41,52 @@ class RNAEncoder(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.encoder(x).squeeze(-1)
         return x
+
+
+# class RNAEncoder(nn.Module):
+#     """
+#     A vanilla encoder based on 1-d convolution for RNA data.
+#     """
+
+#     def __init__(self, embedding_dim: int, dropout: float) -> None:
+#         super().__init__()
+#         self.encoder = nn.Sequential(
+#             nn.Conv1d(1, 64, 9, 3),
+#             nn.GELU(),
+#             nn.BatchNorm1d(64),
+#             nn.Dropout(dropout),
+
+#             nn.Conv1d(64, 128, 9, 3),
+#             nn.GELU(),
+#             nn.BatchNorm1d(128),
+#             nn.Dropout(dropout),
+
+#             nn.Conv1d(128, 256, 9, 3),
+#             nn.GELU(),
+#             nn.BatchNorm1d(256),
+#             nn.Dropout(dropout),
+
+#             nn.Conv1d(256, 384, 9, 3),
+#             nn.GELU(),
+#             nn.BatchNorm1d(384),
+#             nn.Dropout(dropout),
+
+#             nn.Conv1d(384, 512, 9, 3),
+#             nn.GELU(),
+#             nn.BatchNorm1d(512),
+#             nn.Dropout(dropout),
+
+#             nn.Conv1d(512, embedding_dim, 9, 3),
+#             nn.GELU(),
+#             nn.BatchNorm1d(embedding_dim),
+#             nn.Dropout(dropout),
+
+#             nn.AdaptiveAvgPool1d(1),
+#         )
+
+#     def forward(self, x: torch.Tensor) -> torch.Tensor:
+#         x = self.encoder(x).squeeze(-1)
+#         return x
     
     
     

@@ -10,6 +10,7 @@ rna:
     rna_dataset_path: "src/data/rna_dataset_full_tcga_go.csv"
     rna_columns_path: "src/data/final_clusters_GO_v3.json-columns"
     debug_mode: False
+    fill_missing: "zeros" # can be [zeros, normal]
 
 cnv:
     is_cluster_genes: False
@@ -20,6 +21,7 @@ cnv:
     var_threshold: 0.0
     root_path: "../"
     cnv_dataset_path: "src/data/cnv_dataset_full_tcga.csv"
+    fill_missing: "zeros"
 
 mri:
     sizes: [64, 64, 64]
@@ -38,6 +40,7 @@ dnam:
     dnam_dataset_path: "src/data/dna_dataset_full_tcga.csv"
     dnam_columns_path: "src/data/dna_clusters_go_v3.json-columns"
     debug_mode: False
+    fill_missing: "zeros"
 
 clinical:
     dataset_path: "src/data/dataset_tcga_with_treatment_intersection_v2.csv"
@@ -137,3 +140,4 @@ wsi:
   max_patches_per_sample: 10
   random_patch_selection: False
   debug_mode: False
+  fill_missing: "zeros"

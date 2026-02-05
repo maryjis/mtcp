@@ -989,8 +989,8 @@ class MultiMaeForSurvival(nn.Module):
             if cfg.freezing_strategy:
                 print("Freezing!")
                 for name, param in self.model.named_parameters():
-                    if (("cls_token" in name)
-                    or ("encoder_fusion_strategy" in name)):
+                    if (("cls_token" in name)):
+                    # or ("encoder_fusion_strategy" in name)
                     # or ("layer.11" in name)  or ("encoders.wsi.encoder.layernorm" in name)
                     # or ("encoders.dnam.encoder.layernorm" in name) or ('encoders.dnam.encoder.encoder.layer.5' in name) 
                     # or ("encoders.rna.encoder.layernorm" in name) or ('encoders.rna.encoder.encoder.layer.5' in name)):
@@ -1084,9 +1084,9 @@ class MultiMaeForSurvival(nn.Module):
                     num_classes=cfg.output_dim,
                     mode="A",              # "A" или "B"
                     gate_input="logits",     # "repr" или "logits" или "both"
-                    modality_dropout_p=0.1,
-                    entropy_reg_weight=0.05,
-                    temperature =2.0
+                    modality_dropout_p=0.0,
+                    entropy_reg_weight=0.01,
+                    temperature =2.5
                 )
         
     def get_primary_order(self, x,ids_restore):
@@ -1371,10 +1371,9 @@ class LogitsGatedAggregator(nn.Module):
         # Stack logits -> [B, M, C]
         
         logits_stack = torch.stack(logits_list, dim=1)  # [B,M,C]
-        mu = logits_stack.mean(dim=-1, keepdim=True)
-        sd = logits_stack.std(dim=-1, keepdim=True) + 1e-6
-        logits_stack = (logits_stack - mu) / sd
-        logits_stack = logits_stack / (logits_stack.std(dim=-1, keepdim=True) + 1e-6)
+        # mu = logits_stack.mean(dim=-1, keepdim=True)
+        # sd = logits_stack.std(dim=-1, keepdim=True) + 1e-6
+        # logits_stack = (logits_stack - mu) / sd
         # Build modality mask
         if modality_mask is None:
             mask = torch.ones(B, self.M, device=logits_stack.device, dtype=logits_stack.dtype)

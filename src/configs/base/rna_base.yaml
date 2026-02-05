@@ -1,6 +1,6 @@
-experiment_name: "rsna_mae_survival_LUAD_random_final_version"
+experiment_name: "rsna_blca_survival_MAE_drop0.2_random_final_version"
 n_epochs: 20
-warmup_epochs: 5 
+warmup_epochs: 2 
 n_intervals: 20
 random_seed: 1380
 
@@ -26,10 +26,10 @@ root_path: "../"
 save_path : "outputs/models/"
 data_path: "src/data/dataset_inetrsection_all_v2.csv"
 rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
-device: "cuda:2"
+device: "cuda:0"
 remove_nan_column: 'RNA'
 batch_size: 24
-project_ids: ["LUAD"]
+project_ids: ["BLCA"]
 sampler: True
 loss:
     additional_loss: "CoxPHLoss"

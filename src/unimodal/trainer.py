@@ -55,7 +55,7 @@ from src.multimodal.losses import PairwiseRankingLoss
 from src.unimodal.cnv.models import CNVMAEForPreTraining
 import math
 from src.utils import ExperimentTracker
-from transformers import get_cosine_schedule_with_warmup
+from transformers import get_cosine_schedule_with_warmup,get_constant_schedule_with_warmup
 import psutil
 import torch
 import logging
@@ -287,7 +287,7 @@ class UnimodalSurvivalTrainer(Trainer):
                  transforms = padded_transforms_with_scaling(self.preproc.get_scaling(), cfg.model.size, cfg.model.is_padding)
                  
             elif self.cfg.base.architecture=="CNN":    
-                transforms = base_transforms(self.preproc.get_scaling())
+                 transforms = padded_transforms_with_scaling(self.preproc.get_scaling(), 0, False)
         elif self.cfg.base.modalities[0]=="dnam":
             transforms = padded_transforms_scaling(self.preproc.get_scaling(), cfg.model.get("size", None),  cfg.model.is_padding)
         elif self.cfg.base.modalities[0]=="clinical":
@@ -452,6 +452,56 @@ class UnimodalSurvivalTrainer(Trainer):
         else:
                 raise NotImplementedError("Exist only for rna and mri. Initialising models for other modalities aren't declared")   
 
+
+    def build_adamw_ndim_rule(self, model, lr=3e-4, weight_decay=0.01, betas=(0.9, 0.999), eps=1e-8):
+        print("params: lr= ", lr, "wd= ",weight_decay)
+        decay, no_decay = [], []
+
+        for name, p in model.named_parameters():
+            if not p.requires_grad:
+                continue
+
+            if name.endswith(".bias") or p.ndim == 1:
+                no_decay.append(p)
+            else:
+                decay.append(p)
+
+        return torch.optim.AdamW(
+            [{"params": decay, "weight_decay": weight_decay},
+            {"params": no_decay, "weight_decay": 0.0}],
+            lr=lr, betas=betas, eps=eps
+        )
+
+    def get_warmup_then_cosine_with_min_lr(self,
+        optimizer: torch.optim.Optimizer,
+        num_warmup_steps: int,
+        num_training_steps: int,
+        lr_max: float,
+        lr_min: float
+    ):
+        """
+        HF get_cosine_schedule_with_warmup по умолчанию уходит к 0.
+        Здесь делаем warmup + cosine decay до lr_min (через LambdaLR).
+        """
+        if lr_min < 0 or lr_max <= 0:
+            raise ValueError("lr_max must be > 0 and lr_min must be >= 0")
+        if lr_min > lr_max:
+            raise ValueError("lr_min must be <= lr_max")
+
+        min_factor = lr_min / lr_max if lr_max > 0 else 0.0
+
+        def lr_lambda(current_step: int):
+            if current_step < num_warmup_steps:
+                return float(current_step) / float(max(1, num_warmup_steps))  # 0 -> 1
+            progress = float(current_step - num_warmup_steps) / float(max(1, num_training_steps - num_warmup_steps))
+            # cosine from 1 -> 0
+            cosine = 0.5 * (1.0 + math.cos(math.pi * min(1.0, progress)))
+            # map to [min_factor, 1]
+            return min_factor + (1.0 - min_factor) * cosine
+
+        return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+
+
             
     def initialise_loss(self):    
         self.criterion_logistic = NLLLogistiHazardLoss()
@@ -462,11 +512,18 @@ class UnimodalSurvivalTrainer(Trainer):
         else:
             raise NotImplementedError(f"Such loss isn't implemented {self.cfg.base.loss.additional_loss}")
         self.optimizer = AdamW(self.model.parameters(), **self.cfg.base.optimizer.params)
-        # self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
+        #self.optimizer = self.build_adamw_ndim_rule(self.model, **self.cfg.base.optimizer.params)
+        #self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
         # self.scheduler = get_cosine_schedule_with_warmup(self.optimizer,
         #                                                  num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"]),     # warmup = 40 epochs
         #                                                  num_training_steps= self.cfg.base.n_epochs * len(self.dataloaders["train"]))  # cosine decay
-        
+        self.scheduler = get_constant_schedule_with_warmup(self.optimizer,
+                                                          num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"])) 
+        # self.scheduler = self.get_warmup_then_cosine_with_min_lr(self.optimizer,
+        #                                                         num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"]),
+        #                                                         num_training_steps= self.cfg.base.n_epochs * len(self.dataloaders["train"]),
+        #                                                         lr_max =self.cfg.base.optimizer.params.lr,
+        #                                                         lr_min =1e-6)
     def __loop__(self,split, fold_ind, dataloader, device):
         total_task_loss =0
         num_samples = 0
@@ -493,7 +550,11 @@ class UnimodalSurvivalTrainer(Trainer):
             if split=="train":
                 self.optimizer.zero_grad()
                 loss.backward()
+                if self.cfg.model.clipping_gradient:
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                 self.optimizer.step()
+                self.scheduler.step()
+                
             preds.append(outputs)
             times.append(time)
             events.append(event)
@@ -501,10 +562,10 @@ class UnimodalSurvivalTrainer(Trainer):
             num_samples+=batch_size
             
         metrics = {"task_loss": total_task_loss.cpu().detach().numpy() / num_samples}
-        if split!="train":
-            preproc = self.preproc[next(iter(self.preproc))] if isinstance(self.preproc, dict) else self.preproc
-            metrics.update(compute_survival_metrics( preds, torch.cat(times, dim=0), torch.cat(events, dim=0), cuts=preproc.get_hazard_cuts()))
-        # else:
+        
+        preproc = self.preproc[next(iter(self.preproc))] if isinstance(self.preproc, dict) else self.preproc
+        metrics.update(compute_survival_metrics( preds, torch.cat(times, dim=0), torch.cat(events, dim=0), cuts=preproc.get_hazard_cuts()))
+        # if split=="train":
         #     self.scheduler.step()
             
         return  metrics 

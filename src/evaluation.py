@@ -69,8 +69,8 @@ def compute_survival_metrics(outputs, time, event, cuts=None):
         # outputs — list/tensor
         hazard = torch.cat(outputs, dim=0)
         cum_hazard = -torch.log1p(-hazard.sigmoid() + 1e-7).cumsum(1)
-        risk = cum_hazard[:, -1].cpu().numpy()
-        survival = (1 - hazard.sigmoid()).add(1e-7).log().cumsum(1).exp().cpu().numpy()
+        risk = cum_hazard[:, -1].detach().cpu().numpy()
+        survival = (1 - hazard.sigmoid()).add(1e-7).log().cumsum(1).exp().detach().cpu().numpy()
     
     survival_df = pd.DataFrame(survival.transpose())
 
