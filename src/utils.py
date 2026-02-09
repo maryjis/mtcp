@@ -380,9 +380,9 @@ def load_splits(data_path: Path, fold_ind : int, remove_nan_column : str,
             raise Exception(f"Such fold index {fold_ind} doesn't exist. Check {data_path} file. ")
 
         if max_samples_per_split:
-            dataset_train = dataset_train.sample(max_samples_per_split)
-            dataset_val = dataset_val.sample(max_samples_per_split)
-            dataset_test = dataset_test.sample(max_samples_per_split)
+            dataset_train = dataset_train.sample(max_samples_per_split) if max_samples_per_split > len(dataset_train) else dataset_train
+            dataset_val = dataset_val.sample(max_samples_per_split) if max_samples_per_split > len(dataset_val) else dataset_val
+            dataset_test = dataset_test.sample(max_samples_per_split) if max_samples_per_split > len(dataset_test) else dataset_test
             print(f"WARNING: max_samples_per_split={max_samples_per_split} is set.")
             
         print('Apply max_samples_per_test', dataset_train.shape)
@@ -413,7 +413,7 @@ class ExperimentTracker(ABC):
     def init_run(self):
         pass
     @abstractmethod
-    def log_metrics(self, metrics : dict,steps: float =None):
+    def log_metrics(self, metrics : dict, steps: float=None):
         pass
     @abstractmethod
     def log_config(self, config : DictConfig):
@@ -423,6 +423,20 @@ class ExperimentTracker(ABC):
         pass
     @abstractmethod
     def finish(self):
+        pass
+
+class DummyExperimentTracker(ExperimentTracker):
+    def __init__(self, cfg : DictConfig, *args, **kwargs):
+        super().__init__(cfg)
+    def init_run(self, *args, **kwargs):
+        return None
+    def log_metrics(self, *args, **kwargs):
+        pass
+    def log_config(self, *args, **kwargs):
+        pass
+    def log_summary(self, *args, **kwargs):
+        pass
+    def finish(self, *args, **kwargs):
         pass
 
 class WandbExperimentTracker(ExperimentTracker):
