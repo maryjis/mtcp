@@ -623,7 +623,14 @@ class UnimodalMAETrainer(Trainer):
                     #     is_train = True if split_name == "train" else False
                     #     datasets[split_name] = WSIDataset(split,self.cfg.data.wsi.k, is_train=is_train,return_mask=True)
                     # else:
-                    datasets[split_name] = WSIDataset_patches(split, random_patch_selection = self.cfg.data.wsi.random_patch_selection, return_mask=True)
+                    datasets[split_name] = WSIDataset_patches(
+                        split, 
+                        root_dir=self.cfg.data.wsi.get("root_dir"),
+                        random_patch_selection = self.cfg.data.wsi.random_patch_selection,
+                        max_patches_per_sample =self.cfg.data.wsi.max_patches_per_sample,
+                        return_mask=True,
+                        debug_mode = self.cfg.data.wsi.get("debug_mode", False)
+                    )
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
         
