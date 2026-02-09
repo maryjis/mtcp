@@ -1,29 +1,30 @@
+import json
+import random 
+import os
+import matplotlib.pyplot as plt
+from typing import Dict, Optional
+from dataclasses import dataclass
+
 import torch.nn as nn
 import torch
-from src.unimodal.rna.mae import RnaMAEModel, RnaMAEDecoder
+import torch.nn.functional as F
 from transformers.models.vit_mae.modeling_vit_mae import ViTMAEModelOutput, ViTMAEForPreTrainingOutput
-from typing import Dict
 from transformers.models.vit_mae.configuration_vit_mae import ViTMAEConfig
+from transformers import PreTrainedModel
+from flamingo_pytorch import PerceiverResampler
+
+from omegaconf import DictConfig, OmegaConf
+
+from src.unimodal.rna.mae import RnaMAEModel, RnaMAEDecoder
 from src.unimodal.mri.mae import MriMAEModel
 from src.unimodal.dna.models import DNAmSurvivalModel, DNAmMAEModel
 from src.unimodal.wsi.mae import WsiMAEModel
 from src.unimodal.cnv.models import CNVMAEModel
 from src.unimodal.clinical.models import ClinicalModel
-from typing import Optional
-from dataclasses import dataclass
-import torch.nn.functional as F
-
-from omegaconf import DictConfig, OmegaConf
-from transformers import PreTrainedModel
 from src.unimodal.mri.mae import MriMAEDecoderPred
-from flamingo_pytorch import PerceiverResampler
 from src.multimodal.losses import CLIPAlignmentLoss
-import random 
-import os
-import matplotlib.pyplot as plt
 from src.utils import ExperimentTracker
-import torch
-import torch.nn as nn
+
 
 @dataclass
 class MultiModalOutput(ViTMAEModelOutput):
@@ -654,7 +655,13 @@ class MultiMaeForPretraining(nn.Module):
             print("CLIP loss: ")
             self.contrastive_loss =  CLIPAlignmentLoss()
 
-
+        if "is_load_pretrained" in self.cfg and self.cfg.is_load_pretrained:
+            print("cfg.pretrained_model_path: ", cfg.pretrained_model_path)
+            model_state_dict = torch.load(cfg.pretrained_model_path)
+            print("pretrained_params: ")
+            for k in model_state_dict.keys():
+                print(k)
+            self.load_state_dict(model_state_dict)
 
     def get_postprocessor(self, modality):
         patch_size = self.get_patch_size(modality)
