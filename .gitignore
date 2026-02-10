@@ -1,19 +1,25 @@
+#envs
+.venv/*
+
+#folders
 drim/
 outputs/
-*.ipynb_checkpoints
 src/data/
-wandb/
-scaler_data.json
-*.ipynb
-*.pyc
-.venv/*
-multirun/
 src/configs/optuna_unimodal_config.yaml
 src/configs/multistage_optuna_unimodal_config.yaml
 src/configs/schedule
-.neptune/
 
-nohup.out
+#logging
+multirun/
+.neptune/
+wandb/
+
+# files
+*.ipynb
+*.pyc
 *.csv
 *.txt
+*.ipynb_checkpoints
+scaler_data.json
+nohup.out
 train_debug.log
