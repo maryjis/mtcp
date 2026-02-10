@@ -1,0 +1,25 @@
+defaults: 
+    - model: multimodal_mae
+    - base: multimodal_config_mae
+    - data: multimodal_data
+    - _self_
+
+model:
+    is_load_pretrained: True
+    pretrained_model_name: "multimodal_rna_dna_wsi_clusters_with_normalizers_bs_64_1e4_bigset_balanced_1600_28_10_fixed"
+    return_attention: true
+
+base:
+    project_ids: ["GBM", "LGG"]
+    device: 'cuda:3'
+    remove_nan_column: 'WSI_initial'
+    batch_size: 8 #to compute stattest on larger amount of losses
+    log:
+        logging_platform: "neptune"
+        project_name: "dwemer8-workspace/MTCP"
+        run_name: "survival1"
+        api_token: "eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiIyNjQwMjZiOC0wZTBhLTQ2ZTctYjUxYS03MTU0YTE0Mjg2OTUifQ=="
+
+data:
+    wsi:
+        root_dir: "/mnt/public-datasets/drim/TCGA_all_wsi"
