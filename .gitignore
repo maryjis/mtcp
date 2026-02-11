@@ -2,6 +2,7 @@
 .venv/*
 
 #folders
+.cache/
 drim/
 outputs/
 src/data/
