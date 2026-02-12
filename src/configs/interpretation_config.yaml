@@ -11,7 +11,7 @@ model:
 
 base:
     project_ids: ["BRCA"] #["GBM", "LGG"]
-    device: 'cuda:3'
+    device: 'cuda:1'
     remove_nan_column: 'WSI_initial'
     batch_size: 8 #to compute stattest on larger amount of losses
     log:

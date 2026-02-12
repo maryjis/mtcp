@@ -57,6 +57,14 @@ else:
 print(f"Device: {device}")
 
 # %%
+import gc
+import torch
+
+gc.collect()
+torch.cuda.empty_cache()
+torch.cuda.reset_peak_memory_stats()
+
+# %%
 trainer_cache_path = f".cache/trainer_{'_'.join(cfg.base.project_ids)}.joblib"
 if os.path.exists(trainer_cache_path):
     trainer = joblib.load(trainer_cache_path)
@@ -95,14 +103,15 @@ else:
     trainer = MultiModalMAETrainer(splits, cfg, tracker, fold_ind)
     joblib.dump(trainer, trainer_cache_path)
 
+# %%
+trainer.model.to(device);
+
 # %% [markdown]
 # # Inference
 
 # %%
 split_name = "test"  # options: "train", "val", "test"
-assert split_name in trainer.dataloaders, (
-    f"Unknown split_name='{split_name}'. Available splits: {list(trainer.dataloaders.keys())}"
-)
+assert split_name in trainer.dataloaders, f"Unknown split_name='{split_name}'. Available splits: {list(trainer.dataloaders.keys())}"
 print(f"Using split: {split_name}")
 
 # %% [markdown]
@@ -254,6 +263,35 @@ MODALITY_COLORS = {
     "wsi": "orange",
 }
 
+_core_model = getattr(trainer.model, "model", trainer.model)
+rna_cluster_descriptions = list(
+    _core_model.encoders["rna"].encoder.embeddings.patch_embeddings.clusters.keys()
+)
+dnam_cluster_descriptions = list(
+    _core_model.encoders["dnam"].encoder.embeddings.patch_embeddings.clusters.keys()
+)
+
+def _build_token_index_to_description_map(
+    intervals,
+    rna_descriptions,
+    dnam_descriptions,
+):
+    token_index_to_description_map = {}
+    modality_to_descriptions = {
+        "rna": rna_descriptions,
+        "dnam": dnam_descriptions,
+    }
+
+    for modality, descriptions in modality_to_descriptions.items():
+        if modality not in intervals:
+            continue
+        start_idx, end_idx = intervals[modality]
+        n_tokens = max(0, int(end_idx) - int(start_idx))
+        for local_token_index, description in enumerate(descriptions[:n_tokens]):
+            token_index_to_description_map[int(start_idx) + local_token_index] = str(description)
+
+    return token_index_to_description_map
+
 attention_scores_present, mean_heatmaps_present, token_intervals_present = _collect_attention_heatmaps(
     model=trainer.model,
     dataloader=trainer.dataloaders[split_name],
@@ -299,22 +337,32 @@ token_intervals_attention_by_split = {
     "rna_permuted": token_intervals_permuted,
 }
 
+# %%
 for _source in ATTN_SOURCES:
+    _intervals = (
+        token_intervals_attention_by_split["rna_present"].get(_source)
+        or token_intervals_attention_by_split["rna_zeroed"].get(_source)
+        or token_intervals_attention_by_split["rna_permuted"].get(_source)
+        or {}
+    )
+    _token_index_to_description = _build_token_index_to_description_map(
+        intervals=_intervals,
+        rna_descriptions=rna_cluster_descriptions,
+        dnam_descriptions=dnam_cluster_descriptions,
+    )
     _plot_attention_source_comparison(
         source_name=_source,
         mean_heatmaps_present=mean_attention_heatmaps_by_split["rna_present"].get(_source, []),
         mean_heatmaps_zeroed=mean_attention_heatmaps_by_split["rna_zeroed"].get(_source, []),
         mean_heatmaps_permuted=mean_attention_heatmaps_by_split["rna_permuted"].get(_source, []),
-        intervals=(
-            token_intervals_attention_by_split["rna_present"].get(_source)
-            or token_intervals_attention_by_split["rna_zeroed"].get(_source)
-            or token_intervals_attention_by_split["rna_permuted"].get(_source)
-            or {}
-        ),
+        intervals=_intervals,
+        token_index_to_description=_token_index_to_description,
         MODALITY_ORDER=MODALITY_ORDER,
         MODALITY_NAMES=MODALITY_NAMES,
         MODALITY_COLORS=MODALITY_COLORS,
     )
+    # plt.tight_layout()
+    plt.show()
 
 # %%
 

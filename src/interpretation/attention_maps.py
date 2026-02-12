@@ -252,12 +252,123 @@ def _percentile_bounds(values_1d: np.ndarray, low_q: float = 1.0, high_q: float 
     return vmin, vmax
 
 
+def _format_token_description(
+    modality: str,
+    local_token_index: int,
+    token_description: str | None,
+    modality_names: dict[str, str],
+    max_chars: int = 56,
+) -> str:
+    modality_name = modality_names.get(modality, modality.upper())
+    if token_description is None:
+        return f"{modality_name} token {local_token_index}"
+
+    clean_description = " ".join(str(token_description).split())
+    if len(clean_description) > max_chars:
+        clean_description = clean_description[: max_chars - 3] + "..."
+    return f"{modality_name}: {clean_description}"
+
+
+def _get_top_key_token_ticks(
+    key_scores: np.ndarray,
+    intervals: dict[str, tuple[int, int]],
+    token_index_to_description: dict[int, str] | None,
+    modality_order: tuple[str, ...],
+    modality_names: dict[str, str],
+    top_k_per_modality: int = 5,
+) -> tuple[list[int], list[str]]:
+    if key_scores.size == 0:
+        return [], []
+
+    token_index_to_description = token_index_to_description or {}
+    focused_modalities = [m for m in modality_order if m in ("rna", "dnam")]
+    tick_pairs: list[tuple[int, str]] = []
+
+    for modality in focused_modalities:
+        if modality not in intervals:
+            continue
+
+        start, end = intervals[modality]
+        start = int(max(0, min(start, key_scores.shape[0])))
+        end = int(max(0, min(end, key_scores.shape[0])))
+        if end <= start:
+            continue
+
+        modality_scores = key_scores[start:end]
+        k = min(top_k_per_modality, modality_scores.shape[0])
+        if k <= 0:
+            continue
+
+        top_local_indices = np.argsort(modality_scores)[-k:][::-1]
+        for local_idx in top_local_indices:
+            token_idx = start + int(local_idx)
+            description = token_index_to_description.get(token_idx)
+            label = _format_token_description(
+                modality=modality,
+                local_token_index=int(local_idx),
+                token_description=description,
+                modality_names=modality_names,
+            )
+            tick_pairs.append((token_idx, label))
+
+    if len(tick_pairs) == 0:
+        return [], []
+
+    # Sort by token position for easier visual matching on the x axis.
+    tick_pairs = sorted(tick_pairs, key=lambda pair: pair[0])
+    tick_positions = [pair[0] for pair in tick_pairs]
+    tick_labels = [pair[1] for pair in tick_pairs]
+    return tick_positions, tick_labels
+
+
+def _draw_diagonal_token_callouts(
+    ax,
+    tick_positions: list[int],
+    tick_labels: list[str],
+    matrix_size: int,
+):
+    if len(tick_positions) == 0:
+        return
+
+    y_offset = -0.8
+    x0, x1 = ax.get_xlim()  # heatmap span in data units, usually -0.5 .. matrix_size-0.5
+    label_xs = np.linspace(x0 + 0.5, x1 - 1, len(tick_positions))  # evenly spaced
+
+    # position labels
+    for i, (token_idx, label, label_x) in enumerate(zip(tick_positions, tick_labels, label_xs)):
+        x_offset = label_x - token_idx
+        ax.annotate(
+            label,
+            xy=(token_idx, matrix_size - 0.5),
+            xycoords="data",
+            xytext=(label_x, y_offset),
+            textcoords=ax.get_xaxis_transform(),
+            ha="center",
+            va="top",
+            fontsize=6.5,
+            rotation=90,
+            rotation_mode="anchor",
+            color="black",
+            arrowprops=dict(
+                arrowstyle="-",
+                linewidth=0.7,
+                color="black",
+                shrinkA=0,
+                shrinkB=0,
+            ),
+            annotation_clip=False,
+            clip_on=False,
+        )
+
+
 def _plot_attention_source_comparison(
     source_name: str,
     mean_heatmaps_present,
     mean_heatmaps_zeroed,
     mean_heatmaps_permuted,
     intervals,
+    token_index_to_description: dict[int, str] | None = None,
+    top_k_per_modality: int = 5,
     MODALITY_ORDER : tuple[str, ...] = ("rna", "dnam", "wsi"),
     MODALITY_NAMES : dict[str, str] = {
         "rna": "RNA",
@@ -301,12 +412,12 @@ def _plot_attention_source_comparison(
     if delta_vmin >= 0:
         delta_vmin = -1e-12
 
-    fig, axes = plt.subplots(num_layers, 5, figsize=(24, 4.6 * num_layers))
+    fig, axes = plt.subplots(num_layers, 5, figsize=(30, 8.0 * num_layers))
     if num_layers == 1:
         axes = np.expand_dims(axes, axis=0)
 
-    # Reserve right margin for colorbars and top margin for header text.
-    fig.subplots_adjust(left=0.10, right=0.90, bottom=0.06, top=0.88, wspace=0.18, hspace=0.36)
+    # Reserve larger vertical gaps between rows for diagonal token callouts.
+    fig.subplots_adjust(left=0.10, right=0.90, bottom=0.10, top=0.90, wspace=0.10, hspace=1.75)
 
     source_title = "Encoder Fusion" if source_name == "encoder_fusion" else "Decoder"
     interval_text = _format_modality_ranges(intervals, MODALITY_ORDER=MODALITY_ORDER, MODALITY_NAMES=MODALITY_NAMES)
@@ -323,41 +434,63 @@ def _plot_attention_source_comparison(
         heat_delta_permuted = deltas_permuted[layer_idx].numpy()
 
         matrix_size = heat_present.shape[0]
+        top_ticks_by_name: dict[str, tuple[list[int], list[str]]] = {}
+        key_scores_by_name = {
+            "present": heat_present.mean(axis=0),
+            "zeroed": heat_zeroed.mean(axis=0),
+            "permuted": heat_permuted.mean(axis=0),
+        }
+        for heatmap_name, key_scores in key_scores_by_name.items():
+            top_ticks_by_name[heatmap_name] = _get_top_key_token_ticks(
+                key_scores=key_scores,
+                intervals=intervals,
+                token_index_to_description=token_index_to_description,
+                modality_order=MODALITY_ORDER,
+                modality_names=MODALITY_NAMES,
+                top_k_per_modality=top_k_per_modality,
+            )
+        top_ticks_by_col = {
+            0: top_ticks_by_name["present"],
+            1: top_ticks_by_name["zeroed"],
+            2: top_ticks_by_name["permuted"],
+            3: top_ticks_by_name["zeroed"],
+            4: top_ticks_by_name["permuted"],
+        }
 
         im0 = axes[layer_idx, 0].imshow(
             heat_present,
             cmap="viridis",
             vmin=common_vmin,
             vmax=common_vmax,
-            aspect="auto",
+            aspect="equal",
         )
         im1 = axes[layer_idx, 1].imshow(
             heat_zeroed,
             cmap="viridis",
             vmin=common_vmin,
             vmax=common_vmax,
-            aspect="auto",
+            aspect="equal",
         )
         im2 = axes[layer_idx, 2].imshow(
             heat_permuted,
             cmap="viridis",
             vmin=common_vmin,
             vmax=common_vmax,
-            aspect="auto",
+            aspect="equal",
         )
         im3 = axes[layer_idx, 3].imshow(
             heat_delta_zeroed,
             cmap="coolwarm",
             vmin=delta_vmin,
             vmax=delta_vmax,
-            aspect="auto",
+            aspect="equal",
         )
         im4 = axes[layer_idx, 4].imshow(
             heat_delta_permuted,
             cmap="coolwarm",
             vmin=delta_vmin,
             vmax=delta_vmax,
-            aspect="auto",
+            aspect="equal",
         )
 
         axes[layer_idx, 0].set_title(f"Layer {layer_idx + 1}: RNA present", pad=8)
@@ -368,8 +501,20 @@ def _plot_attention_source_comparison(
 
         for col_idx in range(5):
             ax = axes[layer_idx, col_idx]
-            ax.set_ylabel("Query token index")
-            ax.set_xlabel("Key token index")
+            ax.set_ylabel("Query tokens")
+            ax.set_xlabel("Key tokens")
+            ax.tick_params(axis="x", which="both", bottom=False, top=False, labelbottom=False)
+            ax.tick_params(axis="y", which="both", left=False, right=False, labelleft=False)
+            top_tick_positions, top_tick_labels = top_ticks_by_col.get(col_idx, ([], []))
+            if len(top_tick_positions) > 0:
+                # ax.set_xticks(top_tick_positions)
+                # ax.set_xticklabels([str(idx) for idx in top_tick_positions], fontsize=6)
+                _draw_diagonal_token_callouts(
+                    ax=ax,
+                    tick_positions=top_tick_positions,
+                    tick_labels=top_tick_labels,
+                    matrix_size=matrix_size,
+                )
             _draw_modality_boundaries(
                 ax, 
                 intervals, 
@@ -379,8 +524,8 @@ def _plot_attention_source_comparison(
             )
 
     # Dedicated colorbar axes placed on opposite sides of the heatmap grid.
-    cax_main = fig.add_axes([0.00, 0.18, 0.014, 0.62])
-    cax_delta = fig.add_axes([0.94, 0.18, 0.014, 0.62])
+    cax_main = fig.add_axes([0.00, 0.22, 0.014, 0.58])
+    cax_delta = fig.add_axes([0.94, 0.22, 0.014, 0.58])
 
     if im0 is not None:
         cb_main = fig.colorbar(im0, cax=cax_main)
@@ -389,4 +534,4 @@ def _plot_attention_source_comparison(
         cb_delta = fig.colorbar(im4, cax=cax_delta)
         cb_delta.set_label("Delta")
 
-    plt.show()
+    # plt.show()
