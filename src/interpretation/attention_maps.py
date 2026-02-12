@@ -335,8 +335,7 @@ def _draw_diagonal_token_callouts(
     label_xs = np.linspace(x0 + 0.5, x1 - 1, len(tick_positions))  # evenly spaced
 
     # position labels
-    for i, (token_idx, label, label_x) in enumerate(zip(tick_positions, tick_labels, label_xs)):
-        x_offset = label_x - token_idx
+    for token_idx, label, label_x in zip(tick_positions, tick_labels, label_xs):
         ax.annotate(
             label,
             xy=(token_idx, matrix_size - 0.5),
@@ -351,8 +350,10 @@ def _draw_diagonal_token_callouts(
             color="black",
             arrowprops=dict(
                 arrowstyle="-",
-                linewidth=0.7,
+                linewidth=0.5,
                 color="black",
+                # Anchor arrow from the top side of the rotated label box, not its center.
+                relpos=(0.5, 1.0),
                 shrinkA=0,
                 shrinkB=0,
             ),
@@ -412,12 +413,12 @@ def _plot_attention_source_comparison(
     if delta_vmin >= 0:
         delta_vmin = -1e-12
 
-    fig, axes = plt.subplots(num_layers, 5, figsize=(30, 8.0 * num_layers))
+    fig, axes = plt.subplots(num_layers, 5, figsize=(20, 7 * num_layers))
     if num_layers == 1:
         axes = np.expand_dims(axes, axis=0)
 
     # Reserve larger vertical gaps between rows for diagonal token callouts.
-    fig.subplots_adjust(left=0.10, right=0.90, bottom=0.10, top=0.90, wspace=0.10, hspace=1.75)
+    fig.subplots_adjust(left=0.05, right=0.90, bottom=0.05, top=0.90, wspace=0.05, hspace=1.75)
 
     source_title = "Encoder Fusion" if source_name == "encoder_fusion" else "Decoder"
     interval_text = _format_modality_ranges(intervals, MODALITY_ORDER=MODALITY_ORDER, MODALITY_NAMES=MODALITY_NAMES)
