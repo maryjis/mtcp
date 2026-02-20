@@ -350,15 +350,18 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
         # --- other fusion strategies ---
         else:
             self.optimizer = AdamW(self.model.parameters(), **self.cfg.base.optimizer.params)
-
+            
             if self.cfg.base.is_scheduler:
                 # self.scheduler = get_cosine_schedule_with_warmup(
                 #     self.optimizer,
                 #     num_warmup_steps=warmup_steps,
                 #     num_training_steps=total_steps
                 # )
-                self.scheduler = get_constant_schedule_with_warmup(self.optimizer,
-                                                          num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"])) 
+                # self.scheduler = get_constant_schedule_with_warmup(self.optimizer,
+                #                                           num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"])) 
+                self.scheduler_gated = get_cosine_schedule_with_warmup(self.optimizer_gated,
+                                                         num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"]),     # warmup = 40 epochs
+                                                         num_training_steps= self.cfg.base.n_epochs * len(self.dataloaders["train"]))
 
         # --- gated fusion optimizer (как было) ---
         if self.cfg.model.gated_fusion:
@@ -470,7 +473,7 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
                     if self.cfg.model.clipping_gradient:
                             torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                     self.optimizer_gated.step()
-                    self.scheduler_gated.step()
+                    # self.scheduler_gated.step()
 
             #preds["mean_val"].append(pred_values.detach().cpu() / len(outputs_dict.keys())+1)
             #Backpropagation

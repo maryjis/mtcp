@@ -1,6 +1,6 @@
-experiment_name: "rsna_LUAD_survival_MAE_drop0.2_random_final_version"
+experiment_name: "rna_LUAD_survival_mlp_drop0.1_random_final_version"
 n_epochs: 20
-warmup_epochs: 2 
+warmup_epochs: 5
 n_intervals: 20
 random_seed: 1380
 
@@ -19,7 +19,7 @@ scheduler:
 type: "unimodal"
 strategy: "survival" # mae, survival
 modalities: ["rna"]
-architecture: "MAE"
+architecture: "MLP"
 splits: 5
 
 root_path: "../"

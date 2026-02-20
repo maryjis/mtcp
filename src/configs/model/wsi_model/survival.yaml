@@ -18,7 +18,7 @@ num_hidden_layers: 12
 qkv_bias: true
 image_size: 224
 patch_size: 16
-is_load_pretrained: False
+is_load_pretrained: True
 pretrained_model_name: "unimodal_wsi_800_mae_macha_bigvit_pretrained"
 pretrained_model_path: ""
 output_dim: 20

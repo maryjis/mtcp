@@ -106,4 +106,71 @@ class EncoderSurvival(RNAEncoder):
         x = self.projection(x).squeeze(-1)
         return x    
         
-    
+import torch
+import torch.nn as nn
+
+class MLPEncoder(nn.Module):
+    def __init__(self, input_dim: int = 18160, embedding_dim: int = 768, dropout: float = 0.0) -> None:
+        super().__init__()
+
+        # Подогнано под ~47.05M параметров
+        h1 = 2208
+        h2 = 1536
+        h3 = 1024
+        h4 = 768
+        h5 = 768
+
+        self.encoder = nn.Sequential(
+            nn.Linear(input_dim, h1),
+            nn.GELU(),
+            nn.LayerNorm(h1),
+            nn.Dropout(dropout),
+
+            nn.Linear(h1, h2),
+            nn.GELU(),
+            nn.LayerNorm(h2),
+            nn.Dropout(dropout),
+
+            nn.Linear(h2, h3),
+            nn.GELU(),
+            nn.LayerNorm(h3),
+            nn.Dropout(dropout),
+
+            nn.Linear(h3, h4),
+            nn.GELU(),
+            nn.LayerNorm(h4),
+            nn.Dropout(dropout),
+
+            nn.Linear(h4, h5),
+            nn.GELU(),
+            nn.LayerNorm(h5),
+            nn.Dropout(dropout),
+
+            nn.Linear(h5, embedding_dim),
+            nn.GELU(),
+            nn.LayerNorm(embedding_dim),
+            nn.Dropout(dropout),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.encoder(x)
+        return x  
+
+
+class MLPSurvival(MLPEncoder):
+    def __init__(self,input_dim:int, embedding_dim: int, dropout: float, dropout_final: float, n_out: int) -> None:
+        super().__init__(input_dim,embedding_dim, dropout)
+        #self.projection = nn.Linear(embedding_dim, n_out)
+        self.projection = nn.Sequential(nn.Dropout(dropout_final),nn.Linear(embedding_dim, n_out))
+        
+        
+    def forward(self, x: torch.Tensor, masks=None) -> torch.Tensor:
+        x = super().forward(x)
+        x = self.projection(x).squeeze(-2)
+        return x    
+
+def initialise_mlp_model(cfg: DictConfig):
+    return MLPSurvival(cfg.input_dim, cfg.embedding_dim, cfg.dropout,cfg.dropout_final, cfg.output_dim)
+
+def initialise_snn_model(cfg: DictConfig):
+    return None

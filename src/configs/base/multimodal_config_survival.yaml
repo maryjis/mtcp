@@ -1,4 +1,4 @@
-experiment_name: "multimodal_rna_wsi10_mean1e4_blca_unfreeze_survival"
+experiment_name: "multimoda_rna_wsi10_dna_mean_UCEC_with_dropout_small_lr_warm_unfreeze_partly_survival"
 n_epochs: 20
 warmup_epochs: 5
 n_intervals: 20
@@ -8,7 +8,7 @@ random_seed: 1380
 optimizer:
     name: "AdamW"
     params:
-        lr: 1e-4 # 2e-5
+        lr: 1e-3 # 2e-5
         weight_decay: 1e-2
 
 optimizer_gated:
@@ -21,17 +21,17 @@ optimizer_unimodal:
     rna:
         name: "AdamW"
         params:
-            lr: 1e-4 # 2e-5
+            lr: 1e-3 # 2e-5
             weight_decay: 1e-2
     dnam:
         name: "AdamW"
         params:
-            lr: 1e-4 # 2e-5
+            lr: 1e-3 # 2e-5
             weight_decay: 1e-2
     wsi:
         name: "AdamW"
         params:
-            lr: 1e-4 # 2e-5
+            lr: 1e-3 # 2e-5
             weight_decay: 1e-2            
 
 # Эти поля читает твоя обновлённая initialise_loss()
@@ -129,18 +129,18 @@ type: "multimodal"
 strategy: "survival" # mae, survival
 sampler: True
 
-modalities: ["rna", "wsi"]
+modalities: ["rna", "dnam", "wsi"]
 
 multimodal_intersection_test: true
 architecture: "MAE"
 splits: 5
 save_path : "outputs/models/"
-project_ids: ["BLCA"]
+project_ids: ["UCEC"]
 
 
 data_path: "src/data/dataset_inetrsection_all_v2.csv"
 rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
-device: "cuda:2"
+device: "cuda:0"
 
 available_gpus:  [0]  # Указываем, какие GPU можно использовать
 remove_nan_column: 'RNA'

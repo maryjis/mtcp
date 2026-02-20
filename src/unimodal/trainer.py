@@ -18,7 +18,7 @@ from torch.utils.data import Dataset, DataLoader
 from pycox.models.loss import NLLLogistiHazardLoss
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR   
-from src.unimodal.rna.encoder import initialise_rna_model
+from src.unimodal.rna.encoder import initialise_rna_model, initialise_mlp_model, initialise_snn_model
 from src.unimodal.mri.models import MRIEmbeddingEncoder
 from src.unimodal.wsi.models import WSIEncoder
 from src.unimodal.rna.mae import initialise_rna_mae_model
@@ -329,9 +329,15 @@ class UnimodalSurvivalTrainer(Trainer):
 
         print(self.model)
         print_vit_sizes(self.model)
+        print("encoder params:", self.count_params())
         torch.cuda.reset_peak_memory_stats(device=cfg.base.device)
         print(f"gpu used {torch.cuda.max_memory_allocated(device=cfg.base.device)/1024/1024} Mb memory")
+
    
+    def count_params(self):
+        return sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+
+
     def initialise_datasets(self, splits, modality, preproc, transforms=None):
         datasets ={}
         print("UnimodalSurvivalTrainer, initilise data")
@@ -345,7 +351,8 @@ class UnimodalSurvivalTrainer(Trainer):
                                                  column_order=preproc.get_column_order(), 
                                                  debug_mode = self.cfg.data.rna.get("debug_mode", False),
                                                  column_name ="RNA",
-                                                 project_ids = self.cfg.base.get("project_ids", []))
+                                                 project_ids = self.cfg.base.get("project_ids", []),
+                                                 fill_missing = self.cfg.data.rna.fill_missing)
 
         elif modality == "mri":
                 splits = {split_name: preproc.transform_labels(split) for split_name, split in splits.items()}
@@ -372,7 +379,8 @@ class UnimodalSurvivalTrainer(Trainer):
                                                  column_order=preproc.get_column_order(),
                                                  debug_mode = self.cfg.data.cnv.get("debug_mode", False),
                                                  column_name ="CNV",
-                                                 project_ids = self.cfg.base.get("project_ids", []))
+                                                 project_ids = self.cfg.base.get("project_ids", []),
+                                                 fill_missing = self.cfg.data.cnv.fill_missing)
         elif modality == "dnam":
             for split_name, dataset in splits.items():
                 splits[split_name] = preproc.transform_labels(dataset)
@@ -381,7 +389,8 @@ class UnimodalSurvivalTrainer(Trainer):
                                                  column_order=preproc.get_column_order(),
                                                  debug_mode = self.cfg.data.dnam.get("debug_mode", False),
                                                  column_name ="DNAm",
-                                                 project_ids = self.cfg.base.get("project_ids", []))
+                                                 project_ids = self.cfg.base.get("project_ids", []),
+                                                 fill_missing = self.cfg.data.dnam.fill_missing)
         elif modality == "clinical":
             for split_name, dataset in splits.items():
                 splits[split_name] = preproc.transform_labels(dataset)
@@ -401,7 +410,9 @@ class UnimodalSurvivalTrainer(Trainer):
                     elif self.cfg.base.architecture=="MAE":
                         dataset = WSIDataset_patches(split, random_patch_selection = self.cfg.data.wsi.random_patch_selection,
                                                      max_patches_per_sample =self.cfg.data.wsi.max_patches_per_sample,
-                                                     return_mask=True,debug_mode = self.cfg.data.wsi.get("debug_mode", False))
+                                                     return_mask=True,
+                                                     debug_mode = self.cfg.data.wsi.get("debug_mode", False),
+                                                     fill_missing = self.cfg.data.wsi.fill_missing)
                         # Создаем SurvivalMRIDataset с нужными параметрами
                         datasets[split_name] = SurvivalWSIDataset(split, dataset, is_hazard_logits=True,debug_mode = self.cfg.data.wsi.get("debug_mode", False))
         else:
@@ -416,6 +427,10 @@ class UnimodalSurvivalTrainer(Trainer):
                     return initialise_rna_mae_model(ViTMAEConfig(**OmegaConf.to_container(model_cfg)), preproc.get_column_order())
                 elif self.cfg.base.architecture=="CNN":
                     return initialise_rna_model(model_cfg)
+                elif self.cfg.base.architecture=="MLP":
+                    return initialise_mlp_model(model_cfg)
+                elif self.cfg.base.architecture=="SNN":
+                    return initialise_snn_model(model_cfg)
                 else:
                     raise NotImplementedError("Exist only for rna. Initialising datasets for other modalities aren't declared")
         elif modality=="mri":
@@ -609,6 +624,7 @@ class UnimodalMAETrainer(Trainer):
     def initialise_loss(self):
         self.optimizer = AdamW(self.model.parameters(), **self.cfg.base.optimizer.params)
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
+
         # self.scheduler = get_cosine_schedule_with_warmup(self.optimizer,
         #                                                  num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"]),     # warmup = 40 epochs
         #                                                  num_training_steps= self.cfg.base.n_epochs * len(self.dataloaders["train"]))  # cosine decay
@@ -638,7 +654,8 @@ class UnimodalMAETrainer(Trainer):
                                                  column_order=preproc.get_column_order(),
                                                  debug_mode = self.cfg.data.rna.get("debug_mode", False),
                                                  column_name ="RNA",
-                                                 project_ids = self.cfg.base.get("project_ids", []))
+                                                 project_ids = self.cfg.base.get("project_ids", []),
+                                                 fill_missing = self.cfg.data.rna.fill_missing)
 
         elif modality == "mri":
             for split_name, split in splits.items():
@@ -659,7 +676,8 @@ class UnimodalMAETrainer(Trainer):
                                                  column_order=preproc.get_column_order(),
                                                  debug_mode = self.cfg.data.dnam.get("debug_mode", False),
                                                  column_name ="DNAm",
-                                                 project_ids = self.cfg.base.get("project_ids", []))
+                                                 project_ids = self.cfg.base.get("project_ids", []),
+                                                 fill_missing = self.cfg.data.rna.fill_missing)
         elif modality == "cnv":
             for split_name, dataset in splits.items():
                 splits[split_name] = preproc.transform_labels(dataset)
@@ -668,7 +686,8 @@ class UnimodalMAETrainer(Trainer):
                                                  column_order=preproc.get_column_order(),
                                                  debug_mode = self.cfg.data.cnv.get("debug_mode", False),
                                                  column_name ="CNV",
-                                                 project_ids = self.cfg.base.get("project_ids", []))
+                                                 project_ids = self.cfg.base.get("project_ids", []),
+                                                 fill_missing = self.cfg.data.rna.fill_missing)
         elif modality == "wsi":
             for split_name, split in splits.items():
                     # Определяем значение параметра num в зависимости от типа раздела                  
@@ -677,7 +696,7 @@ class UnimodalMAETrainer(Trainer):
                     #     is_train = True if split_name == "train" else False
                     #     datasets[split_name] = WSIDataset(split,self.cfg.data.wsi.k, is_train=is_train,return_mask=True)
                     # else:
-                    datasets[split_name] = WSIDataset_patches(split, random_patch_selection = self.cfg.data.wsi.random_patch_selection, return_mask=True)
+                    datasets[split_name] = WSIDataset_patches(split, random_patch_selection = self.cfg.data.wsi.random_patch_selection, return_mask=True, fill_missing = self.cfg.data.rna.fill_missing)
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
         

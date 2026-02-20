@@ -332,56 +332,68 @@ class WsiMAEModel(ViTMAEModel):
             else:
                 noise_chunks = [noise] * k
 
-        sum_last = None
-        template_out = None  # вернём поля (кроме last_hidden_state) отсюда, обычно с последнего чанка
+        last_chunks = []
+        template_out = None  # поля (кроме last_hidden_state) возьмём из последнего чанка
 
         for i, pv in enumerate(chunks):
             flat = rearrange(pv, "b n c h w -> (b n) c h w")
             this_noise = None if noise_chunks is None else noise_chunks[i]
             print(i, "", flat.shape)
-            with torch.autocast("cuda", dtype=torch.bfloat16):
-                out = super().forward(
-                    pixel_values=flat,
-                    noise=this_noise,
-                    head_mask=head_mask,
-                    output_attentions=output_attentions,
-                    output_hidden_states=output_hidden_states,
-                    return_dict=return_dict,
-                    interpolate_pos_encoding=interpolate_pos_encoding,
-                )
 
-                is_last = (i == (k - 1))
-                template_out = out  # перезаписываем — в конце будет последний
+            out = super().forward(
+                pixel_values=flat,
+                noise=this_noise,
+                head_mask=head_mask,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+                interpolate_pos_encoding=interpolate_pos_encoding,
+            )
 
-                if isinstance(out, tuple):
-                    sum_last = (out[0] if is_last else out[0].detach()) if sum_last is None \
-                    else sum_last + (out[0] if is_last else out[0].detach())
-                else:
-                    # вместо last=... и sum_last=...
-                    sum_last = (out.last_hidden_state if is_last else out.last_hidden_state.detach()) if sum_last is None \
-                    else sum_last + (out.last_hidden_state if is_last else out.last_hidden_state.detach())
+            template_out = out
+            is_last = (i == (k - 1))
+            chunkN = pv.shape[1]
 
-                print("chunk-", i, sum_last.shape)
-        mean_last = sum_last / float(k)
+            if isinstance(out, tuple):
+                last = out[0]
+            else:
+                last = out.last_hidden_state
+
+            # чтобы экономить память: градиент держим только для последнего чанка
+            if not is_last:
+                last = last.detach()
+
+            # last: (B*chunkN, seq, H) -> (B, chunkN, seq, H)
+            seq_len = last.shape[1]
+            hidden = last.shape[2]
+            last = last.view(B, chunkN, seq_len, hidden)
+
+            last_chunks.append(last)
+            print("chunk-", i, last.shape)
+
+        # (B, N, seq, H)
+        cat_last = torch.cat(last_chunks, dim=1)
+
+        # обратно как в обычном пути: (B*N, seq, H)
+        cat_last = cat_last.view(B * N, cat_last.shape[2], cat_last.shape[3])
 
         # вернуть тем же типом
         if isinstance(template_out, tuple):
-            # берём остальные элементы tuple из последнего чанка как есть
-            return (mean_last, *template_out[1:])
+            return (cat_last, *template_out[1:])
 
-        # ModelOutput
         if isinstance(template_out, ViTMAEModelOutput):
             return ViTMAEModelOutput(
-                last_hidden_state=mean_last,
+                last_hidden_state=cat_last,
                 mask=getattr(template_out, "mask", None),
                 ids_restore=getattr(template_out, "ids_restore", None),
                 hidden_states=getattr(template_out, "hidden_states", None),
                 attentions=getattr(template_out, "attentions", None),
             )
 
-        # fallback, если вдруг другой ModelOutput
-        template_out.last_hidden_state = mean_last
+        template_out.last_hidden_state = cat_last
+        print("cat_last.shape", cat_last.shape)
         return template_out
+
 
 
 class WsiMAEDecoder(ViTMAEDecoder):

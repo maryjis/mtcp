@@ -153,7 +153,8 @@ class MultiMAEModel(PreTrainedModel):
             self.normalizers = nn.ModuleDict({modality: nn.LayerNorm(cfg.hidden_size) for modality in  cfg.modalities})
         if self.cfg.make_modality_clipper:
             self.cliper = BatchSigmaClipper(k=4.0)
-        
+        if self.cfg.wsi_agg=="attention_mil" or self.cfg.wsi_agg=="attention_mil_tiles":
+            self.attn_mil = TileTokenAttnMIL(hidden_size=self.cfg.hidden_size)
 
         if self.cfg.encoder_fusion_strategy =="masked_attention":
             self.encoder_fusion_strategy = MaskAttentionFusion(cfg.encoder_fusion_depth, cfg.encoder_fusion_dim,
@@ -562,7 +563,19 @@ class MultiMAEModel(PreTrainedModel):
                     n = n10 // self.encoders["wsi"].encoder.config.max_patches_per_sample
 
                     last_hidden_state = last_hidden_state.view(n, self.encoders["wsi"].encoder.config.max_patches_per_sample, n_tokens, hidden_size)  # (n, 10, n_tokens, hidden_size)
-                    last_hidden_state = last_hidden_state.mean(dim=1)
+                    if self.cfg.wsi_agg=="attention_mil":
+                        last_hidden_state =  self.attn_mil(last_hidden_state)
+                    if self.cfg.wsi_agg=="attention_mil_tiles":
+                        last_hidden_state =  self.attn_mil(last_hidden_state.transpose(1, 2))
+                        print("last_hidden_state.shape", last_hidden_state.shape)
+                    elif self.cfg.wsi_agg=="max":
+                        last_hidden_state = last_hidden_state.max(dim=1).values
+                    elif self.cfg.wsi_agg=="max_by_tiles":
+                        last_hidden_state = last_hidden_state.max(dim=2).values
+                    elif self.cfg.wsi_agg=="mean_by_tiles":
+                        last_hidden_state=last_hidden_state.mean(dim=2)
+                    else:
+                        last_hidden_state =last_hidden_state.mean(dim=1)
                     embedded_sample.mask =embedded_sample.mask[:n,:]
                     embedded_sample.ids_restore =embedded_sample.ids_restore[:n,:]
                     
@@ -989,11 +1002,11 @@ class MultiMaeForSurvival(nn.Module):
             if cfg.freezing_strategy:
                 print("Freezing!")
                 for name, param in self.model.named_parameters():
-                    if (("cls_token" in name)):
-                    # or ("encoder_fusion_strategy" in name)
-                    # or ("layer.11" in name)  or ("encoders.wsi.encoder.layernorm" in name)
-                    # or ("encoders.dnam.encoder.layernorm" in name) or ('encoders.dnam.encoder.encoder.layer.5' in name) 
-                    # or ("encoders.rna.encoder.layernorm" in name) or ('encoders.rna.encoder.encoder.layer.5' in name)):
+                    if (("cls_token" in name)
+                    or ("encoder_fusion_strategy" in name)
+                    or ("layer.11" in name)  or ("encoders.wsi.encoder.layernorm" in name)
+                    or ("encoders.dnam.encoder.layernorm" in name) or ('encoders.dnam.encoder.encoder.layer.5' in name) 
+                    or ("encoders.rna.encoder.layernorm" in name) or ('encoders.rna.encoder.encoder.layer.5' in name)):
                         print("chozen", name)
                         param.requires_grad = True
                     else: 
@@ -1413,3 +1426,45 @@ class LogitsGatedAggregator(nn.Module):
         if return_weights:
             return agg, w, aux_loss
         return agg
+
+class TileTokenAttnMIL(nn.Module):
+    """
+    Attention MIL pooling over tiles for each token position.
+    Input:  x (B, T, K, H)  where T=n_tiles, K=n_tokens
+    Output: y (B, K, H)
+    """
+    def __init__(self, hidden_size: int, attn_dropout: float = 0.0, temperature: float = 1.0):
+        super().__init__()
+        self.scorer = nn.Linear(hidden_size, 1, bias=False)  # H -> 1
+        self.attn_dropout = nn.Dropout(attn_dropout)
+        self.temperature = temperature
+
+    def forward(self, x: torch.Tensor, tile_mask: torch.Tensor | None = None) -> torch.Tensor:
+        """
+        tile_mask: optional boolean mask of shape (B, T), True for valid tiles.
+                   Useful if you pad tiles to max T.
+        """
+        # x: (B, T, K, H)
+        B, T, K, H = x.shape
+
+        # scores: (B, T, K)
+        scores = self.scorer(x).squeeze(-1)  # (B, T, K)
+
+        # apply temperature
+        if self.temperature != 1.0:
+            scores = scores / self.temperature
+
+        # optional tile mask
+        if tile_mask is not None:
+            # tile_mask: (B, T) -> (B, T, 1) -> broadcast over K
+            scores = scores.masked_fill(~tile_mask.unsqueeze(-1), float("-inf"))
+
+        # softmax over tiles (dim=1): weights (B, T, K)
+        w = torch.softmax(scores, dim=1)
+
+        # dropout on attention weights (keeps expectation roughly ok for training)
+        w = self.attn_dropout(w)
+
+        # weighted sum over tiles: (B, K, H)
+        y = torch.einsum("btk, btkh -> bkh", w, x)
+        return y

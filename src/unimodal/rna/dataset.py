@@ -14,7 +14,8 @@ class OmicsDataset(BaseDataset):
                  return_mask = True,
                  debug_mode = False,
                  column_name ='RNA',
-                 project_ids =[]):
+                 project_ids =[],
+                 fill_missing ="zeros"):
         """
         Arguments:
             csv_file (string): Path to the csv file with annotations.
@@ -33,6 +34,7 @@ class OmicsDataset(BaseDataset):
         self.column_order = column_order
         self.column_name = column_name
         self.debug_mode = debug_mode
+        self.fill_missing =fill_missing
         
         if isinstance(column_order, pd.Index): 
             self.column_order =self.column_order.append(pd.Index(["file_id"]))
@@ -60,7 +62,12 @@ class OmicsDataset(BaseDataset):
             name =sample[self.column_name]
             sample =self.rna_dataset.loc[self.rna_dataset["file_id"]==name]
             if sample.empty:
-                sample = np.zeros((1, self.rna_dataset.shape[1]-1))
+                if self.fill_missing =="zeros":
+                    sample = torch.zeros((1, self.rna_dataset.shape[1]-1))
+                elif self.fill_missing =="normal":
+                    sample = torch.randn((1, self.rna_dataset.shape[1]-1))
+                else:
+                    raise NotImplementedError
             else:
                 mask = True
                 file_id = sample["file_id"].values[0]
@@ -75,8 +82,12 @@ class OmicsDataset(BaseDataset):
             else:
                 return sample.float(), mask
         else:
-
-            sample = torch.zeros((1, self.rna_dataset.shape[1]-1)).float()
+            if self.fill_missing =="zeros":
+                sample = torch.zeros((1, self.rna_dataset.shape[1]-1))
+            elif self.fill_missing =="normal":
+                sample = torch.randn((1, self.rna_dataset.shape[1]-1))
+            else:
+                raise NotImplementedError
            
             if self.transform:
                 sample = self.transform(sample)
@@ -91,7 +102,8 @@ class OmicsSurvivalDataset(OmicsDataset):
             is_hazard_logits = False, column_order = None,
             return_mask =True, debug_mode =False,
             column_name ='RNA',
-            project_ids =[]):
+            project_ids =[],
+            fill_missing ="zeros" ):
             super().__init__(data_split, dataset_dir,
                              transform = transform, 
                              is_hazard_logits = is_hazard_logits, 
@@ -99,7 +111,8 @@ class OmicsSurvivalDataset(OmicsDataset):
                              return_mask=return_mask,
                              debug_mode = debug_mode,
                              column_name = column_name,
-                             project_ids =project_ids)
+                             project_ids =project_ids,
+                             fill_missing =fill_missing)
             
 
 

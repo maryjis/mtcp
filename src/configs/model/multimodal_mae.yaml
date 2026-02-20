@@ -54,3 +54,12 @@ make_modality_normalizers: false
 make_modality_dropout: false
 make_modality_clipper: false
 make_simple_normalizer: true
+
+wsi_agg: ""
+
+modality_dropout_p:
+  rna: 0.0    
+  dnam: 0.0
+  hist: 0.0
+
+p_dropout_value: 0.0

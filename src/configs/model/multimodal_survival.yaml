@@ -1,10 +1,10 @@
-modalities: ["rna", "wsi"]
+modalities: ["rna", "dnam","wsi"]
 
 defaults: 
   - rna_model: survival
   # - clinical_model: survival
   # - mri_model: survival
-  # - dnam_model: survival
+  - dnam_model: survival
   - wsi_model: survival
   # - cnv_model: survival
   # - mm_decoder_config: multimodal_mae
@@ -33,11 +33,11 @@ postprocessing: True
 output_dim: 20
 contrastive_loss: false
 clinica_linear_last_fusion: False
-is_load_pretrained: False
+is_load_pretrained: True
 pretrained_model_name: "multimodal_rna_dna_wsi_clusters_with_normalizers_bs_64_1e4_bigset_balanced_1600_28_10_fixed"
 #"multimodal_rna_dna_wsi_mri_400_mae_last"  #"multimodal_rna_dna_wsi_400_mae_last" #"multimodal_rna_dnam_mri_pretrained_mae_800_17_02", "multimodal_rna_dnam6_50_mae_pretrained_rna_with_mm_800_16_02"
 pretrained_model_path: ""
-freezing_strategy: False
+freezing_strategy: True
 
 missing_modalities_strategy: ""
 mm_pretrained_model_name:  ""
@@ -84,7 +84,7 @@ modality_dropout_p:
   dnam: 0.5
   hist: 1.0
 
-p_dropout_value: 0.3
+p_dropout_value: 0.0
 
 make_modality_pooling: false
 make_modality_normalizers: false
@@ -92,10 +92,11 @@ make_modality_dropout: true
 make_modality_clipper: false
 make_simple_normalizer: true
 final_dropout:
-  multimodal: 0.3
-  wsi: 0.1
+  multimodal: 0.2
+  wsi: 0.0
   rna: 0.0
   dnam: 0.0
 
 gated_fusion: False
 clipping_gradient: True
+wsi_agg: "mean"

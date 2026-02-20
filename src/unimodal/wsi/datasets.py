@@ -86,7 +86,8 @@ class WSIDataset_patches(BaseDataset):
         resize_to: tuple = (224, 224),
         max_patches_per_sample: int = 10,
         random_patch_selection: bool = False,
-        debug_mode =False
+        debug_mode =False,
+        fill_missing ="zeros"
     ) -> None:
         super().__init__(
             data=data,
@@ -97,6 +98,7 @@ class WSIDataset_patches(BaseDataset):
         self.resize_to = resize_to
         self.max_patches_per_sample = max_patches_per_sample
         self.random_patch_selection = random_patch_selection
+        self.fill_missing =fill_missing
         self.debug_mode =debug_mode
         logger.info(
             f"WSIDataset_patches initialized: n_samples={len(self.data)}, "
@@ -116,18 +118,31 @@ class WSIDataset_patches(BaseDataset):
 
         if not os.path.exists(patch_dir):
             logger.warning(f"Patch directory not found: {patch_dir}")
-            return torch.zeros((expected_patches, 3, *self.resize_to), dtype=torch.float32), False
-
-
+            if self.fill_missing =="zeros":
+                return torch.zeros((expected_patches, 3, *self.resize_to), dtype=torch.float32), False
+            elif self.fill_missing =="normal":
+                return torch.randn((expected_patches, 3, *self.resize_to), dtype=torch.float32), False
+            else:
+                raise NotImplementedError
         try:
             patch_files = sorted([f for f in os.listdir(patch_dir) if f.endswith(".png")])
         except Exception as e:
             logger.exception(f"Failed to list files in {patch_dir}")
-            return torch.zeros((expected_patches, 3, *self.resize_to), dtype=torch.float32) , False
+            if self.fill_missing =="zeros":
+                return torch.zeros((expected_patches, 3, *self.resize_to), dtype=torch.float32) , False
+            elif self.fill_missing =="normal":
+                return torch.randn((expected_patches, 3, *self.resize_to), dtype=torch.float32), False
+            else:
+                raise NotImplementedError
 
         if not patch_files:
             logger.warning(f"No patch files found in {patch_dir}")
-            return torch.zeros((expected_patches, 3, *self.resize_to), dtype=torch.float32), False
+            if self.fill_missing =="zeros":
+                return torch.zeros((expected_patches, 3, *self.resize_to), dtype=torch.float32) , False
+            elif self.fill_missing =="normal":
+                return torch.randn((expected_patches, 3, *self.resize_to), dtype=torch.float32), False
+            else:
+                raise NotImplementedError
 
         # Выбор одного случайного патча
         if self.random_patch_selection:
@@ -166,11 +181,23 @@ class WSIDataset_patches(BaseDataset):
 
         if not patches:
             logger.warning(f"All patch loads failed for {patch_dir}, returning zeros.")
-            return torch.zeros((expected_patches, 3, *self.resize_to), dtype=torch.float32), False
+            if self.fill_missing =="zeros":
+                return torch.zeros((expected_patches, 3, *self.resize_to), dtype=torch.float32) , False
+            elif self.fill_missing =="normal":
+                return torch.randn((expected_patches, 3, *self.resize_to), dtype=torch.float32), False
+            else:
+                raise NotImplementedError
 
         # Паддинг, если не хватает патчей
         while not self.random_patch_selection and len(patches) < self.max_patches_per_sample:
-            patches.append(torch.zeros((3, *self.resize_to), dtype=torch.float32))
+            
+            if self.fill_missing =="zeros":
+                patches.append(torch.zeros((3, *self.resize_to), dtype=torch.float32))
+            elif self.fill_missing =="normal":
+                patches.append(torch.randn((3, *self.resize_to), dtype=torch.float32))
+            else:
+                raise NotImplementedError
+
             logger.debug(f"Added zero-padding patch. Total now: {len(patches)}")
 
         tensor = torch.stack(patches)
