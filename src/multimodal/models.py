@@ -520,7 +520,7 @@ class MultiMAEModel(PreTrainedModel):
 
         # Process each modality
         is_first = True
-        print("self.cfg.make_modality_dropout: ", self.cfg.make_modality_dropout)
+        # print("self.cfg.make_modality_dropout: ", self.cfg.make_modality_dropout)
         if self.training and self.cfg.make_modality_dropout:
             B = next(iter(x.values())).shape[0]
 

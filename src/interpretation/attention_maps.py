@@ -92,15 +92,17 @@ def _collect_attention_heatmaps(
     split_name: str = "test",
     zero_rna: bool = False,
     permute_rna: bool = False,
+    collect_raw_attention_payloads: bool = False,
     ATTN_SOURCES : tuple[str, ...] = ("encoder_fusion", "decoder"),
 ):
     if zero_rna and permute_rna:
         raise ValueError("Choose only one RNA perturbation mode: zero_rna or permute_rna.")
 
-    raw_attention_payloads = []
+    raw_attention_payloads = [] if collect_raw_attention_payloads else None
     layer_sums = {source: [] for source in ATTN_SOURCES}
     layer_counts = {source: [] for source in ATTN_SOURCES}
     token_intervals = {source: {} for source in ATTN_SOURCES}
+    found_attention_payload = False
 
     if zero_rna:
         desc = f"{split_name} inference | RNA=0"
@@ -127,23 +129,26 @@ def _collect_attention_heatmaps(
             outputs = model(values_batch, masks_batch)
             payload = _normalize_attention_payload(outputs.attentions)
 
-            payload_cpu = {
-                "encoder_fusion": tuple(att.detach().cpu() for att in payload["encoder_fusion"]),
-                "decoder": tuple(att.detach().cpu() for att in payload["decoder"]),
-                "token_intervals": {
-                    "encoder_fusion": dict(payload["token_intervals"]["encoder_fusion"]),
-                    "decoder": dict(payload["token_intervals"]["decoder"]),
-                },
-            }
-            raw_attention_payloads.append(payload_cpu)
+            if collect_raw_attention_payloads:
+                payload_cpu = {
+                    "encoder_fusion": tuple(att.detach().cpu() for att in payload["encoder_fusion"]),
+                    "decoder": tuple(att.detach().cpu() for att in payload["decoder"]),
+                    "token_intervals": {
+                        "encoder_fusion": dict(payload["token_intervals"]["encoder_fusion"]),
+                        "decoder": dict(payload["token_intervals"]["decoder"]),
+                    },
+                }
+                raw_attention_payloads.append(payload_cpu)
 
             for source in ATTN_SOURCES:
-                layers = payload_cpu[source]
+                layers = payload[source]
                 if len(layers) == 0:
                     continue
 
+                found_attention_payload = True
+
                 if not token_intervals[source]:
-                    token_intervals[source] = dict(payload_cpu["token_intervals"].get(source, {}))
+                    token_intervals[source] = dict(payload["token_intervals"].get(source, {}))
 
                 if len(layer_sums[source]) == 0:
                     layer_sums[source] = [None] * len(layers)
@@ -170,7 +175,7 @@ def _collect_attention_heatmaps(
 
                     layer_counts[source][layer_idx] += sample_mats.shape[0]
 
-    if len(raw_attention_payloads) == 0:
+    if not found_attention_payload:
         if zero_rna:
             mode = "RNA=0"
         elif permute_rna:

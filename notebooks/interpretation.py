@@ -292,38 +292,35 @@ def _build_token_index_to_description_map(
 
     return token_index_to_description_map
 
-attention_scores_present, mean_heatmaps_present, token_intervals_present = _collect_attention_heatmaps(
+_, mean_heatmaps_present, token_intervals_present = _collect_attention_heatmaps(
     model=trainer.model,
     dataloader=trainer.dataloaders[split_name],
     device=device,
     split_name=split_name,
     zero_rna=False,
+    collect_raw_attention_payloads=False,
     ATTN_SOURCES=ATTN_SOURCES,
 )
 
-attention_scores_zeroed, mean_heatmaps_zeroed, token_intervals_zeroed = _collect_attention_heatmaps(
+_, mean_heatmaps_zeroed, token_intervals_zeroed = _collect_attention_heatmaps(
     model=trainer.model,
     dataloader=trainer.dataloaders[split_name],
     device=device,
     split_name=split_name,
     zero_rna=True,
+    collect_raw_attention_payloads=False,
     ATTN_SOURCES=ATTN_SOURCES,
 )
 
-attention_scores_permuted, mean_heatmaps_permuted, token_intervals_permuted = _collect_attention_heatmaps(
+_, mean_heatmaps_permuted, token_intervals_permuted = _collect_attention_heatmaps(
     model=trainer.model,
     dataloader=trainer.dataloaders[split_name],
     device=device,
     split_name=split_name,
     permute_rna=True,
+    collect_raw_attention_payloads=False,
     ATTN_SOURCES=ATTN_SOURCES,
 )
-
-attention_scores_by_split = {
-    "rna_present": attention_scores_present,
-    "rna_zeroed": attention_scores_zeroed,
-    "rna_permuted": attention_scores_permuted,
-}
 
 mean_attention_heatmaps_by_split = {
     "rna_present": mean_heatmaps_present,
@@ -365,6 +362,5 @@ for _source in ATTN_SOURCES:
     plt.show()
 
 # %%
-
 
 
