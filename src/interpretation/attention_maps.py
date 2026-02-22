@@ -418,21 +418,16 @@ def _plot_attention_source_comparison(
     if delta_vmin >= 0:
         delta_vmin = -1e-12
 
-    fig, axes = plt.subplots(num_layers, 5, figsize=(20, 7 * num_layers))
-    if num_layers == 1:
-        axes = np.expand_dims(axes, axis=0)
-
-    # Reserve larger vertical gaps between rows for diagonal token callouts.
-    fig.subplots_adjust(left=0.05, right=0.90, bottom=0.05, top=0.90, wspace=0.05, hspace=1.75)
-
-    source_title = "Encoder Fusion" if source_name == "encoder_fusion" else "Decoder"
     interval_text = _format_modality_ranges(intervals, MODALITY_ORDER=MODALITY_ORDER, MODALITY_NAMES=MODALITY_NAMES)
-    fig.suptitle(f"{source_title} attentions\nToken ranges: {interval_text}", fontsize=13, y=0.97)
-
-    im0 = None
-    im2 = None
-
     for layer_idx in range(num_layers):
+        fig, axes = plt.subplots(1, 5, figsize=(20, 7))
+        fig.subplots_adjust(left=0.07, right=0.90, bottom=0.05, top=0.90, wspace=0.10)
+        fig.suptitle(
+            f"{source_name} attentions | Layer {layer_idx + 1}\nToken ranges: {interval_text}",
+            fontsize=13,
+            # y=0.96,
+        )
+
         heat_present = mean_heatmaps_present[layer_idx].numpy()
         heat_zeroed = mean_heatmaps_zeroed[layer_idx].numpy()
         heat_permuted = mean_heatmaps_permuted[layer_idx].numpy()
@@ -463,35 +458,35 @@ def _plot_attention_source_comparison(
             4: top_ticks_by_name["permuted"],
         }
 
-        im0 = axes[layer_idx, 0].imshow(
+        im0 = axes[0].imshow(
             heat_present,
             cmap="viridis",
             vmin=common_vmin,
             vmax=common_vmax,
             aspect="equal",
         )
-        im1 = axes[layer_idx, 1].imshow(
+        im1 = axes[1].imshow(
             heat_zeroed,
             cmap="viridis",
             vmin=common_vmin,
             vmax=common_vmax,
             aspect="equal",
         )
-        im2 = axes[layer_idx, 2].imshow(
+        im2 = axes[2].imshow(
             heat_permuted,
             cmap="viridis",
             vmin=common_vmin,
             vmax=common_vmax,
             aspect="equal",
         )
-        im3 = axes[layer_idx, 3].imshow(
+        im3 = axes[3].imshow(
             heat_delta_zeroed,
             cmap="coolwarm",
             vmin=delta_vmin,
             vmax=delta_vmax,
             aspect="equal",
         )
-        im4 = axes[layer_idx, 4].imshow(
+        im4 = axes[4].imshow(
             heat_delta_permuted,
             cmap="coolwarm",
             vmin=delta_vmin,
@@ -499,14 +494,14 @@ def _plot_attention_source_comparison(
             aspect="equal",
         )
 
-        axes[layer_idx, 0].set_title(f"Layer {layer_idx + 1}: RNA present", pad=8)
-        axes[layer_idx, 1].set_title(f"Layer {layer_idx + 1}: RNA zeroed", pad=8)
-        axes[layer_idx, 2].set_title(f"Layer {layer_idx + 1}: RNA permuted", pad=8)
-        axes[layer_idx, 3].set_title(f"Layer {layer_idx + 1}: Zeroed - Present", pad=8)
-        axes[layer_idx, 4].set_title(f"Layer {layer_idx + 1}: Permuted - Present", pad=8)
+        axes[0].set_title("RNA present", pad=8)
+        axes[1].set_title("RNA zeroed", pad=8)
+        axes[2].set_title("RNA permuted", pad=8)
+        axes[3].set_title("Zeroed - Present", pad=8)
+        axes[4].set_title("Permuted - Present", pad=8)
 
         for col_idx in range(5):
-            ax = axes[layer_idx, col_idx]
+            ax = axes[col_idx]
             ax.set_ylabel("Query tokens")
             ax.set_xlabel("Key tokens")
             ax.tick_params(axis="x", which="both", bottom=False, top=False, labelbottom=False)
@@ -529,14 +524,11 @@ def _plot_attention_source_comparison(
                 MODALITY_COLORS = MODALITY_COLORS,
             )
 
-    # Dedicated colorbar axes placed on opposite sides of the heatmap grid.
-    cax_main = fig.add_axes([0.00, 0.22, 0.014, 0.58])
-    cax_delta = fig.add_axes([0.94, 0.22, 0.014, 0.58])
-
-    if im0 is not None:
+        # Dedicated colorbar axes placed on opposite sides of each layer figure.
+        cax_main = fig.add_axes([0.00, 0.24, 0.014, 0.56])
+        cax_delta = fig.add_axes([0.92, 0.24, 0.014, 0.56])
         cb_main = fig.colorbar(im0, cax=cax_main)
         cb_main.set_label("Attention score")
-    if im4 is not None:
         cb_delta = fig.colorbar(im4, cax=cax_delta)
         cb_delta.set_label("Delta")
 
