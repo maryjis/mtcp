@@ -10,7 +10,7 @@ model:
     return_attention: true
 
 base:
-    project_ids: ["BRCA"] #["GBM", "LGG"]
+    project_ids: null #["BRCA"] #["GBM", "LGG"]
     device: 'cuda:1'
     remove_nan_column: 'WSI_initial'
     batch_size: 8 #to compute stattest on larger amount of losses

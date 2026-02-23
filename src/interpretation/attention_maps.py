@@ -367,6 +367,65 @@ def _draw_diagonal_token_callouts(
         )
 
 
+def _resolve_token_location(
+    token_index: int,
+    intervals: dict[str, tuple[int, int]],
+    modality_order: tuple[str, ...],
+) -> tuple[str | None, int | None]:
+    for modality in modality_order:
+        if modality not in intervals:
+            continue
+
+        start, end = intervals[modality]
+        start = int(start)
+        end = int(end)
+        if start <= token_index < end:
+            return modality, token_index - start
+
+    return None, None
+
+
+def _build_top_key_rows(
+    tick_positions: list[int],
+    tick_labels: list[str],
+    attention_scores: np.ndarray,
+    intervals: dict[str, tuple[int, int]],
+    modality_order: tuple[str, ...],
+    modality_names: dict[str, str],
+    token_index_to_description: dict[int, str] | None,
+    delta_scores: np.ndarray | None = None,
+) -> list[dict[str, int | float | str | None]]:
+    token_index_to_description = token_index_to_description or {}
+    rows: list[dict[str, int | float | str | None]] = []
+
+    for token_idx, token_label in zip(tick_positions, tick_labels):
+        token_idx = int(token_idx)
+        if token_idx < 0 or token_idx >= attention_scores.shape[0]:
+            continue
+
+        modality, local_token_index = _resolve_token_location(
+            token_index=token_idx,
+            intervals=intervals,
+            modality_order=modality_order,
+        )
+        modality_name = "Unknown" if modality is None else modality_names.get(modality, modality.upper())
+        gene_cluster_name = token_index_to_description.get(token_idx) or token_label
+
+        row = {
+            "token_index": token_idx,
+            "modality": modality_name,
+            "local_token_index": local_token_index,
+            "gene_cluster_name": str(gene_cluster_name),
+            "mean_attention_score": float(attention_scores[token_idx]),
+        }
+        if delta_scores is not None and 0 <= token_idx < delta_scores.shape[0]:
+            row["mean_delta_score"] = float(delta_scores[token_idx])
+        rows.append(row)
+
+    rows.sort(key=lambda item: (-float(item["mean_attention_score"]), int(item["token_index"])))
+    return rows
+
+
 def _plot_attention_source_comparison(
     source_name: str,
     mean_heatmaps_present,
@@ -386,10 +445,11 @@ def _plot_attention_source_comparison(
         "dnam": "limegreen",
         "wsi": "orange",
     },
+    on_layer_rendered=None,
 ):
     if len(mean_heatmaps_present) == 0 and len(mean_heatmaps_zeroed) == 0 and len(mean_heatmaps_permuted) == 0:
         print(f"No attentions found for source='{source_name}'.")
-        return
+        return []
 
     if len(mean_heatmaps_present) != len(mean_heatmaps_zeroed):
         raise RuntimeError(
@@ -419,6 +479,7 @@ def _plot_attention_source_comparison(
         delta_vmin = -1e-12
 
     interval_text = _format_modality_ranges(intervals, MODALITY_ORDER=MODALITY_ORDER, MODALITY_NAMES=MODALITY_NAMES)
+    per_layer_top_key_rows = []
     for layer_idx in range(num_layers):
         fig, axes = plt.subplots(1, 5, figsize=(20, 7))
         fig.subplots_adjust(left=0.07, right=0.90, bottom=0.05, top=0.90, wspace=0.10)
@@ -441,6 +502,10 @@ def _plot_attention_source_comparison(
             "zeroed": heat_zeroed.mean(axis=0),
             "permuted": heat_permuted.mean(axis=0),
         }
+        delta_key_scores_by_name = {
+            "zeroed_minus_present": heat_delta_zeroed.mean(axis=0),
+            "permuted_minus_present": heat_delta_permuted.mean(axis=0),
+        }
         for heatmap_name, key_scores in key_scores_by_name.items():
             top_ticks_by_name[heatmap_name] = _get_top_key_token_ticks(
                 key_scores=key_scores,
@@ -457,6 +522,36 @@ def _plot_attention_source_comparison(
             3: top_ticks_by_name["zeroed"],
             4: top_ticks_by_name["permuted"],
         }
+        layer_tables_by_heatmap = {}
+        heatmap_table_specs = (
+            ("RNA present", "present", None),
+            ("RNA zeroed", "zeroed", None),
+            ("RNA permuted", "permuted", None),
+            ("Zeroed - Present", "zeroed", "zeroed_minus_present"),
+            ("Permuted - Present", "permuted", "permuted_minus_present"),
+        )
+        for table_name, attention_key, delta_key in heatmap_table_specs:
+            tick_positions, tick_labels = top_ticks_by_name.get(attention_key, ([], []))
+            layer_tables_by_heatmap[table_name] = _build_top_key_rows(
+                tick_positions=tick_positions,
+                tick_labels=tick_labels,
+                attention_scores=key_scores_by_name[attention_key],
+                intervals=intervals,
+                modality_order=MODALITY_ORDER,
+                modality_names=MODALITY_NAMES,
+                token_index_to_description=token_index_to_description,
+                delta_scores=(
+                    delta_key_scores_by_name.get(delta_key)
+                    if delta_key is not None
+                    else None
+                ),
+            )
+        per_layer_top_key_rows.append(
+            {
+                "layer_index": layer_idx + 1,
+                "tables_by_heatmap": layer_tables_by_heatmap,
+            }
+        )
 
         im0 = axes[0].imshow(
             heat_present,
@@ -532,4 +627,8 @@ def _plot_attention_source_comparison(
         cb_delta = fig.colorbar(im4, cax=cax_delta)
         cb_delta.set_label("Delta")
 
-    # plt.show()
+        plt.show()
+        if on_layer_rendered is not None:
+            on_layer_rendered(layer_idx + 1, layer_tables_by_heatmap)
+
+    return per_layer_top_key_rows

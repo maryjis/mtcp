@@ -335,7 +335,31 @@ token_intervals_attention_by_split = {
 }
 
 # %%
+from IPython.display import Markdown, display
+
+
+def _display_top_attention_tables(layer_index, tables_by_heatmap, source_title):
+    display(Markdown(f"**{source_title} | Layer {layer_index} | Top key tokens by mean attention score**"))
+    for heatmap_name, rows in tables_by_heatmap.items():
+        df = pd.DataFrame(rows)
+        if df.empty:
+            continue
+        df = df.sort_values("mean_attention_score", ascending=False).reset_index(drop=True)
+        ordered_columns = [
+            "gene_cluster_name",
+            "mean_attention_score",
+            "mean_delta_score",
+            "modality",
+            "token_index",
+            "local_token_index",
+        ]
+        available_columns = [column_name for column_name in ordered_columns if column_name in df.columns]
+        display(Markdown(f"`{heatmap_name}`"))
+        display(df[available_columns])
+
+
 for _source in ATTN_SOURCES:
+    _source_title = "Encoder Fusion" if _source == "encoder_fusion" else "Decoder"
     _intervals = (
         token_intervals_attention_by_split["rna_present"].get(_source)
         or token_intervals_attention_by_split["rna_zeroed"].get(_source)
@@ -357,10 +381,14 @@ for _source in ATTN_SOURCES:
         MODALITY_ORDER=MODALITY_ORDER,
         MODALITY_NAMES=MODALITY_NAMES,
         MODALITY_COLORS=MODALITY_COLORS,
+        on_layer_rendered=(
+            lambda layer_index, tables_by_heatmap, source_title=_source_title: _display_top_attention_tables(
+                layer_index=layer_index,
+                tables_by_heatmap=tables_by_heatmap,
+                source_title=source_title,
+            )
+        ),
     )
-    # plt.tight_layout()
-    plt.show()
 
 # %%
-
 
