@@ -539,6 +539,7 @@ def _resolve_token_location(
     intervals: dict[str, tuple[int, int]],
     modality_order: tuple[str, ...],
 ) -> tuple[str | None, int | None]:
+    """Map a global token index to modality and modality-local index."""
     for modality in modality_order:
         if modality not in intervals:
             continue
@@ -562,6 +563,7 @@ def _build_top_key_rows(
     token_index_to_description: dict[int, str] | None,
     delta_scores: np.ndarray | None = None,
 ) -> list[dict[str, int | float | str | None]]:
+    """Build rows for top-key token tables used in attention visual analysis."""
     token_index_to_description = token_index_to_description or {}
     rows: list[dict[str, int | float | str | None]] = []
 

@@ -373,24 +373,41 @@ token_intervals_attention_by_split = {
 # %%
 from IPython.display import Markdown, display
 
-def _display_top_attention_tables(layer_index, tables_by_heatmap, source_title):
-    display(Markdown(f"**{source_title} | Layer {layer_index} | Top key tokens by mean attention score**"))
-    for heatmap_name, rows in tables_by_heatmap.items():
-        df = pd.DataFrame(rows)
-        if df.empty:
+def _build_rna_present_top10_evolution_table(layer_tables, top_n: int = 10):
+    """Build a wide table with top RNA-present keys for each layer.
+
+    Args:
+        layer_tables: Output list returned by `_plot_attention_source_comparison`.
+        top_n: Number of top tokens to keep per layer.
+
+    Returns:
+        Pandas DataFrame with pairs of columns per layer:
+        `gene_cluster_name_<layer>`, `mean_attention_score_<layer>`.
+    """
+    table_columns = {}
+    for layer_payload in layer_tables:
+        layer_index = int(layer_payload["layer_index"])
+        layer_rows = layer_payload.get("tables_by_heatmap", {}).get("RNA present", [])
+        layer_df = pd.DataFrame(layer_rows)
+        if layer_df.empty:
+            table_columns[f"gene_cluster_name_{layer_index}"] = [None] * top_n
+            table_columns[f"mean_attention_score_{layer_index}"] = [None] * top_n
             continue
-        df = df.sort_values("mean_attention_score", ascending=False).reset_index(drop=True)
-        ordered_columns = [
-            "gene_cluster_name",
-            "mean_attention_score",
-            "mean_delta_score",
-            "modality",
-            "token_index",
-            "local_token_index",
-        ]
-        available_columns = [column_name for column_name in ordered_columns if column_name in df.columns]
-        display(Markdown(f"`{heatmap_name}`"))
-        display(df[available_columns])
+
+        layer_df = layer_df.sort_values("mean_attention_score", ascending=False).head(top_n).reset_index(drop=True)
+        gene_names = layer_df["gene_cluster_name"].tolist()
+        scores = layer_df["mean_attention_score"].tolist()
+        gene_names += [None] * max(0, top_n - len(gene_names))
+        scores += [None] * max(0, top_n - len(scores))
+        table_columns[f"gene_cluster_name_{layer_index}"] = gene_names
+        table_columns[f"mean_attention_score_{layer_index}"] = scores
+
+    return pd.DataFrame(table_columns)
+
+pd.set_option("display.max_colwidth", None)
+pd.set_option("display.max_rows", None)
+pd.set_option("display.max_columns", None)
+pd.set_option("display.float_format", lambda value: f"{value:.4f}")
 
 for _source in ATTN_SOURCES:
     _source_title = "Encoder Fusion" if _source == "encoder_fusion" else "Decoder"
@@ -405,7 +422,7 @@ for _source in ATTN_SOURCES:
         rna_descriptions=rna_cluster_descriptions,
         dnam_descriptions=dnam_cluster_descriptions,
     )
-    _plot_attention_source_comparison(
+    _layer_tables = _plot_attention_source_comparison(
         source_name=_source,
         mean_heatmaps_present=mean_attention_heatmaps_by_split["rna_present"].get(_source, []),
         mean_heatmaps_zeroed=mean_attention_heatmaps_by_split["rna_zeroed"].get(_source, []),
@@ -415,17 +432,10 @@ for _source in ATTN_SOURCES:
         MODALITY_ORDER=MODALITY_ORDER,
         MODALITY_NAMES=MODALITY_NAMES,
         MODALITY_COLORS=MODALITY_COLORS,
-        on_layer_rendered=(
-            lambda layer_index, tables_by_heatmap, source_title=_source_title: _display_top_attention_tables(
-                layer_index=layer_index,
-                tables_by_heatmap=tables_by_heatmap,
-                source_title=source_title,
-            )
-        ),
     )
-
-
-# %%
+    _evolution_df = _build_rna_present_top10_evolution_table(layer_tables=_layer_tables, top_n=10)
+    display(Markdown(f"**{_source_title} | RNA present top-10 evolution across layers**"))
+    display(_evolution_df)
 
 
 
