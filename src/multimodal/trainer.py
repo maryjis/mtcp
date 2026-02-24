@@ -1,4 +1,5 @@
 from collections import defaultdict
+import os
 import pandas as pd
 from omegaconf import DictConfig, OmegaConf
 from typing import Dict
@@ -54,6 +55,19 @@ class MultiModalTrainer(Trainer):
 #     return items, masks
 
 class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
+    def _build_parallel_dataloader_kwargs(self):
+        """Build DataLoader kwargs for configurable CPU-side loading parallelism."""
+        requested_workers = int(self.cfg.base.get("num_workers", 0) or 0)
+        num_workers = min(requested_workers, os.cpu_count() or 0)
+
+        dataloader_kwargs = {
+            "num_workers": num_workers,
+            "pin_memory": str(self.cfg.base.device).startswith("cuda"),
+        }
+        if num_workers > 0:
+            dataloader_kwargs["persistent_workers"] = True
+            dataloader_kwargs["prefetch_factor"] = max(1, int(self.cfg.base.get("prefetch_factor", 2)))
+        return dataloader_kwargs
     
     def __init__(self, splits: Dict[str,pd.DataFrame], cfg: DictConfig, tracker: ExperimentTracker, fold_index: int =0):
         super().__init__(splits, cfg, tracker, fold_index)
@@ -67,8 +81,16 @@ class MultiModalMAETrainer(MultiModalTrainer, UnimodalMAETrainer):
                         "mri" : None, "wsi" : None }
 
         self.datasets = self.initialise_datasets(splits, self.cfg.base.modalities, self.preproc, transforms)
-        self.dataloaders = {split: DataLoader(self.datasets[split],shuffle=True if split == "train" else False, batch_size=cfg.base.batch_size, drop_last=True if split == "train" else False)
-                            for split in splits.keys()}
+        dataloader_kwargs = self._build_parallel_dataloader_kwargs()
+        self.dataloaders = {
+            split: DataLoader(
+                self.datasets[split],
+                shuffle=True if split == "train" else False, 
+                batch_size=cfg.base.batch_size, 
+                drop_last=True if split == "train" else False, 
+                **dataloader_kwargs
+            ) for split in splits.keys()
+        }
         print("Device from config: ", cfg.base.device)
         self.model =self.initialise_models().to(cfg.base.device)
         print(self.model)

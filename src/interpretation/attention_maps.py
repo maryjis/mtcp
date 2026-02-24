@@ -3,6 +3,12 @@ import matplotlib.pyplot as plt
 import torch
 import tqdm
 
+##################################################################
+# attention maps collection
+##################################################################
+
+_RNA_ATTENTION_MODES = ("rna_present", "rna_zeroed", "rna_permuted")
+
 def _as_layer_tuple(value):
     if value is None:
         return tuple()
@@ -75,6 +81,245 @@ def _to_sample_attention_matrices(layer_attention: torch.Tensor) -> torch.Tensor
     return att
 
 
+def _compute_batch_attention_sum(layer_attention: torch.Tensor) -> tuple[torch.Tensor, int]:
+    """Reduce one attention layer to a CPU batch sum and sample count.
+
+    The reduction is performed on the source device first (including head
+    averaging for 4D tensors), then moved to CPU as float64 for stable
+    cross-batch accumulation.
+    """
+    att = layer_attention.detach().float()
+
+    if att.dim() == 4:
+        # [B, heads, q_tokens, k_tokens] -> sum over batch of mean-over-heads maps.
+        sample_count = int(att.shape[0])
+        batch_sum = att.mean(dim=1).sum(dim=0)
+    elif att.dim() == 3:
+        # [B, q_tokens, k_tokens] -> sum over batch.
+        sample_count = int(att.shape[0])
+        batch_sum = att.sum(dim=0)
+    elif att.dim() == 2:
+        # [q_tokens, k_tokens] -> one-sample batch sum.
+        sample_count = 1
+        batch_sum = att
+    else:
+        raise ValueError(f"Unexpected attention tensor shape: {tuple(att.shape)}")
+
+    return batch_sum.to(device="cpu", dtype=torch.float64), sample_count
+
+
+def _init_attention_state(
+    ATTN_SOURCES: tuple[str, ...],
+    collect_raw_attention_payloads: bool,
+):
+    """Initialize mutable accumulators used across batches for each source."""
+    return {
+        "raw_attention_payloads": [] if collect_raw_attention_payloads else None,
+        "layer_sums": {source: [] for source in ATTN_SOURCES},
+        "layer_counts": {source: [] for source in ATTN_SOURCES},
+        "token_intervals": {source: {} for source in ATTN_SOURCES},
+        "found_attention_payload": False,
+    }
+
+
+def _accumulate_attention_payload(
+    payload,
+    state,
+    ATTN_SOURCES: tuple[str, ...],
+):
+    """Accumulate one normalized attention payload into the running state."""
+    if state["raw_attention_payloads"] is not None:
+        payload_cpu = {
+            "encoder_fusion": tuple(att.detach().cpu() for att in payload["encoder_fusion"]),
+            "decoder": tuple(att.detach().cpu() for att in payload["decoder"]),
+            "token_intervals": {
+                "encoder_fusion": dict(payload["token_intervals"]["encoder_fusion"]),
+                "decoder": dict(payload["token_intervals"]["decoder"]),
+            },
+        }
+        state["raw_attention_payloads"].append(payload_cpu)
+
+    layer_sums = state["layer_sums"]
+    layer_counts = state["layer_counts"]
+    token_intervals = state["token_intervals"]
+
+    for source in ATTN_SOURCES:
+        layers = payload[source]
+        if len(layers) == 0:
+            continue
+
+        state["found_attention_payload"] = True
+
+        if not token_intervals[source]:
+            token_intervals[source] = dict(payload["token_intervals"].get(source, {}))
+
+        if len(layer_sums[source]) == 0:
+            layer_sums[source] = [None] * len(layers)
+            layer_counts[source] = [0] * len(layers)
+        elif len(layers) != len(layer_sums[source]):
+            raise RuntimeError(
+                f"Number of {source} attention layers changed across batches: "
+                f"{len(layer_sums[source])} -> {len(layers)}"
+            )
+
+        for layer_idx, layer_att in enumerate(layers):
+            batch_sum, sample_count = _compute_batch_attention_sum(layer_att)
+
+            if layer_sums[source][layer_idx] is None:
+                layer_sums[source][layer_idx] = batch_sum
+            else:
+                if layer_sums[source][layer_idx].shape != batch_sum.shape:
+                    raise RuntimeError(
+                        f"Attention shape mismatch in {source}, layer {layer_idx + 1}: "
+                        f"{tuple(layer_sums[source][layer_idx].shape)} vs {tuple(batch_sum.shape)}"
+                    )
+                layer_sums[source][layer_idx] += batch_sum
+
+            layer_counts[source][layer_idx] += sample_count
+
+
+def _finalize_attention_state(
+    state,
+    model,
+    split_name: str,
+    mode_label: str,
+    ATTN_SOURCES: tuple[str, ...],
+):
+    """Finalize accumulated state into mean heatmaps and token intervals."""
+    if not state["found_attention_payload"]:
+        raise RuntimeError(
+            f"No attention payloads were found in outputs.attentions on the '{split_name}' dataset ({mode_label})."
+        )
+
+    layer_sums = state["layer_sums"]
+    layer_counts = state["layer_counts"]
+    token_intervals = state["token_intervals"]
+
+    mean_heatmaps = {source: [] for source in ATTN_SOURCES}
+    for source in ATTN_SOURCES:
+        if len(layer_sums[source]) == 0:
+            continue
+
+        mean_heatmaps[source] = [
+            (layer_sums[source][i] / layer_counts[source][i]).to(torch.float32)
+            for i in range(len(layer_sums[source]))
+        ]
+
+    if "decoder" in token_intervals and not token_intervals["decoder"]:
+        token_intervals["decoder"] = _default_decoder_token_intervals(model)
+    if "encoder_fusion" in token_intervals and not token_intervals["encoder_fusion"]:
+        token_intervals["encoder_fusion"] = dict(token_intervals.get("decoder", {}))
+
+    return state["raw_attention_payloads"], mean_heatmaps, token_intervals
+
+
+def _apply_rna_mode(
+    values_batch: dict[str, torch.Tensor],
+    rna_mode: str,
+    permutation: torch.Tensor | None,
+):
+    """Return batch values transformed according to the selected RNA mode."""
+    if rna_mode == "rna_present" or "rna" not in values_batch:
+        return values_batch
+
+    mode_values_batch = dict(values_batch)
+    if rna_mode == "rna_zeroed":
+        mode_values_batch["rna"] = torch.zeros_like(values_batch["rna"])
+    elif rna_mode == "rna_permuted":
+        if permutation is None:
+            batch_size = values_batch["rna"].shape[0]
+            permutation = torch.randperm(batch_size, device=values_batch["rna"].device)
+        mode_values_batch["rna"] = values_batch["rna"][permutation]
+    else:
+        raise ValueError(f"Unsupported RNA attention mode: '{rna_mode}'")
+
+    return mode_values_batch
+
+
+def _collect_attention_heatmaps_for_rna_modes(
+    model,
+    dataloader,
+    device: str,
+    split_name: str = "test",
+    rna_modes: tuple[str, ...] = _RNA_ATTENTION_MODES,
+    collect_raw_attention_payloads: bool = False,
+    ATTN_SOURCES: tuple[str, ...] = ("encoder_fusion", "decoder"),
+):
+    """Collect attention heatmaps for one or more RNA modes in one pass.
+
+    For each incoming batch, the function runs model inference for all requested
+    RNA modes (`rna_present`, `rna_zeroed`, `rna_permuted`) and maintains
+    independent accumulators per mode.
+    """
+    if len(rna_modes) == 0:
+        raise ValueError("At least one RNA mode must be provided.")
+
+    mode_order = tuple(dict.fromkeys(rna_modes))
+    unknown_modes = set(mode_order) - set(_RNA_ATTENTION_MODES)
+    if unknown_modes:
+        raise ValueError(f"Unsupported RNA attention modes: {sorted(unknown_modes)}")
+
+    mode_labels = {
+        "rna_present": "RNA=orig",
+        "rna_zeroed": "RNA=0",
+        "rna_permuted": "RNA=perm",
+    }
+    if len(mode_order) == 1:
+        desc = f"{split_name} inference | {mode_labels[mode_order[0]]}"
+    else:
+        desc = f"{split_name} inference | " + " / ".join(mode_labels[mode] for mode in mode_order)
+
+    mode_states = {
+        mode: _init_attention_state(
+            ATTN_SOURCES=ATTN_SOURCES,
+            collect_raw_attention_payloads=collect_raw_attention_payloads,
+        )
+        for mode in mode_order
+    }
+
+    model.eval()
+    with torch.no_grad():
+        for values_batch, masks_batch in tqdm.tqdm(dataloader, desc=desc):
+            values_batch = {modality: value.to(device) for modality, value in values_batch.items()}
+            masks_batch = {modality: value.to(device) for modality, value in masks_batch.items()}
+
+            permutation = None
+            if "rna_permuted" in mode_order and "rna" in values_batch:
+                batch_size = values_batch["rna"].shape[0]
+                permutation = torch.randperm(batch_size, device=values_batch["rna"].device)
+
+            for mode in mode_order:
+                mode_values_batch = _apply_rna_mode(
+                    values_batch=values_batch,
+                    rna_mode=mode,
+                    permutation=permutation,
+                )
+                outputs = model(mode_values_batch, masks_batch)
+                payload = _normalize_attention_payload(outputs.attentions)
+                _accumulate_attention_payload(
+                    payload=payload,
+                    state=mode_states[mode],
+                    ATTN_SOURCES=ATTN_SOURCES,
+                )
+
+    results = {}
+    for mode in mode_order:
+        raw_attention_payloads, mean_heatmaps, token_intervals = _finalize_attention_state(
+            state=mode_states[mode],
+            model=model,
+            split_name=split_name,
+            mode_label=mode_labels[mode],
+            ATTN_SOURCES=ATTN_SOURCES,
+        )
+        results[mode] = {
+            "raw_attention_payloads": raw_attention_payloads,
+            "mean_heatmaps": mean_heatmaps,
+            "token_intervals": token_intervals,
+        }
+
+    return results
+
+
 def _default_decoder_token_intervals(model):
     intervals = {}
     start = 1  # decoder CLS is index 0
@@ -98,110 +343,32 @@ def _collect_attention_heatmaps(
     if zero_rna and permute_rna:
         raise ValueError("Choose only one RNA perturbation mode: zero_rna or permute_rna.")
 
-    raw_attention_payloads = [] if collect_raw_attention_payloads else None
-    layer_sums = {source: [] for source in ATTN_SOURCES}
-    layer_counts = {source: [] for source in ATTN_SOURCES}
-    token_intervals = {source: {} for source in ATTN_SOURCES}
-    found_attention_payload = False
-
     if zero_rna:
-        desc = f"{split_name} inference | RNA=0"
+        rna_mode = "rna_zeroed"
     elif permute_rna:
-        desc = f"{split_name} inference | RNA=perm"
+        rna_mode = "rna_permuted"
     else:
-        desc = f"{split_name} inference | RNA=orig"
-    model.eval()
+        rna_mode = "rna_present"
 
-    with torch.no_grad():
-        for values_batch, masks_batch in tqdm.tqdm(dataloader, desc=desc):
-            values_batch = {modality: value.to(device) for modality, value in values_batch.items()}
-            masks_batch = {modality: value.to(device) for modality, value in masks_batch.items()}
+    mode_results = _collect_attention_heatmaps_for_rna_modes(
+        model=model,
+        dataloader=dataloader,
+        device=device,
+        split_name=split_name,
+        rna_modes=(rna_mode,),
+        collect_raw_attention_payloads=collect_raw_attention_payloads,
+        ATTN_SOURCES=ATTN_SOURCES,
+    )
+    selected_mode_results = mode_results[rna_mode]
+    return (
+        selected_mode_results["raw_attention_payloads"],
+        selected_mode_results["mean_heatmaps"],
+        selected_mode_results["token_intervals"],
+    )
 
-            if zero_rna and "rna" in values_batch:
-                values_batch = dict(values_batch)
-                values_batch["rna"] = torch.zeros_like(values_batch["rna"])
-            elif permute_rna and "rna" in values_batch:
-                values_batch = dict(values_batch)
-                batch_size = values_batch["rna"].shape[0]
-                permutation = torch.randperm(batch_size, device=values_batch["rna"].device)
-                values_batch["rna"] = values_batch["rna"][permutation]
-
-            outputs = model(values_batch, masks_batch)
-            payload = _normalize_attention_payload(outputs.attentions)
-
-            if collect_raw_attention_payloads:
-                payload_cpu = {
-                    "encoder_fusion": tuple(att.detach().cpu() for att in payload["encoder_fusion"]),
-                    "decoder": tuple(att.detach().cpu() for att in payload["decoder"]),
-                    "token_intervals": {
-                        "encoder_fusion": dict(payload["token_intervals"]["encoder_fusion"]),
-                        "decoder": dict(payload["token_intervals"]["decoder"]),
-                    },
-                }
-                raw_attention_payloads.append(payload_cpu)
-
-            for source in ATTN_SOURCES:
-                layers = payload[source]
-                if len(layers) == 0:
-                    continue
-
-                found_attention_payload = True
-
-                if not token_intervals[source]:
-                    token_intervals[source] = dict(payload["token_intervals"].get(source, {}))
-
-                if len(layer_sums[source]) == 0:
-                    layer_sums[source] = [None] * len(layers)
-                    layer_counts[source] = [0] * len(layers)
-                elif len(layers) != len(layer_sums[source]):
-                    raise RuntimeError(
-                        f"Number of {source} attention layers changed across batches: "
-                        f"{len(layer_sums[source])} -> {len(layers)}"
-                    )
-
-                for layer_idx, layer_att in enumerate(layers):
-                    sample_mats = _to_sample_attention_matrices(layer_att)
-                    batch_sum = sample_mats.sum(dim=0).to(torch.float64)
-
-                    if layer_sums[source][layer_idx] is None:
-                        layer_sums[source][layer_idx] = batch_sum
-                    else:
-                        if layer_sums[source][layer_idx].shape != batch_sum.shape:
-                            raise RuntimeError(
-                                f"Attention shape mismatch in {source}, layer {layer_idx + 1}: "
-                                f"{tuple(layer_sums[source][layer_idx].shape)} vs {tuple(batch_sum.shape)}"
-                            )
-                        layer_sums[source][layer_idx] += batch_sum
-
-                    layer_counts[source][layer_idx] += sample_mats.shape[0]
-
-    if not found_attention_payload:
-        if zero_rna:
-            mode = "RNA=0"
-        elif permute_rna:
-            mode = "RNA=perm"
-        else:
-            mode = "RNA=orig"
-        raise RuntimeError(
-            f"No attention payloads were found in outputs.attentions on the '{split_name}' dataset ({mode})."
-        )
-
-    mean_heatmaps = {source: [] for source in ATTN_SOURCES}
-    for source in ATTN_SOURCES:
-        if len(layer_sums[source]) == 0:
-            continue
-
-        mean_heatmaps[source] = [
-            (layer_sums[source][i] / layer_counts[source][i]).to(torch.float32)
-            for i in range(len(layer_sums[source]))
-        ]
-
-    if not token_intervals["decoder"]:
-        token_intervals["decoder"] = _default_decoder_token_intervals(model)
-    if not token_intervals["encoder_fusion"]:
-        token_intervals["encoder_fusion"] = dict(token_intervals["decoder"])
-
-    return raw_attention_payloads, mean_heatmaps, token_intervals
+##################################################################
+# plotting
+##################################################################
 
 def _format_modality_ranges(
     intervals, 

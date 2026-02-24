@@ -10,6 +10,8 @@ model:
     return_attention: true
 
 base:
+    num_workers: 16 #dataloader workers
+    prefetch_factor: 2 #dataloader prefetch factor
     project_ids: null #["BRCA"] #["GBM", "LGG"]
     device: 'cuda:1'
     remove_nan_column: 'WSI_initial'

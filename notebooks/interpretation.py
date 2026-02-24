@@ -65,7 +65,11 @@ torch.cuda.empty_cache()
 torch.cuda.reset_peak_memory_stats()
 
 # %%
-trainer_cache_path = f".cache/trainer_{'_'.join(cfg.base.project_ids)}.joblib"
+if cfg.base.project_ids:
+    trainer_cache_path = f".cache/trainer_{'_'.join(cfg.base.project_ids)}.joblib" 
+else:
+    trainer_cache_path = f".cache/trainer_all.joblib"
+    
 if os.path.exists(trainer_cache_path):
     trainer = joblib.load(trainer_cache_path)
     print(f"Trainer is loaded from {trainer_cache_path}")
@@ -102,15 +106,16 @@ else:
     tracker = DummyExperimentTracker(cfg)
     trainer = MultiModalMAETrainer(splits, cfg, tracker, fold_ind)
     joblib.dump(trainer, trainer_cache_path)
+    print(f"Trainer is saved in {trainer_cache_path}")
 
 # %%
-trainer.model.to(device);
+trainer.model.to(device); #to move model to need device when it doesn't match with device in saved trainer
 
 # %% [markdown]
 # # Inference
 
 # %%
-split_name = "test"  # options: "train", "val", "test"
+split_name = "train"  # options: "train", "val", "test"
 assert split_name in trainer.dataloaders, f"Unknown split_name='{split_name}'. Available splits: {list(trainer.dataloaders.keys())}"
 print(f"Using split: {split_name}")
 
@@ -235,7 +240,11 @@ _plot_wsi_comparison_grid(rows=rows)
 # ## Attentions
 
 # %%
-from src.interpretation.attention_maps import _collect_attention_heatmaps, _plot_attention_source_comparison
+from torch.utils.data import DataLoader
+from src.interpretation.attention_maps import (
+    _collect_attention_heatmaps_for_rna_modes,
+    _plot_attention_source_comparison,
+)
 
 if hasattr(cfg, "model"):
     with open_dict(cfg):
@@ -292,35 +301,62 @@ def _build_token_index_to_description_map(
 
     return token_index_to_description_map
 
-_, mean_heatmaps_present, token_intervals_present = _collect_attention_heatmaps(
+def _resolve_attention_num_workers(cfg) -> int:
+    requested_workers = int(cfg.base.get("num_workers", 0) or 0)
+    return min(os.cpu_count() or 0, requested_workers)
+
+def _build_attention_dataloader(
+    base_dataloader,
+    cfg,
+    device: str,
+):
+    num_workers = _resolve_attention_num_workers(cfg)
+    dataloader_kwargs = {
+        "dataset": base_dataloader.dataset,
+        "batch_size": base_dataloader.batch_size,
+        "shuffle": False,
+        "drop_last": bool(base_dataloader.drop_last),
+        "collate_fn": base_dataloader.collate_fn,
+        "num_workers": num_workers,
+        "pin_memory": str(device).startswith("cuda"),
+    }
+    if num_workers > 0:
+        dataloader_kwargs["persistent_workers"] = True
+        dataloader_kwargs["prefetch_factor"] = max(1, int(cfg.base.get("prefetch_factor", 2)))
+    return DataLoader(**dataloader_kwargs)
+
+
+attention_dataloader = _build_attention_dataloader(
+    base_dataloader=trainer.dataloaders[split_name],
+    cfg=cfg,
+    device=device,
+)
+
+attention_results = _collect_attention_heatmaps_for_rna_modes(
     model=trainer.model,
-    dataloader=trainer.dataloaders[split_name],
+    dataloader=attention_dataloader,
     device=device,
     split_name=split_name,
-    zero_rna=False,
+    rna_modes=("rna_present", "rna_zeroed", "rna_permuted"),
     collect_raw_attention_payloads=False,
     ATTN_SOURCES=ATTN_SOURCES,
 )
 
-_, mean_heatmaps_zeroed, token_intervals_zeroed = _collect_attention_heatmaps(
-    model=trainer.model,
-    dataloader=trainer.dataloaders[split_name],
-    device=device,
-    split_name=split_name,
-    zero_rna=True,
-    collect_raw_attention_payloads=False,
-    ATTN_SOURCES=ATTN_SOURCES,
-)
+# %%
+import joblib
+joblib.dump(attention_results, ".cache/attention_results.joblib")
 
-_, mean_heatmaps_permuted, token_intervals_permuted = _collect_attention_heatmaps(
-    model=trainer.model,
-    dataloader=trainer.dataloaders[split_name],
-    device=device,
-    split_name=split_name,
-    permute_rna=True,
-    collect_raw_attention_payloads=False,
-    ATTN_SOURCES=ATTN_SOURCES,
-)
+# %%
+import joblib
+attention_results = joblib.load(".cache/attention_results.joblib")
+
+# %%
+mean_heatmaps_present = attention_results["rna_present"]["mean_heatmaps"]
+token_intervals_present = attention_results["rna_present"]["token_intervals"]
+mean_heatmaps_zeroed = attention_results["rna_zeroed"]["mean_heatmaps"]
+token_intervals_zeroed = attention_results["rna_zeroed"]["token_intervals"]
+mean_heatmaps_permuted = attention_results["rna_permuted"]["mean_heatmaps"]
+token_intervals_permuted = attention_results["rna_permuted"]["token_intervals"]
 
 mean_attention_heatmaps_by_split = {
     "rna_present": mean_heatmaps_present,
@@ -336,7 +372,6 @@ token_intervals_attention_by_split = {
 
 # %%
 from IPython.display import Markdown, display
-
 
 def _display_top_attention_tables(layer_index, tables_by_heatmap, source_title):
     display(Markdown(f"**{source_title} | Layer {layer_index} | Top key tokens by mean attention score**"))
@@ -356,7 +391,6 @@ def _display_top_attention_tables(layer_index, tables_by_heatmap, source_title):
         available_columns = [column_name for column_name in ordered_columns if column_name in df.columns]
         display(Markdown(f"`{heatmap_name}`"))
         display(df[available_columns])
-
 
 for _source in ATTN_SOURCES:
     _source_title = "Encoder Fusion" if _source == "encoder_fusion" else "Decoder"
@@ -390,5 +424,8 @@ for _source in ATTN_SOURCES:
         ),
     )
 
+
 # %%
+
+
 
