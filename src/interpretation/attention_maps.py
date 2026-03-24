@@ -598,9 +598,9 @@ def _build_top_key_rows(
 def _plot_attention_source_comparison(
     source_name: str,
     mean_heatmaps_present,
-    mean_heatmaps_zeroed,
-    mean_heatmaps_permuted,
-    intervals,
+    mean_heatmaps_zeroed=None,
+    mean_heatmaps_permuted=None,
+    intervals=None,
     token_index_to_description: dict[int, str] | None = None,
     top_k_per_modality: int = 5,
     MODALITY_ORDER : tuple[str, ...] = ("rna", "dnam", "wsi"),
@@ -616,65 +616,133 @@ def _plot_attention_source_comparison(
     },
     on_layer_rendered=None,
 ):
+    mean_heatmaps_present = _as_layer_tuple(mean_heatmaps_present)
+    mean_heatmaps_zeroed = _as_layer_tuple(mean_heatmaps_zeroed)
+    mean_heatmaps_permuted = _as_layer_tuple(mean_heatmaps_permuted)
+    intervals = intervals or {}
+
     if len(mean_heatmaps_present) == 0 and len(mean_heatmaps_zeroed) == 0 and len(mean_heatmaps_permuted) == 0:
         print(f"No attentions found for source='{source_name}'.")
         return []
 
-    if len(mean_heatmaps_present) != len(mean_heatmaps_zeroed):
+    if len(mean_heatmaps_present) == 0:
+        raise RuntimeError(
+            f"RNA-present heatmaps are required for source='{source_name}' to build comparison plots."
+        )
+
+    has_zeroed = len(mean_heatmaps_zeroed) > 0
+    has_permuted = len(mean_heatmaps_permuted) > 0
+
+    if has_zeroed and len(mean_heatmaps_present) != len(mean_heatmaps_zeroed):
         raise RuntimeError(
             f"Different number of {source_name} layers between RNA-present and RNA-zeroed runs: "
             f"{len(mean_heatmaps_present)} vs {len(mean_heatmaps_zeroed)}"
         )
-    if len(mean_heatmaps_present) != len(mean_heatmaps_permuted):
+    if has_permuted and len(mean_heatmaps_present) != len(mean_heatmaps_permuted):
         raise RuntimeError(
             f"Different number of {source_name} layers between RNA-present and RNA-permuted runs: "
             f"{len(mean_heatmaps_present)} vs {len(mean_heatmaps_permuted)}"
         )
 
     num_layers = len(mean_heatmaps_present)
-    deltas_zeroed = [mean_heatmaps_zeroed[i] - mean_heatmaps_present[i] for i in range(num_layers)]
-    deltas_permuted = [mean_heatmaps_permuted[i] - mean_heatmaps_present[i] for i in range(num_layers)]
+    deltas_zeroed = (
+        [mean_heatmaps_zeroed[i] - mean_heatmaps_present[i] for i in range(num_layers)]
+        if has_zeroed
+        else []
+    )
+    deltas_permuted = (
+        [mean_heatmaps_permuted[i] - mean_heatmaps_present[i] for i in range(num_layers)]
+        if has_permuted
+        else []
+    )
+
+    heatmaps_by_name = {
+        "present": mean_heatmaps_present,
+    }
+    if has_zeroed:
+        heatmaps_by_name["zeroed"] = mean_heatmaps_zeroed
+        heatmaps_by_name["zeroed_minus_present"] = deltas_zeroed
+    if has_permuted:
+        heatmaps_by_name["permuted"] = mean_heatmaps_permuted
+        heatmaps_by_name["permuted_minus_present"] = deltas_permuted
+
+    panel_specs = [
+        ("RNA present", "present", "present", None, "main"),
+    ]
+    if has_zeroed:
+        panel_specs.extend(
+            [
+                ("RNA zeroed", "zeroed", "zeroed", None, "main"),
+                ("Zeroed - Present", "zeroed_minus_present", "zeroed", "zeroed_minus_present", "delta"),
+            ]
+        )
+    if has_permuted:
+        panel_specs.extend(
+            [
+                ("RNA permuted", "permuted", "permuted", None, "main"),
+                ("Permuted - Present", "permuted_minus_present", "permuted", "permuted_minus_present", "delta"),
+            ]
+        )
 
     common_values = torch.cat(
-        [x.flatten() for x in (mean_heatmaps_present + mean_heatmaps_zeroed + mean_heatmaps_permuted)]
+        [
+            x.flatten()
+            for x in (
+                list(mean_heatmaps_present)
+                + list(mean_heatmaps_zeroed)
+                + list(mean_heatmaps_permuted)
+            )
+        ]
     ).detach().cpu().numpy()
     common_vmin, common_vmax = _percentile_bounds(common_values, low_q=1.0, high_q=99.0)
 
-    delta_values = torch.cat([d.flatten() for d in (deltas_zeroed + deltas_permuted)]).detach().cpu().numpy()
-    delta_vmin, delta_vmax = _percentile_bounds(delta_values, low_q=1.0, high_q=99.0)
-    if delta_vmax <= 0:
-        delta_vmax = 1e-12
-    if delta_vmin >= 0:
-        delta_vmin = -1e-12
+    delta_vmin = None
+    delta_vmax = None
+    if len(deltas_zeroed) > 0 or len(deltas_permuted) > 0:
+        delta_values = torch.cat([d.flatten() for d in (deltas_zeroed + deltas_permuted)]).detach().cpu().numpy()
+        delta_vmin, delta_vmax = _percentile_bounds(delta_values, low_q=1.0, high_q=99.0)
+        if delta_vmax <= 0:
+            delta_vmax = 1e-12
+        if delta_vmin >= 0:
+            delta_vmin = -1e-12
 
     interval_text = _format_modality_ranges(intervals, MODALITY_ORDER=MODALITY_ORDER, MODALITY_NAMES=MODALITY_NAMES)
     per_layer_top_key_rows = []
     for layer_idx in range(num_layers):
-        fig, axes = plt.subplots(1, 5, figsize=(20, 7))
-        fig.subplots_adjust(left=0.07, right=0.90, bottom=0.05, top=0.90, wspace=0.10)
+        num_panels = len(panel_specs)
+        fig, axes = plt.subplots(1, num_panels, figsize=(max(6, 4 * num_panels), 7))
+        if num_panels == 1:
+            axes = np.array([axes])
+
+        fig.subplots_adjust(left=0.07, right=0.80, bottom=0.05, top=0.90, wspace=0.18)
         fig.suptitle(
             f"{source_name} attentions | Layer {layer_idx + 1}\nToken ranges: {interval_text}",
             fontsize=13,
             # y=0.96,
         )
 
-        heat_present = mean_heatmaps_present[layer_idx].numpy()
-        heat_zeroed = mean_heatmaps_zeroed[layer_idx].numpy()
-        heat_permuted = mean_heatmaps_permuted[layer_idx].numpy()
-        heat_delta_zeroed = deltas_zeroed[layer_idx].numpy()
-        heat_delta_permuted = deltas_permuted[layer_idx].numpy()
+        heat_by_name = {
+            heatmap_name: heatmap_layers[layer_idx].detach().cpu().numpy()
+            for heatmap_name, heatmap_layers in heatmaps_by_name.items()
+        }
+        heat_present = heat_by_name["present"]
 
         matrix_size = heat_present.shape[0]
         top_ticks_by_name: dict[str, tuple[list[int], list[str]]] = {}
         key_scores_by_name = {
             "present": heat_present.mean(axis=0),
-            "zeroed": heat_zeroed.mean(axis=0),
-            "permuted": heat_permuted.mean(axis=0),
         }
-        delta_key_scores_by_name = {
-            "zeroed_minus_present": heat_delta_zeroed.mean(axis=0),
-            "permuted_minus_present": heat_delta_permuted.mean(axis=0),
-        }
+        if has_zeroed:
+            key_scores_by_name["zeroed"] = heat_by_name["zeroed"].mean(axis=0)
+        if has_permuted:
+            key_scores_by_name["permuted"] = heat_by_name["permuted"].mean(axis=0)
+
+        delta_key_scores_by_name = {}
+        if has_zeroed:
+            delta_key_scores_by_name["zeroed_minus_present"] = heat_by_name["zeroed_minus_present"].mean(axis=0)
+        if has_permuted:
+            delta_key_scores_by_name["permuted_minus_present"] = heat_by_name["permuted_minus_present"].mean(axis=0)
+
         for heatmap_name, key_scores in key_scores_by_name.items():
             top_ticks_by_name[heatmap_name] = _get_top_key_token_ticks(
                 key_scores=key_scores,
@@ -684,21 +752,12 @@ def _plot_attention_source_comparison(
                 modality_names=MODALITY_NAMES,
                 top_k_per_modality=top_k_per_modality,
             )
-        top_ticks_by_col = {
-            0: top_ticks_by_name["present"],
-            1: top_ticks_by_name["zeroed"],
-            2: top_ticks_by_name["permuted"],
-            3: top_ticks_by_name["zeroed"],
-            4: top_ticks_by_name["permuted"],
-        }
+
         layer_tables_by_heatmap = {}
-        heatmap_table_specs = (
-            ("RNA present", "present", None),
-            ("RNA zeroed", "zeroed", None),
-            ("RNA permuted", "permuted", None),
-            ("Zeroed - Present", "zeroed", "zeroed_minus_present"),
-            ("Permuted - Present", "permuted", "permuted_minus_present"),
-        )
+        heatmap_table_specs = [
+            (table_name, attention_key, delta_key)
+            for table_name, _, attention_key, delta_key, _ in panel_specs
+        ]
         for table_name, attention_key, delta_key in heatmap_table_specs:
             tick_positions, tick_labels = top_ticks_by_name.get(attention_key, ([], []))
             layer_tables_by_heatmap[table_name] = _build_top_key_rows(
@@ -722,55 +781,43 @@ def _plot_attention_source_comparison(
             }
         )
 
-        im0 = axes[0].imshow(
-            heat_present,
-            cmap="viridis",
-            vmin=common_vmin,
-            vmax=common_vmax,
-            aspect="equal",
-        )
-        im1 = axes[1].imshow(
-            heat_zeroed,
-            cmap="viridis",
-            vmin=common_vmin,
-            vmax=common_vmax,
-            aspect="equal",
-        )
-        im2 = axes[2].imshow(
-            heat_permuted,
-            cmap="viridis",
-            vmin=common_vmin,
-            vmax=common_vmax,
-            aspect="equal",
-        )
-        im3 = axes[3].imshow(
-            heat_delta_zeroed,
-            cmap="coolwarm",
-            vmin=delta_vmin,
-            vmax=delta_vmax,
-            aspect="equal",
-        )
-        im4 = axes[4].imshow(
-            heat_delta_permuted,
-            cmap="coolwarm",
-            vmin=delta_vmin,
-            vmax=delta_vmax,
-            aspect="equal",
-        )
-
-        axes[0].set_title("RNA present", pad=8)
-        axes[1].set_title("RNA zeroed", pad=8)
-        axes[2].set_title("RNA permuted", pad=8)
-        axes[3].set_title("Zeroed - Present", pad=8)
-        axes[4].set_title("Permuted - Present", pad=8)
-
-        for col_idx in range(5):
+        main_mappable = None
+        delta_mappable = None
+        main_axes = []
+        delta_axes = []
+        for col_idx, (title, panel_key, attention_key, _, panel_kind) in enumerate(panel_specs):
             ax = axes[col_idx]
+            heat = heat_by_name[panel_key]
+
+            if panel_kind == "main":
+                im = ax.imshow(
+                    heat,
+                    cmap="viridis",
+                    vmin=common_vmin,
+                    vmax=common_vmax,
+                    aspect="equal",
+                )
+                if main_mappable is None:
+                    main_mappable = im
+                main_axes.append(ax)
+            else:
+                im = ax.imshow(
+                    heat,
+                    cmap="coolwarm",
+                    vmin=delta_vmin,
+                    vmax=delta_vmax,
+                    aspect="equal",
+                )
+                if delta_mappable is None:
+                    delta_mappable = im
+                delta_axes.append(ax)
+
+            ax.set_title(title, pad=8)
             ax.set_ylabel("Query tokens")
             ax.set_xlabel("Key tokens")
             ax.tick_params(axis="x", which="both", bottom=False, top=False, labelbottom=False)
             ax.tick_params(axis="y", which="both", left=False, right=False, labelleft=False)
-            top_tick_positions, top_tick_labels = top_ticks_by_col.get(col_idx, ([], []))
+            top_tick_positions, top_tick_labels = top_ticks_by_name.get(attention_key, ([], []))
             if len(top_tick_positions) > 0:
                 # ax.set_xticks(top_tick_positions)
                 # ax.set_xticklabels([str(idx) for idx in top_tick_positions], fontsize=6)
@@ -788,13 +835,26 @@ def _plot_attention_source_comparison(
                 MODALITY_COLORS = MODALITY_COLORS,
             )
 
-        # Dedicated colorbar axes placed on opposite sides of each layer figure.
-        cax_main = fig.add_axes([0.00, 0.24, 0.014, 0.56])
-        cax_delta = fig.add_axes([0.92, 0.24, 0.014, 0.56])
-        cb_main = fig.colorbar(im0, cax=cax_main)
-        cb_main.set_label("Attention score")
-        cb_delta = fig.colorbar(im4, cax=cax_delta)
-        cb_delta.set_label("Delta")
+        colorbar_bottom = min(ax.get_position().y0 for ax in axes)
+        colorbar_top = max(ax.get_position().y1 for ax in axes)
+        colorbar_height = colorbar_top - colorbar_bottom
+        colorbar_width = 0.012
+        colorbar_gap = 0.090
+        colorbar_left = 0.84
+
+        if main_mappable is not None and len(main_axes) > 0:
+            main_cax = fig.add_axes(
+                [colorbar_left, colorbar_bottom, colorbar_width, colorbar_height]
+            )
+            cb_main = fig.colorbar(main_mappable, cax=main_cax)
+            cb_main.set_label("Attention score")
+            colorbar_left += colorbar_width + colorbar_gap
+        if delta_mappable is not None and len(delta_axes) > 0:
+            delta_cax = fig.add_axes(
+                [colorbar_left, colorbar_bottom, colorbar_width, colorbar_height]
+            )
+            cb_delta = fig.colorbar(delta_mappable, cax=delta_cax)
+            cb_delta.set_label("Delta")
 
         plt.show()
         if on_layer_rendered is not None:
