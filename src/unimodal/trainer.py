@@ -7,7 +7,7 @@ from src.unimodal.rna.dataset import OmicsDataset, OmicsSurvivalDataset
 from src.unimodal.dna.models import initialise_dnam_mae_model,  initialise_dnam_model, DNAmMAEForPreTraining
 from src.unimodal.dna.preprocessor import DNAmPreprocessor
 from src.unimodal.cnv.preprocessor import CNVPreprocessor
-from src.unimodal.wsi.datasets import WSIDataset, WSIDataset_patches, SurvivalWSIDataset
+from src.unimodal.wsi.datasets import WSIDataset, WSIDataset_embeddings, WSIDataset_patches, SurvivalWSIDataset
 from src.unimodal.mri.datasets import SurvivalMRIDataset, MRIEmbeddingDataset, MRIDataset, MRISurvivalDataset
 
 from src.unimodal.rna.preprocessor import RNAPreprocessor
@@ -20,7 +20,7 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR   
 from src.unimodal.rna.encoder import initialise_rna_model, initialise_mlp_model, initialise_snn_model
 from src.unimodal.mri.models import MRIEmbeddingEncoder
-from src.unimodal.wsi.models import WSIEncoder
+from src.unimodal.wsi.models import WSIEncoder, WSIEmbeddingSurvival
 from src.unimodal.rna.mae import initialise_rna_mae_model
 from src.unimodal.cnv.models import initialise_cnv_mae_model
 from src.unimodal.clinical.models import ClinicalSurvivalModel
@@ -135,10 +135,8 @@ class Trainer(object):
             return preproc
         
         elif modality == "wsi":
-            preproc = None
-            if self.cfg.base.strategy != "mae": #labels are not used for pre-training
-                preproc = BaseUnimodalPreprocessor(splits["train"], self.cfg.base.n_intervals)
-                preproc.fit()
+            preproc = BaseUnimodalPreprocessor(splits["train"], self.cfg.base.n_intervals)
+            preproc.fit()
             return preproc
         
         elif modality == "clinical":
@@ -407,14 +405,30 @@ class UnimodalSurvivalTrainer(Trainer):
                         dataset = WSIDataset(split, self.cfg.data.wsi.k, is_train=is_train, return_mask=True)
                         # Создаем SurvivalMRIDataset с нужными параметрами
                         datasets[split_name] = SurvivalWSIDataset(split, dataset, is_hazard_logits=True)
-                    elif self.cfg.base.architecture=="MAE":
-                        dataset = WSIDataset_patches(split, random_patch_selection = self.cfg.data.wsi.random_patch_selection,
-                                                     max_patches_per_sample =self.cfg.data.wsi.max_patches_per_sample,
-                                                     return_mask=True,
-                                                     debug_mode = self.cfg.data.wsi.get("debug_mode", False),
-                                                     fill_missing = self.cfg.data.wsi.fill_missing)
-                        # Создаем SurvivalMRIDataset с нужными параметрами
+                    elif self.cfg.base.architecture=="WSI_Embeddings":
+                        dataset = WSIDataset_embeddings(split,
+                                                        return_mask=True,
+                                                        debug_mode = self.cfg.data.wsi.get("debug_mode", False),
+                                                        fill_missing = self.cfg.data.wsi.fill_missing,
+                                                        embedding_dim=self.cfg.data.wsi.embedding_dim)
                         datasets[split_name] = SurvivalWSIDataset(split, dataset, is_hazard_logits=True,debug_mode = self.cfg.data.wsi.get("debug_mode", False))
+                    elif self.cfg.base.architecture=="MAE":
+                        if self.cfg.base.wsi_embeddings == True:
+                            dataset = WSIDataset_embeddings(split,
+                                                        return_mask=True,
+                                                        debug_mode = self.cfg.data.wsi.get("debug_mode", False),
+                                                        fill_missing = self.cfg.data.wsi.fill_missing,
+                                                        embedding_dim=self.cfg.data.wsi.embedding_dim)
+                            datasets[split_name] = SurvivalWSIDataset(split, dataset, is_hazard_logits=True,debug_mode = self.cfg.data.wsi.get("debug_mode", False))
+                        else:
+                            
+                            dataset = WSIDataset_patches(split, random_patch_selection = self.cfg.data.wsi.random_patch_selection,
+                                                        max_patches_per_sample =self.cfg.data.wsi.max_patches_per_sample,
+                                                        return_mask=True,
+                                                        debug_mode = self.cfg.data.wsi.get("debug_mode", False),
+                                                        fill_missing = self.cfg.data.wsi.fill_missing)
+                            # Создаем SurvivalMRIDataset с нужными параметрами
+                            datasets[split_name] = SurvivalWSIDataset(split, dataset, is_hazard_logits=True,debug_mode = self.cfg.data.wsi.get("debug_mode", False))
         else:
             raise NotImplementedError("Exist only for rna and mri. Initialising datasets for other modalities aren't declared")
         
@@ -453,7 +467,11 @@ class UnimodalSurvivalTrainer(Trainer):
                 else:
                     raise NotImplementedError("Exist only MAE for cnv. Initialising datasets for other modalities aren't declared")
         elif modality=="wsi":
-                if self.cfg.base.architecture=="MAE":
+                if self.cfg.base.architecture=="WSI_Embeddings":
+                    return WSIEmbeddingSurvival(model_cfg.embedding_dim,
+                                                model_cfg.final_dropout,
+                                                model_cfg.output_dim)   
+                elif self.cfg.base.architecture=="MAE":
                     return WsiMaeSurvivalModel(ViTMAEConfig(**OmegaConf.to_container(model_cfg)))
                 elif self.cfg.base.architecture=="CNN":
                      return WSIEncoder(embedding_dim=model_cfg.input_embedding_dim, depth=model_cfg.depth,
@@ -529,11 +547,11 @@ class UnimodalSurvivalTrainer(Trainer):
         self.optimizer = AdamW(self.model.parameters(), **self.cfg.base.optimizer.params)
         #self.optimizer = self.build_adamw_ndim_rule(self.model, **self.cfg.base.optimizer.params)
         #self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
-        # self.scheduler = get_cosine_schedule_with_warmup(self.optimizer,
-        #                                                  num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"]),     # warmup = 40 epochs
-        #                                                  num_training_steps= self.cfg.base.n_epochs * len(self.dataloaders["train"]))  # cosine decay
-        self.scheduler = get_constant_schedule_with_warmup(self.optimizer,
-                                                          num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"])) 
+        self.scheduler = get_cosine_schedule_with_warmup(self.optimizer,
+                                                         num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"]),     # warmup = 40 epochs
+                                                         num_training_steps= self.cfg.base.n_epochs * len(self.dataloaders["train"]))  # cosine decay
+        # self.scheduler = get_constant_schedule_with_warmup(self.optimizer,
+        #                                                   num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"])) 
         # self.scheduler = self.get_warmup_then_cosine_with_min_lr(self.optimizer,
         #                                                         num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"]),
         #                                                         num_training_steps= self.cfg.base.n_epochs * len(self.dataloaders["train"]),
@@ -568,7 +586,7 @@ class UnimodalSurvivalTrainer(Trainer):
                 if self.cfg.model.clipping_gradient:
                         torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                 self.optimizer.step()
-                self.scheduler.step()
+                # self.scheduler.step()
                 
             preds.append(outputs)
             times.append(time)
@@ -580,8 +598,8 @@ class UnimodalSurvivalTrainer(Trainer):
         
         preproc = self.preproc[next(iter(self.preproc))] if isinstance(self.preproc, dict) else self.preproc
         metrics.update(compute_survival_metrics( preds, torch.cat(times, dim=0), torch.cat(events, dim=0), cuts=preproc.get_hazard_cuts()))
-        # if split=="train":
-        #     self.scheduler.step()
+        if split=="train":
+            self.scheduler.step()
             
         return  metrics 
 

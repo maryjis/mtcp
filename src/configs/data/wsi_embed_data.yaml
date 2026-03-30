@@ -1,0 +1,3 @@
+wsi:
+  embedding_dim: 768
+  fill_missing: "zeros" 

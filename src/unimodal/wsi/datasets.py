@@ -8,7 +8,7 @@ import numpy as np
 from torchvision import transforms
 from torchvision.transforms import functional as F
 from torch.utils.data import Dataset
-
+from pathlib import Path
 
 class PatchDataset(torch.utils.data.Dataset):
     def __init__(self, filepaths: Tuple[str, ...], transform: "torchvision.transforms" = None) -> None:
@@ -236,6 +236,59 @@ class WSIDataset_patches(BaseDataset):
     def __len__(self):
         return len(self.data)
 
+class WSIDataset_embeddings(BaseDataset):
+    def __init__(
+        self,
+        data: pd.DataFrame,
+        transform: "torchvision.transforms" = None,
+        return_mask: bool = False,
+        is_hazard_logits: bool = False,
+        debug_mode =False,
+        fill_missing ="zeros",
+        embedding_dim =768
+    ) -> None:
+        super().__init__(
+            data=data,
+            transform=transform,
+            return_mask=return_mask,
+            is_hazard_logits=is_hazard_logits
+        )
+        self.embedding_dim = embedding_dim
+        self.debug_mode = debug_mode
+        
+    def find_gigapath_checkpoint(self, folder: str | Path) -> Path:
+        folder = Path(folder)
+        matches = sorted(folder.glob("*_gigapath.pt"))
+        if not matches:
+            print(f"Not found'*_gigapath.pt' in folder: {folder}, Returning zero embeding.")
+            return torch.zeros(1,self.embedding_dim,dtype=torch.float32), False
+        if len(matches) > 1:
+            # Если файлов несколько — берём самый новый (можно поменять логику)
+            matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        return matches[0], True
+    
+    def __getitem__(self, idx: int):
+        sample = self.data.iloc[idx]
+        patch_dir = sample.WSI_initial if not pd.isna(sample.WSI_initial) else None
+        wsi_dir  = patch_dir[:-7] if patch_dir else None
+        if wsi_dir:
+            ckpt_path, mask = self.find_gigapath_checkpoint(wsi_dir)
+            try:
+                print("ckpt_path: ", ckpt_path)
+                wsi_embed_full = torch.load(ckpt_path, map_location="cpu")
+                wsi_embed = wsi_embed_full["last_layer_embed"]
+            except Exception as e:
+                print("Can't load embedding",e )
+                wsi_embed = torch.zeros(1,self.embedding_dim,dtype=torch.float32)
+        else:
+            wsi_embed = torch.zeros(1,self.embedding_dim,dtype=torch.float32)
+            mask = False
+            logger.warning(f"Sample at idx={idx} has no WSI embeding. Returning zero embeding.")
+
+        if not self.debug_mode:
+            return (wsi_embed, mask) if self.return_mask else wsi_embed
+        else:
+            return (str(patch_dir), wsi_embed, mask) if self.return_mask else (str(patch_dir),wsi_embed)
 
         
 
@@ -249,6 +302,7 @@ class SurvivalWSIDataset(torch.utils.data.Dataset):
         debug_mode =False
     ) -> None:
         self.dataset = dataset
+        self.data = self.dataset.data
         self.debug_mode = debug_mode
         if is_hazard_logits:
             self.time = torch.from_numpy(split["new_time"].values)

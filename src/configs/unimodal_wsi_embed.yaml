@@ -1,0 +1,4 @@
+defaults: 
+    - model: wsi_embed_model
+    - base: wsi_embed_base
+    - data: wsi_embed_data

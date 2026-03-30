@@ -1,13 +1,13 @@
-experiment_name: "rsna_UCEC_survival_mae_without_clusters"
+experiment_name: "WSI_BRCA_adam_embedding_gigaprov_linear"
 n_epochs: 20
-warmup_epochs: 5 
+warmup_epochs: 0 
 n_intervals: 20
 random_seed: 1380
 
 optimizer:
     name: "Adam"
     params:
-        lr: 1e-3 # 2e-5
+        lr: 1e-3
         weight_decay: 1e-2
 
 scheduler: 
@@ -18,18 +18,19 @@ scheduler:
 
 type: "unimodal"
 strategy: "survival" # mae, survival
-modalities: ["rna"]
-architecture: "MAE"
+modalities: ["wsi"]
+architecture: "WSI_Embeddings"
+wsi_embeddings: True
 splits: 5
 
 root_path: "../"
 save_path : "outputs/models/"
 data_path: "src/data/dataset_inetrsection_all_v2.csv"
 rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
-device: "cuda:3"
+device: "cuda:0"
 remove_nan_column: 'RNA'
 batch_size: 24
-project_ids: ["UCEC"]
+project_ids: ["BRCA"]
 sampler: True
 loss:
     additional_loss: "CoxPHLoss"

@@ -159,3 +159,18 @@ class WSIEncoder(nn.Module):
 #         return x 
 
 
+class WSIEmbeddingSurvival(nn.Module):
+    def __init__(self,
+        embedding_dim: int,
+        final_dropout: float =0.0,
+        output_dim : int =20):
+        super().__init__()
+        self.embedding_dim = embedding_dim
+        self.projection = nn.Sequential(nn.Dropout(final_dropout),nn.Linear(embedding_dim, output_dim))
+        
+    def forward(self, wsi_embeddings, masks=None):
+        x = self.projection(wsi_embeddings)
+        return x.squeeze(-2)
+     
+
+
