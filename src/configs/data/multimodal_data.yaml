@@ -141,3 +141,12 @@ wsi:
   random_patch_selection: True
   debug_mode: False
   fill_missing: "zeros"
+  embedding_dim: 768
+  embedding_pattern: "*_titan.pt"
+  embedding_key: "embedding"
+  # TITAN live encoder (h5 patch features)
+  feature_dim: 768
+  max_patches: 4096
+  h5_feature_key: "features"
+  h5_coord_key: "coords"
+  h5_glob: "*.h5"
