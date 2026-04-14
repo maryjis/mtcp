@@ -1,0 +1,7 @@
+titan_model_path: "/home/v.kozlovskiy/hf_models/TITAN/snapshots/dac6773d9961cfc75503440676ff157a2c6e8d2e/"
+embedding_dim: 768
+hidden_dim: 256
+final_dropout: 0.3
+output_dim: 20
+patch_size_lv0: 512
+clipping_gradient: False

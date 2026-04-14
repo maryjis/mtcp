@@ -7,7 +7,7 @@ from src.unimodal.rna.dataset import OmicsDataset, OmicsSurvivalDataset
 from src.unimodal.dna.models import initialise_dnam_mae_model,  initialise_dnam_model, DNAmMAEForPreTraining
 from src.unimodal.dna.preprocessor import DNAmPreprocessor
 from src.unimodal.cnv.preprocessor import CNVPreprocessor
-from src.unimodal.wsi.datasets import WSIDataset, WSIDataset_embeddings, WSIDataset_patches, SurvivalWSIDataset
+from src.unimodal.wsi.datasets import WSIDataset, WSIDataset_embeddings, WSIDataset_patches, WSIDataset_patch_features, SurvivalWSIDataset
 from src.unimodal.mri.datasets import SurvivalMRIDataset, MRIEmbeddingDataset, MRIDataset, MRISurvivalDataset
 
 from src.unimodal.rna.preprocessor import RNAPreprocessor
@@ -21,6 +21,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from src.unimodal.rna.encoder import initialise_rna_model, initialise_mlp_model, initialise_snn_model
 from src.unimodal.mri.models import MRIEmbeddingEncoder
 from src.unimodal.wsi.models import WSIEncoder, WSIEmbeddingSurvival
+from src.unimodal.wsi.titan import TitanEmbeddingSurvival, TitanLiveSurvival
 from src.unimodal.rna.mae import initialise_rna_mae_model
 from src.unimodal.cnv.models import initialise_cnv_mae_model
 from src.unimodal.clinical.models import ClinicalSurvivalModel
@@ -412,8 +413,49 @@ class UnimodalSurvivalTrainer(Trainer):
                                                         fill_missing = self.cfg.data.wsi.fill_missing,
                                                         embedding_dim=self.cfg.data.wsi.embedding_dim)
                         datasets[split_name] = SurvivalWSIDataset(split, dataset, is_hazard_logits=True,debug_mode = self.cfg.data.wsi.get("debug_mode", False))
+                    elif self.cfg.base.architecture=="TITAN_Embeddings":
+                        dataset = WSIDataset_embeddings(split,
+                                                        return_mask=True,
+                                                        debug_mode=self.cfg.data.wsi.get("debug_mode", False),
+                                                        fill_missing=self.cfg.data.wsi.fill_missing,
+                                                        embedding_dim=self.cfg.data.wsi.embedding_dim,
+                                                        embedding_pattern=self.cfg.data.wsi.get("embedding_pattern", "*_titan.pt"),
+                                                        embedding_key=self.cfg.data.wsi.get("embedding_key", "embedding"))
+                        datasets[split_name] = SurvivalWSIDataset(split, dataset, is_hazard_logits=True, debug_mode=self.cfg.data.wsi.get("debug_mode", False))
+                    elif self.cfg.base.architecture=="TITAN_Live":
+                        dataset = WSIDataset_patch_features(split,
+                                                        return_mask=True,
+                                                        debug_mode=self.cfg.data.wsi.get("debug_mode", False),
+                                                        fill_missing=self.cfg.data.wsi.fill_missing,
+                                                        feature_dim=self.cfg.data.wsi.get("feature_dim", 768),
+                                                        max_patches=self.cfg.data.wsi.get("max_patches", 4096),
+                                                        h5_feature_key=self.cfg.data.wsi.get("h5_feature_key", "features"),
+                                                        h5_coord_key=self.cfg.data.wsi.get("h5_coord_key", "coords"),
+                                                        h5_glob=self.cfg.data.wsi.get("h5_glob", "*.h5"))
+                        datasets[split_name] = SurvivalWSIDataset(split, dataset, is_hazard_logits=True, debug_mode=self.cfg.data.wsi.get("debug_mode", False))
                     elif self.cfg.base.architecture=="MAE":
-                        if self.cfg.base.wsi_embeddings == True:
+                        wsi_encoder_type = self.cfg.model.get("wsi_model", {}).get("encoder_type", "")
+                        if wsi_encoder_type == "titan":
+                            dataset = WSIDataset_embeddings(split,
+                                                        return_mask=True,
+                                                        debug_mode=self.cfg.data.wsi.get("debug_mode", False),
+                                                        fill_missing=self.cfg.data.wsi.fill_missing,
+                                                        embedding_dim=self.cfg.data.wsi.embedding_dim,
+                                                        embedding_pattern=self.cfg.data.wsi.get("embedding_pattern", "*_titan.pt"),
+                                                        embedding_key=self.cfg.data.wsi.get("embedding_key", "embedding"))
+                            datasets[split_name] = SurvivalWSIDataset(split, dataset, is_hazard_logits=True, debug_mode=self.cfg.data.wsi.get("debug_mode", False))
+                        elif wsi_encoder_type == "titan_live":
+                            dataset = WSIDataset_patch_features(split,
+                                                        return_mask=True,
+                                                        debug_mode=self.cfg.data.wsi.get("debug_mode", False),
+                                                        fill_missing=self.cfg.data.wsi.fill_missing,
+                                                        feature_dim=self.cfg.data.wsi.get("feature_dim", 768),
+                                                        max_patches=self.cfg.data.wsi.get("max_patches", 4096),
+                                                        h5_feature_key=self.cfg.data.wsi.get("h5_feature_key", "features"),
+                                                        h5_coord_key=self.cfg.data.wsi.get("h5_coord_key", "coords"),
+                                                        h5_glob=self.cfg.data.wsi.get("h5_glob", "*.h5"))
+                            datasets[split_name] = SurvivalWSIDataset(split, dataset, is_hazard_logits=True, debug_mode=self.cfg.data.wsi.get("debug_mode", False))
+                        elif self.cfg.base.wsi_embeddings == True:
                             dataset = WSIDataset_embeddings(split,
                                                         return_mask=True,
                                                         debug_mode = self.cfg.data.wsi.get("debug_mode", False),
@@ -470,7 +512,23 @@ class UnimodalSurvivalTrainer(Trainer):
                 if self.cfg.base.architecture=="WSI_Embeddings":
                     return WSIEmbeddingSurvival(model_cfg.embedding_dim,
                                                 model_cfg.final_dropout,
-                                                model_cfg.output_dim)   
+                                                model_cfg.output_dim)
+                elif self.cfg.base.architecture=="TITAN_Embeddings":
+                    return TitanEmbeddingSurvival(
+                        embedding_dim=model_cfg.embedding_dim,
+                        hidden_dim=model_cfg.hidden_dim,
+                        final_dropout=model_cfg.final_dropout,
+                        output_dim=model_cfg.output_dim,
+                    )
+                elif self.cfg.base.architecture=="TITAN_Live":
+                    return TitanLiveSurvival(
+                        titan_model_path=model_cfg.titan_model_path,
+                        embedding_dim=model_cfg.embedding_dim,
+                        hidden_dim=model_cfg.hidden_dim,
+                        final_dropout=model_cfg.final_dropout,
+                        output_dim=model_cfg.output_dim,
+                        patch_size_lv0=model_cfg.get("patch_size_lv0", 512),
+                    )
                 elif self.cfg.base.architecture=="MAE":
                     return WsiMaeSurvivalModel(ViTMAEConfig(**OmegaConf.to_container(model_cfg)))
                 elif self.cfg.base.architecture=="CNN":

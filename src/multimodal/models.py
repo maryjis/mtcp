@@ -9,6 +9,7 @@ from src.unimodal.dna.models import DNAmSurvivalModel, DNAmMAEModel
 from src.unimodal.wsi.mae import WsiMAEModel
 from src.unimodal.cnv.models import CNVMAEModel
 from src.unimodal.clinical.models import ClinicalModel
+from src.unimodal.wsi.titan import TitanEmbeddingEncoder, TitanLiveEncoder
 from dataclasses import dataclass
 import torch.nn.functional as F
 
@@ -239,38 +240,38 @@ class MultiMAEModel(PreTrainedModel):
                     modality
                 )
             elif modality == "wsi":
-                print("self.cfg.wsi_model: ", self.cfg.wsi_model)
                 cfg_wsi_model = ViTMAEConfig(**self.cfg.wsi_model)
                 encoder = None
-                
-                print("cfg_wsi_model.is_load_pretrained: ", cfg_wsi_model)
-                if cfg_wsi_model.is_load_pretrained:
-                    print("cfg_wsi_model.pretrained_model_path: ", cfg_wsi_model.pretrained_model_path)
-                    # encoder = WSIEmbeddingMAEModel.from_pretrained(cfg_wsi_model.pretrained_model_path, config=cfg_wsi_model)
+
+                wsi_encoder_type = self.cfg.wsi_model.get("encoder_type", "mae")
+
+                if wsi_encoder_type == "titan":
+                    encoder = TitanEmbeddingEncoder(config=cfg_wsi_model)
+                    for param in encoder.parameters():
+                        param.requires_grad = False
+                elif wsi_encoder_type == "titan_live":
+                    titan_path = self.cfg.wsi_model.get(
+                        "titan_model_path", "MahmoodLab/TITAN"
+                    )
+                    patch_size = self.cfg.wsi_model.get("patch_size_lv0", 512)
+                    encoder = TitanLiveEncoder(
+                        config=cfg_wsi_model,
+                        titan_model_path=titan_path,
+                        patch_size_lv0=patch_size,
+                    )
+                    for param in encoder.parameters():
+                        param.requires_grad = False
+                elif cfg_wsi_model.is_load_pretrained:
                     if cfg_wsi_model.pretrained_model_name == "":
                         cfg_wsi_model.pretrained_model_path = "facebook/vit-mae-base"
 
-                        
                     encoder = WsiMAEModel.from_pretrained(cfg_wsi_model.pretrained_model_path, config=cfg_wsi_model)
-                    
-                    for param in encoder.parameters():
-                        print("Freezing: ")
-                        param.requires_grad = False
-                        
-                    # else:
-                    #     print(os.getcwd())
-                    #     print(cfg_wsi_model.pretrained_model_path)
-                    #     state_dict = torch.load(cfg_wsi_model.pretrained_model_path)
-                    #     print("State dict:", state_dict)
-                    #     encoder = WsiMAEModel(config=cfg_wsi_model)
-                    #     encoder.load_state_dict(state_dict)
-                    # # for param in encoder.parameters():
 
-                    #     param.requires_grad = False
+                    for param in encoder.parameters():
+                        param.requires_grad = False
                 else:
-                    #encoder = WSIEmbeddingMAEModel(config =cfg_wsi_model)
                     print("Loading wsi model from scratch")
-                    encoder = WsiMAEModel(config =cfg_wsi_model)
+                    encoder = WsiMAEModel(config=cfg_wsi_model)
                     
                 self.encoders[modality] = UnimodalEncoder(
                     encoder,
@@ -558,7 +559,7 @@ class MultiMAEModel(PreTrainedModel):
             #try to take with token
             last_hidden_state = embedded_sample.last_hidden_state
  
-            if modality =="wsi" and self.encoders["wsi"].encoder.config.max_patches_per_sample>1 and not self.encoders["wsi"].encoder.config.random_patch_selection:
+            if modality =="wsi" and getattr(self.encoders["wsi"].encoder.config, "max_patches_per_sample", 1)>1 and not getattr(self.encoders["wsi"].encoder.config, "random_patch_selection", True):
                     n10, n_tokens, hidden_size = last_hidden_state.shape
                     n = n10 // self.encoders["wsi"].encoder.config.max_patches_per_sample
 
@@ -1122,7 +1123,7 @@ class MultiMaeForSurvival(nn.Module):
                     x_modality = x[modality_key] 
                     embedding_modality = self.model.encoders[modality_key](x_modality)
 
-                    if modality_key =="wsi" and self.model.encoders["wsi"].encoder.config.max_patches_per_sample>1 and not self.model.encoders["wsi"].encoder.config.random_patch_selection:
+                    if modality_key =="wsi" and getattr(self.model.encoders["wsi"].encoder.config, "max_patches_per_sample", 1)>1 and not getattr(self.model.encoders["wsi"].encoder.config, "random_patch_selection", True):
                         
                         n10, n_tokens, hidden_size = embedding_modality.last_hidden_state.shape
                         n = n10 // self.model.encoders["wsi"].encoder.config.max_patches_per_sample

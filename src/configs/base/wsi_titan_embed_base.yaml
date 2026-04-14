@@ -1,0 +1,43 @@
+experiment_name: "WSI_TITAN_embedding_perceptron"
+n_epochs: 30
+warmup_epochs: 3
+n_intervals: 20
+random_seed: 1380
+
+optimizer:
+    name: "AdamW"
+    params:
+        lr: 1e-3
+        weight_decay: 1e-2
+
+scheduler: 
+    name: "CosineAnnealingLR"
+    params:
+        eta_min: 5e-6
+
+type: "unimodal"
+strategy: "survival"
+modalities: ["wsi"]
+architecture: "TITAN_Embeddings"
+wsi_embeddings: True
+splits: 5
+
+root_path: "../"
+save_path: "outputs/models/"
+data_path: "src/data/dataset_inetrsection_all_v2.csv"
+device: "cuda:0"
+remove_nan_column: 'RNA'
+batch_size: 24
+project_ids: []
+sampler: True
+
+loss:
+    additional_loss: "CoxPHLoss"
+    alpha: 0.7
+
+log:
+    logging: True
+    logging_platform: "neptune"
+    project_name: "almachan2358/cancer-mtcp"
+    run_name: "titan_perceptron"
+    api_token: ""

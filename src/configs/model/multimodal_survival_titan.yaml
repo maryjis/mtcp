@@ -1,0 +1,96 @@
+modalities: ["rna", "dnam", "wsi"]
+
+defaults: 
+  - rna_model: survival
+  - dnam_model: survival
+  - wsi_model: titan_survival
+
+hidden_size: 768
+is_projection: False
+attention_probs_dropout_prob: 0.0
+decoder_hidden_size: 512
+decoder_intermediate_size: 2048
+decoder_num_attention_heads: 16
+decoder_num_hidden_layers: 8
+hidden_act: "gelu"
+hidden_dropout_prob: 0.0
+initializer_range: 0.02
+intermediate_size: 3072
+layer_norm_eps: 1e-12
+mask_ratio: 0.0
+model_type: "vit_mae"
+norm_pix_loss: false
+num_attention_heads: 4
+num_channels: 1
+num_hidden_layers: 6
+qkv_bias: true
+patch_size: 512
+postprocessing: True
+output_dim: 20
+contrastive_loss: false
+clinica_linear_last_fusion: False
+is_load_pretrained: False
+pretrained_model_name: ""
+pretrained_model_path: ""
+freezing_strategy: False
+
+missing_modalities_strategy: ""
+mm_pretrained_model_name: ""
+mm_pretrained_model_path: ""
+
+per_modality_pooling:
+  rna: false
+  dnam: false
+  wsi: false
+
+return_order: true
+encoder_fusion_strategy: "masked_attention"
+
+encoder_fusion_depth: 2
+encoder_fusion_dim: 768
+encoder_fusion_nhead: 16
+encoder_fusion_dim_feedforward: 2048
+encoder_fusion_dropout: 0.0
+encoder_activation_name: "gelu"
+
+fusion_strategy: "linear"
+
+perceiver_fusion_depth: 1 
+perceiver_fusion_dim: 768 
+perceiver_modalities_dim: {"rna": 32, "dnam": 8} 
+perceiver_lattent_dim: 32
+perceiver_fusion_nhead: 2
+
+fusion_depth: 1
+fusion_dim: 768
+fusion_nhead: 4
+fusion_dim_feedforward: 0
+fusion_dropout: 0.3
+fusion_logits: "mean"
+fusion_masking: false
+fusion_strategy_is_pretrained: false
+return_attention: false
+fusion_hidden_dim: 256
+multimodal_fusion: "single_head"
+
+modality_dropout_p:
+  rna: 0.3    
+  dnam: 0.5
+  wsi: 1.0
+
+p_dropout_value: 0.0
+
+make_modality_pooling: false
+make_modality_normalizers: false
+make_modality_dropout: true
+make_modality_clipper: false
+make_simple_normalizer: true
+final_dropout:
+  multimodal: 0.2
+  wsi: 0.0
+  rna: 0.0
+  dnam: 0.0
+
+gated_fusion: False
+clipping_gradient: True
+wsi_agg: "mean"

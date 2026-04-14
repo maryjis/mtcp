@@ -1,0 +1,81 @@
+experiment_name: "multimodal_rna_dnam_wsi_titan_survival"
+n_epochs: 20
+warmup_epochs: 5
+n_intervals: 20
+random_seed: 1380
+
+optimizer:
+    name: "AdamW"
+    params:
+        lr: 1e-3
+        weight_decay: 1e-2
+
+optimizer_gated:
+    name: "AdamW"
+    params:
+        lr: 1e-4
+        weight_decay: 1e-4
+
+optimizer_unimodal:
+    rna:
+        name: "AdamW"
+        params:
+            lr: 1e-3
+            weight_decay: 1e-2
+    dnam:
+        name: "AdamW"
+        params:
+            lr: 1e-3
+            weight_decay: 1e-2
+    wsi:
+        name: "AdamW"
+        params:
+            lr: 1e-3
+            weight_decay: 1e-2            
+
+scheduler: 
+    name: "CosineAnnealingLR"
+    params:
+        eta_min: 5e-6
+
+scheduler_gated: 
+    name: "CosineAnnealingLR"
+    params:
+        eta_min: 5e-6
+
+scheduler_unimodal: 
+    name: "CosineAnnealingLR"
+    params:
+        eta_min: 5e-6    
+
+loss:
+    additional_loss: "CoxPHLoss"
+    alpha: 0.7
+
+is_scheduler: True
+type: "multimodal"
+strategy: "survival"
+sampler: True
+
+modalities: ["rna", "dnam", "wsi"]
+
+multimodal_intersection_test: true
+architecture: "MAE"
+wsi_embeddings: True
+splits: 5
+save_path: "outputs/models/"
+project_ids: []
+
+data_path: "src/data/dataset_inetrsection_all_v2.csv"
+device: "cuda:0"
+
+available_gpus: [0]
+remove_nan_column: 'RNA'
+batch_size: 24
+
+log:
+    logging: True
+    logging_platform: "neptune"
+    project_name: "almachan2358/cancer-mtcp"
+    run_name: "titan_multimodal_survival"
+    api_token: ""

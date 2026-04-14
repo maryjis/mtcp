@@ -1,0 +1,4 @@
+defaults:
+    - model: wsi_titan_live
+    - base: wsi_titan_live_base
+    - data: multimodal_data

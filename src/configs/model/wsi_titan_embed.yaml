@@ -1,0 +1,5 @@
+embedding_dim: 768
+hidden_dim: 256
+final_dropout: 0.3
+output_dim: 20
+clipping_gradient: False

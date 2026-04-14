@@ -245,7 +245,9 @@ class WSIDataset_embeddings(BaseDataset):
         is_hazard_logits: bool = False,
         debug_mode =False,
         fill_missing ="zeros",
-        embedding_dim =768
+        embedding_dim =768,
+        embedding_pattern: str = "*_gigapath.pt",
+        embedding_key: str = "last_layer_embed",
     ) -> None:
         super().__init__(
             data=data,
@@ -255,15 +257,16 @@ class WSIDataset_embeddings(BaseDataset):
         )
         self.embedding_dim = embedding_dim
         self.debug_mode = debug_mode
+        self.embedding_pattern = embedding_pattern
+        self.embedding_key = embedding_key
         
-    def find_gigapath_checkpoint(self, folder: str | Path) -> Path:
+    def find_embedding_checkpoint(self, folder: str | Path):
         folder = Path(folder)
-        matches = sorted(folder.glob("*_gigapath.pt"))
+        matches = sorted(folder.glob(self.embedding_pattern))
         if not matches:
-            print(f"Not found'*_gigapath.pt' in folder: {folder}, Returning zero embeding.")
-            return torch.zeros(1,self.embedding_dim,dtype=torch.float32), False
+            logger.warning(f"Not found '{self.embedding_pattern}' in folder: {folder}, Returning zero embedding.")
+            return torch.zeros(1, self.embedding_dim, dtype=torch.float32), False
         if len(matches) > 1:
-            # Если файлов несколько — берём самый новый (можно поменять логику)
             matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         return matches[0], True
     
@@ -272,18 +275,18 @@ class WSIDataset_embeddings(BaseDataset):
         patch_dir = sample.WSI_initial if not pd.isna(sample.WSI_initial) else None
         wsi_dir  = patch_dir[:-7] if patch_dir else None
         if wsi_dir:
-            ckpt_path, mask = self.find_gigapath_checkpoint(wsi_dir)
+            ckpt_path, mask = self.find_embedding_checkpoint(wsi_dir)
             try:
-                print("ckpt_path: ", ckpt_path)
                 wsi_embed_full = torch.load(ckpt_path, map_location="cpu")
-                wsi_embed = wsi_embed_full["last_layer_embed"]
+                wsi_embed = wsi_embed_full[self.embedding_key]
             except Exception as e:
-                print("Can't load embedding",e )
-                wsi_embed = torch.zeros(1,self.embedding_dim,dtype=torch.float32)
+                logger.warning(f"Can't load embedding: {e}")
+                wsi_embed = torch.zeros(1, self.embedding_dim, dtype=torch.float32)
+                mask = False
         else:
-            wsi_embed = torch.zeros(1,self.embedding_dim,dtype=torch.float32)
+            wsi_embed = torch.zeros(1, self.embedding_dim, dtype=torch.float32)
             mask = False
-            logger.warning(f"Sample at idx={idx} has no WSI embeding. Returning zero embeding.")
+            logger.warning(f"Sample at idx={idx} has no WSI embedding. Returning zero embedding.")
 
         if not self.debug_mode:
             return (wsi_embed, mask) if self.return_mask else wsi_embed
@@ -291,6 +294,87 @@ class WSIDataset_embeddings(BaseDataset):
             return (str(patch_dir), wsi_embed, mask) if self.return_mask else (str(patch_dir),wsi_embed)
 
         
+
+
+class WSIDataset_patch_features(BaseDataset):
+    """
+    Loads patch-level features (e.g. CONCHv1.5) and coordinates from h5 files
+    for use with the live TITAN encoder.
+
+    Returns a packed tensor [max_patches, feature_dim + 2]:
+      - [:, :feature_dim]  — patch features (768-d by default)
+      - [:, feature_dim:]  — patch coordinates (x, y)
+    Zero-padded for slides with fewer than max_patches patches.
+    """
+
+    def __init__(
+        self,
+        data: pd.DataFrame,
+        transform: "torchvision.transforms" = None,
+        return_mask: bool = False,
+        is_hazard_logits: bool = False,
+        debug_mode: bool = False,
+        fill_missing: str = "zeros",
+        feature_dim: int = 768,
+        max_patches: int = 4096,
+        h5_feature_key: str = "features",
+        h5_coord_key: str = "coords",
+        h5_glob: str = "*.h5",
+    ) -> None:
+        super().__init__(
+            data=data,
+            transform=transform,
+            return_mask=return_mask,
+            is_hazard_logits=is_hazard_logits,
+        )
+        self.feature_dim = feature_dim
+        self.max_patches = max_patches
+        self.h5_feature_key = h5_feature_key
+        self.h5_coord_key = h5_coord_key
+        self.h5_glob = h5_glob
+        self.debug_mode = debug_mode
+        self.fill_missing = fill_missing
+        self.packed_dim = feature_dim + 2
+
+    def _find_h5(self, folder):
+        folder = Path(folder)
+        matches = sorted(folder.glob(self.h5_glob))
+        return matches[0] if matches else None
+
+    def __getitem__(self, idx: int):
+        import h5py
+
+        sample = self.data.iloc[idx]
+        patch_dir = sample.WSI_initial if not pd.isna(sample.WSI_initial) else None
+        wsi_dir = patch_dir[:-7] if patch_dir else None
+
+        packed = torch.zeros(self.max_patches, self.packed_dim, dtype=torch.float32)
+        mask = False
+
+        if wsi_dir:
+            h5_path = self._find_h5(wsi_dir)
+            if h5_path:
+                try:
+                    with h5py.File(str(h5_path), "r") as f:
+                        feats = torch.from_numpy(f[self.h5_feature_key][:]).float()
+                        coords = torch.from_numpy(f[self.h5_coord_key][:]).float()
+
+                    N = feats.shape[0]
+                    if N > self.max_patches:
+                        sel = torch.randperm(N)[: self.max_patches]
+                        feats = feats[sel]
+                        coords = coords[sel]
+                        N = self.max_patches
+
+                    packed[:N, : self.feature_dim] = feats
+                    packed[:N, self.feature_dim :] = coords[:, :2]
+                    mask = True
+                except Exception as e:
+                    logger.warning("Failed to load h5 %s: %s", h5_path, e)
+
+        if not self.debug_mode:
+            return (packed, mask) if self.return_mask else packed
+        return (str(patch_dir), packed, mask) if self.return_mask else (str(patch_dir), packed)
 
 
 class SurvivalWSIDataset(torch.utils.data.Dataset):

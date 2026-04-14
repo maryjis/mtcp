@@ -1,0 +1,4 @@
+defaults: 
+    - model: wsi_titan_embed
+    - base: wsi_titan_embed_base
+    - data: multimodal_data

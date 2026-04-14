@@ -1,0 +1,4 @@
+defaults: 
+    - model: multimodal_survival_titan
+    - base: multimodal_config_survival_titan
+    - data: multimodal_data
