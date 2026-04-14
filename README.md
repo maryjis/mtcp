@@ -1,7 +1,7 @@
 # mtcp
 <img width="7040" height="5128" alt="multimodal_2stages" src="https://github.com/user-attachments/assets/2e7abb03-974e-4263-8002-3f74d5600fd8" />
 
-Multimodal Transformers for working with medical data with missing modalities.
+Implementation of a multimodal ViT-MAE architecture for joint masked pretraining across histopathology (WSI), transcriptomics (RNA-seq), and DNA methylation. The model leverages GO-guided tokenization for biologically interpretable omics encoding and learns cross-modal interactions via reconstruction objectives, achieving strong performance in survival prognosis and cancer-type stratification.
 
 ## Run Training
 
