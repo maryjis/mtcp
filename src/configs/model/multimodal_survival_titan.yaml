@@ -1,8 +1,8 @@
-modalities: ["rna", "dnam", "wsi"]
+modalities: ["rna", "wsi"]
 
 defaults: 
   - rna_model: survival
-  - dnam_model: survival
+  # - dnam_model: survival
   - wsi_model: titan_survival
 
 hidden_size: 768
@@ -74,11 +74,11 @@ fusion_hidden_dim: 256
 multimodal_fusion: "single_head"
 
 modality_dropout_p:
-  rna: 0.3    
+  rna: 0.5    
   dnam: 0.5
   wsi: 1.0
 
-p_dropout_value: 0.0
+p_dropout_value: 0.4
 
 make_modality_pooling: false
 make_modality_normalizers: false

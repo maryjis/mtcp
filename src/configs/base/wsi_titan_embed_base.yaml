@@ -25,10 +25,10 @@ splits: 5
 root_path: "../"
 save_path: "outputs/models/"
 data_path: "src/data/dataset_inetrsection_all_v2.csv"
-device: "cuda:0"
+device: "cuda:1"
 remove_nan_column: 'RNA'
 batch_size: 24
-project_ids: []
+project_ids: ["GBM","LGG"]
 sampler: True
 
 loss:
@@ -36,7 +36,7 @@ loss:
     alpha: 0.7
 
 log:
-    logging: True
+    logging: False
     logging_platform: "neptune"
     project_name: "almachan2358/cancer-mtcp"
     run_name: "titan_perceptron"

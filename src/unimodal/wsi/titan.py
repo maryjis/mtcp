@@ -39,8 +39,6 @@ class TitanEmbeddingEncoder(nn.Module):
         self.embeddings = _TitanEmbeddingProxy(num_patches=self.num_tokens)
 
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
-        self.projection = nn.Linear(embed_dim, embed_dim)
-        self.layernorm = nn.LayerNorm(embed_dim)
 
         nn.init.normal_(self.cls_token, std=config.initializer_range)
 
@@ -55,8 +53,7 @@ class TitanEmbeddingEncoder(nn.Module):
 
         B = pixel_values.shape[0]
 
-        x = self.projection(pixel_values)
-        x = self.layernorm(x)
+        x = pixel_values
 
         cls_tokens = self.cls_token.expand(B, -1, -1)
         x = torch.cat([cls_tokens, x], dim=1)

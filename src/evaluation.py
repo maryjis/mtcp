@@ -4,7 +4,8 @@ import pandas as pd
 from pycox.evaluation import EvalSurv
 import numpy as np
 from typing import List
-
+import scipy.integrate
+scipy.integrate.simps = scipy.integrate.simpson
 from sksurv.metrics import concordance_index_censored
 
 def create_nan_dataframe(
@@ -88,7 +89,7 @@ def compute_survival_metrics(outputs, time, event, cuts=None):
                                             time.cpu().numpy(),
                                             risk,
                                             tied_tol=1e-08)[0]
-    
+    print(f"c_index: {c_index}, ibs: {ibs}, inbll: {inbll}, cs_score: {cs_score}, c_index_v2: {c_index_v2}")
     return {"c_index": c_index, "ibs": ibs, "inbll": inbll,
             "cs_score": cs_score, "c_index_v2": c_index_v2}
     

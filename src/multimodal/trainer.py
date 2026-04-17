@@ -192,6 +192,13 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
         self.model = self.initialise_models().to(cfg.base.device)
         self.initialise_loss()
         print(self.model)
+        cpu_params = [name for name, p in self.model.named_parameters() if p.device.type == 'cpu']
+
+        if cpu_params:
+            print("Эти параметры на CPU:")
+            print(cpu_params)
+        else:
+            print("Все параметры на GPU")
 
     def initialise_loss(self):
         # --- losses ---
@@ -357,11 +364,11 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
                 #     num_warmup_steps=warmup_steps,
                 #     num_training_steps=total_steps
                 # )
-                # self.scheduler = get_constant_schedule_with_warmup(self.optimizer,
-                #                                           num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"])) 
-                self.scheduler_gated = get_cosine_schedule_with_warmup(self.optimizer_gated,
-                                                         num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"]),     # warmup = 40 epochs
-                                                         num_training_steps= self.cfg.base.n_epochs * len(self.dataloaders["train"]))
+                self.scheduler = get_constant_schedule_with_warmup(self.optimizer,
+                                                          num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"])) 
+                # self.scheduler_gated = get_cosine_schedule_with_warmup(self.optimizer_gated,
+                #                                          num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"]),     # warmup = 40 epochs
+                #                                          num_training_steps= self.cfg.base.n_epochs * len(self.dataloaders["train"]))
 
         # --- gated fusion optimizer (как было) ---
         if self.cfg.model.gated_fusion:
@@ -480,7 +487,7 @@ class MultiModalSurvivalTrainer(MultiModalTrainer, UnimodalSurvivalTrainer):
             
         
         metrics = {"task_loss": total_task_loss/ num_samples}
-        
+        print(f"splitting: {split}")
         preproc = self.preproc[next(iter(self.preproc))] if isinstance(self.preproc, dict) else self.preproc
         metrics.update(compute_survival_metrics( preds, torch.cat(times, dim=0), torch.cat(events, dim=0), cuts=preproc.get_hazard_cuts()))
         if len(preds.keys())>1:

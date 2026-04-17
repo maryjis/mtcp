@@ -262,6 +262,7 @@ class Trainer(object):
                 test_metrics_intersection = None
                 test_metrics = self.__loop__("test",fold_ind, self.dataloaders['test'], self.cfg.base.device)
                 if "test_intersection" in self.dataloaders:
+                    print("test_intersection:")
                     test_metrics_intersection = self.__loop__("test",fold_ind, self.dataloaders['test_intersection'], self.cfg.base.device)
                 if self.cfg.base.log.logging:
                     self.tracker.log_metrics({f"test/fold_{fold_ind}/{key}" : value for key, value in test_metrics.items()}, steps =1)
@@ -435,7 +436,7 @@ class UnimodalSurvivalTrainer(Trainer):
                         datasets[split_name] = SurvivalWSIDataset(split, dataset, is_hazard_logits=True, debug_mode=self.cfg.data.wsi.get("debug_mode", False))
                     elif self.cfg.base.architecture=="MAE":
                         wsi_encoder_type = self.cfg.model.get("wsi_model", {}).get("encoder_type", "")
-                        if wsi_encoder_type == "titan":
+                        if wsi_encoder_type == "titan" or wsi_encoder_type == "titan_embeddings":
                             dataset = WSIDataset_embeddings(split,
                                                         return_mask=True,
                                                         debug_mode=self.cfg.data.wsi.get("debug_mode", False),

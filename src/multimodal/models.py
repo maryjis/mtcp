@@ -247,8 +247,6 @@ class MultiMAEModel(PreTrainedModel):
 
                 if wsi_encoder_type == "titan":
                     encoder = TitanEmbeddingEncoder(config=cfg_wsi_model)
-                    for param in encoder.parameters():
-                        param.requires_grad = False
                 elif wsi_encoder_type == "titan_live":
                     titan_path = self.cfg.wsi_model.get(
                         "titan_model_path", "MahmoodLab/TITAN"
