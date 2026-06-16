@@ -228,33 +228,5 @@ Beyond `run.py`, several helper entrypoints are provided (Optuna is available vi
 Inspect each script's arguments/config before launching, since they wrap `run.py` with a
 study or scheduling layer.
 
-## Troubleshooting
 
-- **`pyvips` / libvips error on import or WSI loading** — install the system libvips package
-  (see [Installation](#installation)); the pip wheel alone is not enough.
-- **CUDA / driver mismatch with torch 2.9.1** — install the matching PyTorch build from
-  pytorch.org, then re-run `pip install -r requirements.txt`.
-- **Out-of-memory (GPU)** — lower `base.batch_size`, pick a smaller WSI variant, or set a
-  specific device with `base.device` / `base.available_gpus`.
-- **I don't want W&B/Neptune** — set `base.log.logging=False`.
-- **Wrong cohort or path** — confirm `base.project_ids` and the data paths in the base config.
-
-## Citation
-
-If you use this code, please cite the associated work:
-
-```bibtex
-@article{mtcp,
-  title   = {A shared process-level representation for omics and histology:
-             Gene Ontology-informed transformers for cancer prognosis},
-  author  = {TODO: author list},
-  journal = {TODO},
-  year    = {TODO}
-}
-```
-<!-- TODO(maintainer): replace with the final reference once published. -->
-
-## License
-
-`<!-- TODO(maintainer): add a LICENSE file (e.g. MIT) and state it here. -->`
 
