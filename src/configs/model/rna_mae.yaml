@@ -22,11 +22,11 @@ is_load_pretrained: False
 pretrained_model_name: "rsna_mae_survival_800_september"
 pretrained_model_path: ""
 output_dim: 20
-is_padding: True
+is_padding: False
 final_dropout: 0.2
 clipping_gradient: True
 patch_embedding:
-  architecture: "tmae"
+  architecture: "clusterd_go"
   in_features: 1
   gene_emb_dim: 64
   clusters_path: "src/data/final_clusters_GO_v3.json"

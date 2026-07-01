@@ -192,8 +192,8 @@ class RnaClusterdGOPatchEmbeddings(nn.Module):
             path = f"{base_path}_{i}{ext}"
             i += 1
 
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(columns_order.tolist(), f, ensure_ascii=False, indent=2)
+        # with open(path, "w", encoding="utf-8") as f:
+        #     json.dump(columns_order.tolist(), f, ensure_ascii=False, indent=2)
 
         self.cluster_indices = self.prepare_cluster_indices(columns_order, self.clusters)
         self.cluster_mask, self.max_cluster_lenth = self.make_cluster_mask(self.cluster_indices, len(columns_order))

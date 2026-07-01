@@ -606,11 +606,11 @@ class UnimodalSurvivalTrainer(Trainer):
         self.optimizer = AdamW(self.model.parameters(), **self.cfg.base.optimizer.params)
         #self.optimizer = self.build_adamw_ndim_rule(self.model, **self.cfg.base.optimizer.params)
         #self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.base.n_epochs,**self.cfg.base.scheduler.params)
-        self.scheduler = get_cosine_schedule_with_warmup(self.optimizer,
-                                                         num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"]),     # warmup = 40 epochs
-                                                         num_training_steps= self.cfg.base.n_epochs * len(self.dataloaders["train"]))  # cosine decay
-        # self.scheduler = get_constant_schedule_with_warmup(self.optimizer,
-        #                                                   num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"])) 
+        # self.scheduler = get_cosine_schedule_with_warmup(self.optimizer,
+        #                                                  num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"]),     # warmup = 40 epochs
+        #                                                  num_training_steps= self.cfg.base.n_epochs * len(self.dataloaders["train"]))  # cosine decay
+        self.scheduler = get_constant_schedule_with_warmup(self.optimizer,
+                                                          num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"])) 
         # self.scheduler = self.get_warmup_then_cosine_with_min_lr(self.optimizer,
         #                                                         num_warmup_steps= self.cfg.base.warmup_epochs * len(self.dataloaders["train"]),
         #                                                         num_training_steps= self.cfg.base.n_epochs * len(self.dataloaders["train"]),
@@ -645,7 +645,7 @@ class UnimodalSurvivalTrainer(Trainer):
                 if self.cfg.model.clipping_gradient:
                         torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                 self.optimizer.step()
-                # self.scheduler.step()
+                self.scheduler.step()
                 
             preds.append(outputs)
             times.append(time)
@@ -657,8 +657,8 @@ class UnimodalSurvivalTrainer(Trainer):
         
         preproc = self.preproc[next(iter(self.preproc))] if isinstance(self.preproc, dict) else self.preproc
         metrics.update(compute_survival_metrics( preds, torch.cat(times, dim=0), torch.cat(events, dim=0), cuts=preproc.get_hazard_cuts()))
-        if split=="train":
-            self.scheduler.step()
+        # if split=="train":
+        #     self.scheduler.step()
             
         return  metrics 
 

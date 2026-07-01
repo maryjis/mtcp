@@ -138,7 +138,7 @@ clinical:
 wsi:
   resize_to: [224, 224]
   max_patches_per_sample: 10
-  random_patch_selection: True
+  random_patch_selection: False
   debug_mode: False
   fill_missing: "zeros"
   embedding_dim: 768

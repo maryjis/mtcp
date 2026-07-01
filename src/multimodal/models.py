@@ -309,16 +309,14 @@ class MultiMAEModel(PreTrainedModel):
             return self.encoders[modality].encoder.embeddings.num_patches
 
     def get_cls_ids(self):
-        cls_indexes =[1]
-        for modality in self.modalities[1:]:
-            if modality =="clinical":
-                if self.cfg.clinica_linear_last_fusion:
-                    continue
-                else:
-                    num_tokens= self.encoders[modality].encoder.total_tokens
-            else:
-                num_tokens= self.encoders[modality].encoder.embeddings.num_patches
-            cls_indexes.append(num_tokens+1)
+        cls_indexes = []
+        offset = 1  # позиция 0 занята глобальным cls
+        for modality in self.modalities:
+            # clinical при linear_last_fusion не попадает в последовательность (continue в forward)
+            if modality == "clinical" and self.cfg.clinica_linear_last_fusion:
+                continue
+            cls_indexes.append(offset)              # per-modality cls стоит в текущем offset
+            offset += self.get_patches_number(modality) + 1  # сдвигаемся за cls + патчи
         return cls_indexes
      
     def get_all_patches_number(self) -> int:
@@ -629,14 +627,15 @@ class MultiMAEModel(PreTrainedModel):
             if last_hidden_states.shape[1] == masks.shape[1]:
                 last_hidden_states = self.encoder_fusion_strategy(last_hidden_states, masks)
             else:
-                last_hidden_states = self.encoder_fusion_strategy(last_hidden_states, None) 
-
-        last_hidden_states_without_cls = last_hidden_states.clone()
-        remove_cls = torch.ones(last_hidden_states_without_cls.size(1), dtype=torch.bool)
-        indexes_for_remove = self.get_cls_ids()
-        remove_cls[indexes_for_remove] = False
-     
-        last_hidden_states_without_cls_new = last_hidden_states_without_cls[:,remove_cls, :]
+                last_hidden_states = self.encoder_fusion_strategy(last_hidden_states, None)
+                 
+        last_hidden_states_without_cls_new = last_hidden_states.clone()
+        if self.cfg.remove_cls_indexes:
+            last_hidden_states_without_cls = last_hidden_states.clone()
+            remove_cls = torch.ones(last_hidden_states_without_cls.size(1), dtype=torch.bool)
+            indexes_for_remove = self.get_cls_ids()
+            remove_cls[indexes_for_remove] = False
+            last_hidden_states_without_cls_new = last_hidden_states_without_cls[:,remove_cls, :]
 
         concat_embedding = MultiModalOutput(
             last_hidden_state=last_hidden_states_without_cls_new,
@@ -1183,7 +1182,11 @@ class MultiMaeForSurvival(nn.Module):
             concat_x = self.fusion_strategy(torch.squeeze(concat_x,1), None)
                
         elif self.cfg.fusion_strategy == "mask_attention" and self.cfg.fusion_dim_feedforward==0:
-            concat_x, attn_weights = self.fusion_strategy(concat_x.last_hidden_state, concat_x.mask)
+            if not self.cfg.remove_cls_indexes:
+                mask = None
+            else:
+                mask = concat_x.mask
+            concat_x, attn_weights = self.fusion_strategy(concat_x.last_hidden_state, mask)
         elif self.cfg.fusion_strategy == "mask_attention" and self.cfg.fusion_dim_feedforward>0:
             concat_x = self.fusion_strategy(concat_x.last_hidden_state, concat_x.mask)
         elif self.cfg.fusion_strategy == "disentangled_fusion":

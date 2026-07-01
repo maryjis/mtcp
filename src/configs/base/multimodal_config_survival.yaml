@@ -1,4 +1,4 @@
-experiment_name: "multimoda_rna_wsi10_dna_mean_UCEC_with_dropout_small_lr_warm_unfreeze_partly_survival"
+experiment_name: "multimodal_rna_dnam_all_cls_indexes_GBM_LGG_survival"
 n_epochs: 20
 warmup_epochs: 5
 n_intervals: 20
@@ -8,7 +8,7 @@ random_seed: 1380
 optimizer:
     name: "AdamW"
     params:
-        lr: 1e-3 # 2e-5
+        lr: 1e-4 # 2e-5
         weight_decay: 1e-2
 
 optimizer_gated:
@@ -129,25 +129,25 @@ type: "multimodal"
 strategy: "survival" # mae, survival
 sampler: True
 
-modalities: ["rna", "dnam", "wsi"]
-
+modalities: ["rna", "dnam"]
+wsi_embeddings: False
 multimodal_intersection_test: true
 architecture: "MAE"
 splits: 5
 save_path : "outputs/models/"
-project_ids: ["UCEC"]
+project_ids: ["GBM", "LGG"]
 
 
 data_path: "src/data/dataset_inetrsection_all_v2.csv"
 rna_dataset_path: "src/data/rna_dataset_full_tcga.csv"
-device: "cuda:0"
+device: "cuda:1"
 
 available_gpus:  [0]  # Указываем, какие GPU можно использовать
 remove_nan_column: 'RNA'
 batch_size: 24
 
 log:
-    logging: True
+    logging: False
     logging_platform: "neptune"
     project_name: "almachan2358/cancer-mtcp"
     run_name: "survival1"

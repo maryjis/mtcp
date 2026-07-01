@@ -1,4 +1,4 @@
-experiment_name: "rsna_UCEC_survival_mae_without_clusters"
+experiment_name: "rsna_UCEC_survival"
 n_epochs: 20
 warmup_epochs: 5 
 n_intervals: 20
@@ -7,7 +7,7 @@ random_seed: 1380
 optimizer:
     name: "Adam"
     params:
-        lr: 1e-3 # 2e-5
+        lr: 1e-4 # 2e-5
         weight_decay: 1e-2
 
 scheduler: 
@@ -36,7 +36,7 @@ loss:
     alpha: 0.7
 
 log:
-    logging: True
+    logging: False
     logging_platform: "neptune"
     project_name: "almachan2358/cancer-mtcp"
     run_name: "survival1"

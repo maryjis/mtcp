@@ -1,9 +1,9 @@
-modalities: ["rna", "wsi"]
+modalities: ["rna"]
 
 defaults: 
   - rna_model: survival
   # - dnam_model: survival
-  - wsi_model: titan_survival
+  # - wsi_model: titan_survival
 
 hidden_size: 768
 is_projection: False
@@ -44,7 +44,7 @@ per_modality_pooling:
   wsi: false
 
 return_order: true
-encoder_fusion_strategy: "masked_attention"
+encoder_fusion_strategy: ""
 
 encoder_fusion_depth: 2
 encoder_fusion_dim: 768
@@ -53,7 +53,7 @@ encoder_fusion_dim_feedforward: 2048
 encoder_fusion_dropout: 0.0
 encoder_activation_name: "gelu"
 
-fusion_strategy: "linear"
+fusion_strategy: "mask_attention"
 
 perceiver_fusion_depth: 1 
 perceiver_fusion_dim: 768 
@@ -63,14 +63,16 @@ perceiver_fusion_nhead: 2
 
 fusion_depth: 1
 fusion_dim: 768
-fusion_nhead: 4
+fusion_nhead: 16
 fusion_dim_feedforward: 0
-fusion_dropout: 0.3
+fusion_dropout: 0.0
 fusion_logits: "mean"
 fusion_masking: false
 fusion_strategy_is_pretrained: false
 return_attention: false
-fusion_hidden_dim: 256
+
+fusion_hidden_dim: 268
+
 multimodal_fusion: "single_head"
 
 modality_dropout_p:
@@ -78,7 +80,7 @@ modality_dropout_p:
   dnam: 0.5
   wsi: 1.0
 
-p_dropout_value: 0.4
+p_dropout_value: 0.0
 
 make_modality_pooling: false
 make_modality_normalizers: false

@@ -1,4 +1,4 @@
 defaults: 
-    - model: rna_mae
-    - base: rna_base
+    - model: dnam_mae
+    - base: dnam_base
     - data: multimodal_data

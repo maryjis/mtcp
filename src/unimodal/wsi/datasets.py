@@ -265,7 +265,7 @@ class WSIDataset_embeddings(BaseDataset):
         matches = sorted(folder.glob(self.embedding_pattern))
         if not matches:
             logger.warning(f"Not found '{self.embedding_pattern}' in folder: {folder}, Returning zero embedding.")
-            return torch.zeros(1, self.embedding_dim, dtype=torch.float32), False
+            return None, False
         if len(matches) > 1:
             matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         return matches[0], True
@@ -281,10 +281,10 @@ class WSIDataset_embeddings(BaseDataset):
                 wsi_embed = wsi_embed_full[self.embedding_key]
             except Exception as e:
                 logger.warning(f"Can't load embedding: {e}")
-                wsi_embed = torch.zeros(1, self.embedding_dim, dtype=torch.float32)
+                wsi_embed = torch.zeros(self.embedding_dim, dtype=torch.float32)
                 mask = False
         else:
-            wsi_embed = torch.zeros(1, self.embedding_dim, dtype=torch.float32)
+            wsi_embed = torch.zeros(self.embedding_dim, dtype=torch.float32)
             mask = False
             logger.warning(f"Sample at idx={idx} has no WSI embedding. Returning zero embedding.")
 

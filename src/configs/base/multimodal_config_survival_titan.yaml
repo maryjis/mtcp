@@ -1,4 +1,4 @@
-experiment_name: "multimodal_wsi_rna_titan_survival"
+experiment_name: "multimodal_rna_titan_linear_survival"
 n_epochs: 20
 warmup_epochs: 5
 n_intervals: 20
@@ -57,17 +57,17 @@ type: "multimodal"
 strategy: "survival"
 sampler: True
 
-modalities: ["rna", "wsi"]
+modalities: ["rna"]
 
 multimodal_intersection_test: true
 architecture: "MAE"
 wsi_embeddings: True
 splits: 5
 save_path: "outputs/models/"
-project_ids: ["GBM","LGG"]
+project_ids: ["BLCA"]
 
 data_path: "src/data/dataset_inetrsection_all_v2.csv"
-device: "cuda:1"
+device: "cuda:0"
 
 
 remove_nan_column: 'RNA'

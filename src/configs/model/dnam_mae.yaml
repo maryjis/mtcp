@@ -10,20 +10,23 @@ size: 26624
 initializer_range: 0.02
 intermediate_size: 3072
 layer_norm_eps: 1e-12
-mask_ratio: 0.5
+mask_ratio: 0.0
 model_type: "vit_mae"
 norm_pix_loss: false
 num_attention_heads: 4
 num_channels: 1
 num_hidden_layers: 6
-patch_size: 1024
+patch_size: 118
 qkv_bias: true
-is_load_pretrained: false
-pretrained_model_name: "dna_without_clusters_mae_survival"
+is_padding: True
+is_load_pretrained: False
+pretrained_model_name: "dna_pretraining_big_september"
 pretrained_model_path: ""
 output_dim: 20
+final_dropout: 0.2
+clipping_gradient: True
 patch_embedding:
-  architecture: "clusterd_go"
+  architecture: "tmae"
   in_features: 1
   gene_emb_dim: 64
   clusters_path: "src/data/dna_clusters_go_v3.json"

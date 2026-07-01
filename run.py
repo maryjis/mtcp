@@ -19,7 +19,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-@hydra.main(version_base=None, config_path="src/configs", config_name="multimodal_titan_config")
+@hydra.main(version_base=None, config_path="src/configs", config_name="multimodal_config")
 def run(cfg : DictConfig) -> None:
     if not OmegaConf.has_resolver("eval"): OmegaConf.register_new_resolver("eval", eval) #arithmetic in config params
     logger.info(OmegaConf.to_yaml(cfg))
